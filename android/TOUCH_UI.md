@@ -537,12 +537,16 @@ units with one plain move or one assist, offer none, as a Stop or the next order
 as any order does, and the activity hears record 0. A factory's own builds and what the orders panel has no mode for count for nothing,
 as no click brings them back; an attack-move's script and its AggressiveMove are one order.
 
-A record is Griff's own, of what a stray gesture throws away that a PC player only throws away by a deliberate key (Esc),
-and orders nothing (the user's choice of 2026-11-18): a draft of two plans or more that the cross or two fingers' tap dropped
-(`include/GriffUndo.h` `DropSavesWork`, tested; a second thumb that brushes the glass in quick taps is two fingers' tap). Its
-undo comes at the tap, with nothing clicked and nothing for the sim: the draft is open again as it was, its plans where they
-stood and its builders with it (`DraftBack`). It is a record as a gesture's is: one level, the next replaces it, any order
-ends it, the button offers it for its 3 s; and so that the undo never undoes what came after, a draft that opens ends it.
+Two records are Griff's own, of what a stray gesture throws away that a PC player only throws away by deliberate keys (Esc, Ctrl
+and a number), and order nothing (the user's choice of 2026-11-18): a draft of two plans or more that the cross or two fingers' tap
+dropped (`include/GriffUndo.h` `DropSavesWork`, tested; a second thumb that brushes the glass in quick taps is two fingers' tap), and a
+control group a rest stored over other units it held, where those that live are not the very units stored (`StoreSavesWork`,
+tested: not a store on an empty slot, nor *Plus*'s append, which takes none out). Their undo comes at the tap, with nothing clicked
+and nothing for the sim: the draft is open again as it was, its plans where they stood and its builders with it (`DraftBack`); the
+group holds again those of its units that live, by FAF's `AddSelectionSet`, as Ctrl and the number store a selection, whose callbacks
+show its control (`griff.lua` `GroupBack`; with none alive *Not undone*, and the group stays as the store left it). They are records
+as a gesture's are: one level, the next replaces one, any order ends it, the button offers it for its 3 s; and so that the undo
+never undoes what came after, a draft that opens ends a dropped draft's record, and the next store on a slot that group's.
 
 The undo's button (Griff v4) is FAF's UI's (`griffhud.lua`): a button of FAF's orders panel (its empty slot's frame,
 `orders/basic-empty_bmp.dds`, at the HUD's factor as its order buttons) with *Undo* in FAF's font, white with a shadow, as FAF writes
@@ -732,11 +736,11 @@ changed, never each second, which would open a panel the player folded away (its
 | Tap | FAF's left press: the group is the selection (`ApplySelectionSet`); with *Plus* (Shift) it joins the selection |
 | Two taps | FAF's double click (the tap ladder clicks a second tap on FAF's UI where the first went, and the message layer makes it its double click): the group again, whose second selection soon after the first moves the camera to it as the player's option `selection_sets_double_tap_behavior` says |
 | Tap on an empty slot | Where FAF's selection set of the group still holds a unit that lives (`selectionSets`, `ValidateUnitsList`), FAF's number key: `ApplySelectionSet`, whose callback makes FAF's control anew, with *Plus* (Shift) `AppendSetToSelection`. FAF's check each second takes its control away once the units it was handed are gone, while the set may hold others: a grouped factory that was upgraded joins the group so with FAF's default options (`AddUnitToSelectionSet`, which tells no callback), and its slot showed empty while the PC's number key still selected it. Else nothing, and a hint says *Empty group: rest to store* |
-| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. A hint says *Group N stored*, and the phone buzzes once for it (the mockup's one buzz): as the rest's ring came, and the store adds none; with *Box* counting the rest rang for nothing (above), so the store buzzes, as does one that no rest made, a mouse's right press (`TouchInput.storeBuzzes`, tested; on the emulator one buzz each, with *Box* lit 28 ms after the lift, without it 303 ms after the finger's down). With nothing selected a hint *Nothing selected*, and the group stays as it was |
+| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append); where that put other units in place of those it held that live, the undo's button gives them back (The undo). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. A hint says *Group N stored*, and the phone buzzes once for it (the mockup's one buzz): as the rest's ring came, and the store adds none; with *Box* counting the rest rang for nothing (above), so the store buzzes, as does one that no rest made, a mouse's right press (`TouchInput.storeBuzzes`, tested; on the emulator one buzz each, with *Box* lit 28 ms after the lift, without it 303 ms after the finger's down). With nothing selected a hint *Nothing selected*, and the group stays as it was |
 
 The words are hints, where FAF prints its messages (`griff.lua` `Hint`); the buzz of a group stored comes from the hook through
 `FafreGriffGroupStored` (`GriffAndroid.cpp`). A group is the UI's: nothing of it orders, so a tap or a rest on a slot neither ends the
-undo's record nor takes its button away, and the handle follows the selection it
+undo's record nor takes its button away, but for the group's records a store makes or ends (The undo), and the handle follows the selection it
 makes as any other. The rest is the panels' one rest time, not the mockup's 400 ms for groups. The mouse scheme keeps FAF's own groups
 panel and its right press, as a PC's; the scheme is the game's, read when its activity starts (`FafreGriffWanted`).
 

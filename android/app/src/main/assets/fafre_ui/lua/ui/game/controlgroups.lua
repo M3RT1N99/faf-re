@@ -36,21 +36,32 @@ do
             return ValidateUnitsList(units)
         end
 
+        --- Units for the program: their ids, with commas between.
+        local function Ids(units)
+            local ids = {}
+            for _, unit in units do
+                table.insert(ids, unit:GetEntityId())
+            end
+            return table.concat(ids, ',')
+        end
+
         --- A rest on a slot, FAF's right press: the selection is the group from now on (Ctrl and its number's key action), or with
         --- Plus (Shift) it joins the group, as FAF's own right press does. With nothing selected the group stays as it was. The
-        --- phone buzzes once for a group stored.
+        --- phone buzzes once for a group stored, and the program hears what the group held and holds now: the undo's button
+        --- gives back the units a store put others in place of.
         local function Store(name, add)
             if table.empty(GetSelectedUnits() or {}) then
                 Hint(NOTHING_SELECTED)
                 return
             end
+            local before = Living(name)
             if add then
                 Selection.AppendSelectionToSet(name)
             else
                 ConExecute('UI_MakeSelectionSet ' .. name)
             end
             Hint(GROUP_STORED, tonumber(name))
-            FafreGriffGroupStored()
+            FafreGriffGroupStored(tonumber(name), add and 1 or 0, Ids(before), Ids(Living(name)))
         end
 
         --- The right press on a slot is Store's; FAF's own control's other presses are FAF's (`faf`, its handler). An empty

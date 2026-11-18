@@ -1328,3 +1328,20 @@ WXT_TEST(GriffUndoADroppedDraftComesBackFromTwoPlansOn)
   WXT_CHECK(DropSavesWork(2));
   WXT_CHECK(DropSavesWork(30));
 }
+
+// A rest that stored a control group over other units is a record of Griff's own, which orders nothing: offered where the group
+// held units that live and holds another set now, not for a store on an empty slot or of the very units, nor for Plus's append.
+WXT_TEST(GriffUndoAGroupARestStoredOverComesBack)
+{
+  using griffundo::StoreSavesWork;
+  WXT_CHECK(StoreSavesWork(false, {7, 8}, {9}));
+  // The units it held and more, or fewer of them: another group all the same.
+  WXT_CHECK(StoreSavesWork(false, {7, 8}, {9, 8, 7}));
+  WXT_CHECK(StoreSavesWork(false, {7, 8, 9}, {8}));
+  // An empty slot, or one whose units are all gone, held nothing to give back.
+  WXT_CHECK(!StoreSavesWork(false, {}, {9}));
+  // The very units, in whatever order: nothing changed.
+  WXT_CHECK(!StoreSavesWork(false, {8, 7}, {7, 8}));
+  // Plus's append took none of them out.
+  WXT_CHECK(!StoreSavesWork(true, {7, 8}, {7, 8, 9}));
+}

@@ -674,11 +674,13 @@ namespace
   int gWatches = 0;
 
   /// What a record's undo puts back: a gesture's orders, by FAF's clicks once the sim took them; or, at the undo's tap, what a
-  /// gesture of Griff's own threw away that ordered nothing (Offer): the draft the cross or two fingers' tap dropped.
+  /// gesture of Griff's own threw away that ordered nothing (Offer): the draft the cross or two fingers' tap dropped, the
+  /// units of a control group a rest stored over.
   enum class Kept
   {
     kOrders,
     kDraft,
+    kGroup,
   };
 
   /// The last gesture that ordered where its undo saves work (SavesWork), which the undo's button takes back: its number (0:
@@ -688,7 +690,7 @@ namespace
   /// for them; the watches it holds (the tap ladder's attack-move joins the move's) and the groups their orders took units
   /// from, where an undo that takes all of it back puts them again (griffgroups::Book::Undone). One level: the next
   /// gesture's replaces it, and any other order ends it. A record of Griff's own holds what its gesture threw away instead
-  /// (`kept`): the draft as it was, with its buildings' blueprints.
+  /// (`kept`): the draft as it was, with its buildings' blueprints; a control group's number and the units it held.
   struct Record
   {
     int number = 0;
@@ -702,6 +704,8 @@ namespace
     std::vector<griffgroups::Earlier> earlier;
     griffdraft::Draft draft;
     std::unordered_map<std::string, moho::RUnitBlueprint*> blueprints;
+    int group = 0;
+    std::vector<int> held;
   };
 
   Record gRecord;
@@ -1504,10 +1508,8 @@ namespace
   moho::CScrLuaBinder gDraftEndBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftEnd", &DraftEnd, nullptr, "<global>", kDraftEndHelp);
   moho::CScrLuaBinder gEscapesBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEscapes", &Escapes, nullptr, "<global>", kEscapesHelp);
 
-  // --- Griff's pieces in FAF's UI (fafre/griffhud.lua) and the control groups' hook -------------------------------------------
+  // --- Griff's pieces in FAF's UI (fafre/griffhud.lua) ----------------------------------------------------------------------
 
-  constexpr char kGroupStoredHelp[] =
-    "FafreGriffGroupStored() - a group of Griff's control groups was stored: the phone buzzes for it once";
   constexpr char kHudHelp[] =
     "FafreGriffHud() - how the activity has Griff's rail, undo button and draft's tick and cross: looks, undo, undoLeft";
   constexpr char kHudPlacesHelp[] = "FafreGriffHudPlaces(left, top, right, bottom, aside, ...) - where griffhud.lua drew Box, "
@@ -1526,13 +1528,6 @@ namespace
   constexpr std::size_t kHudPlaces = 25;
   std::mutex gHudPlacesMutex;
   std::array<float, kHudPlaces> gHudPlaces{};
-
-  /// A group stored by a rest on its slot (the hook of FAF's controlgroups.lua, after its hint): the activity buzzes once.
-  int GroupStored(lua_State*)
-  {
-    Say(kSaidGroupStored, 0, 0);
-    return 0;
-  }
 
   int Hud(lua_State* const lua)
   {
@@ -1553,8 +1548,6 @@ namespace
     return 0;
   }
 
-  moho::CScrLuaBinder
-    gGroupStoredBinder(moho::SCR_UserLuaInitSet(), "FafreGriffGroupStored", &GroupStored, nullptr, "<global>", kGroupStoredHelp);
   moho::CScrLuaBinder gHudBinder(moho::SCR_UserLuaInitSet(), "FafreGriffHud", &Hud, nullptr, "<global>", kHudHelp);
   moho::CScrLuaBinder gHudPlacesBinder(moho::SCR_UserLuaInitSet(), "FafreGriffHudPlaces", &HudPlaces, nullptr, "<global>", kHudPlacesHelp);
 
@@ -2258,6 +2251,32 @@ namespace
   }
 
   moho::CScrLuaBinder gOrderedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffOrdered", &Ordered, nullptr, "<global>", kOrderedHelp);
+
+  constexpr char kGroupStoredHelp[] = "FafreGriffGroupStored(group, appended, before, after) - a group of Griff's control groups "
+                                      "was stored, by Plus's append or not: the ids of the units it held before and of those now";
+
+  /// A group stored by a rest on its slot (the hook of FAF's controlgroups.lua, after its hint): the activity buzzes once.
+  /// Stored over other units it held (griffundo::StoreSavesWork), it is a record of Griff's own, whose undo gives the group
+  /// those units back (GroupBack); any other store on the group of such a record ends it, as its units would undo that store.
+  int GroupStored(lua_State* const lua)
+  {
+    Say(kSaidGroupStored, 0, 0);
+    const int group = Whole(lua, 1);
+    std::vector<int> before = EntityIdsOf(Text(lua, 3));
+    if (griffundo::StoreSavesWork(Whole(lua, 2) != 0, before, EntityIdsOf(Text(lua, 4)))) {
+      Record stored;
+      stored.kept = Kept::kGroup;
+      stored.group = group;
+      stored.held = std::move(before);
+      Offer(std::move(stored));
+    } else if (gRecord.kept == Kept::kGroup && gRecord.group == group) {
+      EndRecord();
+    }
+    return 0;
+  }
+
+  moho::CScrLuaBinder
+    gGroupStoredBinder(moho::SCR_UserLuaInitSet(), "FafreGriffGroupStored", &GroupStored, nullptr, "<global>", kGroupStoredHelp);
 
   /// Runs griff.lua's function, which answers by FafreGriffAnswer; 0 when it did not.
   [[nodiscard]] int Ask(const char* const command)
@@ -4522,6 +4541,19 @@ namespace
     SayUndone(record.number, kUndoneWhole);
   }
 
+  /// The undo of a control group a rest stored over (Kept::kGroup): the units it held that live are the group again, as FAF
+  /// stores a selection (griff.lua GroupBack), at once, as nothing is clicked or ordered; with none of them alive nothing is
+  /// given back, and the group stays as the store left it.
+  void GroupBack()
+  {
+    Record record = std::move(gRecord);
+    gRecord = Record{};
+    const bool back =
+      moho::UI_GamePlaying()
+      && Ask((std::string(kGriffLua) + "GroupBack(" + std::to_string(record.group) + ", " + UnitList(record.held) + ")").c_str()) == kYes;
+    SayUndone(record.number, back ? kUndoneWhole : kNotUndone);
+  }
+
   /// The undo's button was tapped for record `number`: a gesture's orders taken back, now or once the tick's or another undo's
   /// clicks are over; what a gesture of Griff's own threw away put back at once. A record replaced or ended meanwhile is not
   /// taken back (one level).
@@ -4538,6 +4570,9 @@ namespace
           break;
         case Kept::kDraft:
           DraftBack();
+          break;
+        case Kept::kGroup:
+          GroupBack();
           break;
       }
     } catch (const std::exception& exception) {

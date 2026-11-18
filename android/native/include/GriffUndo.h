@@ -334,6 +334,20 @@ namespace griffundo
     return plans >= 2;
   }
 
+  /// Whether the undo's button offers to give a control group back the units a rest stored over, a record of Griff's own that
+  /// orders nothing (the user's choice of 2026-11-18): where the slot held units, those of them that live `before`, and the
+  /// store put another set there (`after`, the group's units now); not on an empty slot, not where the group holds the very
+  /// units it held, and never for Plus's append (`appended`), which takes none of them out.
+  [[nodiscard]] inline bool StoreSavesWork(const bool appended, std::vector<int> before, std::vector<int> after)
+  {
+    if (appended || before.empty()) {
+      return false;
+    }
+    std::sort(before.begin(), before.end());
+    std::sort(after.begin(), after.end());
+    return before != after;
+  }
+
   /// Whether an order is the script FAF's attack-move button gives (commandmode.lua's OnScriptIssued then asks the sim's
   /// AttackMove callback for an AggressiveMove at its place).
   [[nodiscard]] inline bool AttackMoveScript(const Entry& entry)

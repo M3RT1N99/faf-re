@@ -4,8 +4,8 @@ package io.github.m3rt1n99.fafre;
  * The touch scheme Griff's undo as its button shows it (buildstage/griff-v3-spec.md T3.1, the mockup's armUndo and doUndo; FAF's
  * UI draws the button, griffhud.lua): for 3 s after a gesture ordered where its undo saves work (the program says so only then:
  * a replaced queue that held a building or two orders or more, or the draft's tick), a tap on the button takes the gesture's
- * orders back; so it does for a record of Griff's own that orders nothing, a draft of two plans or more the cross or two
- * fingers' tap dropped, which it puts back. One level: a new record
+ * orders back; so it does for two records of Griff's own that order nothing, a draft of two plans or more the cross or two
+ * fingers' tap dropped and a control group a rest stored over other units, which it puts back. One level: a new record
  * replaces the last, and any other order ends it (the program says so as a record 0). The program holds the record
  * (GriffAndroid.cpp, include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED) and when its undo is over
  * (Game.SAID_UNDONE), which takes as long as the sim takes to take the gesture and FAF's clicks that take its orders back run.

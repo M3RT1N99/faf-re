@@ -15,6 +15,7 @@ local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
 local Prefs = import('/lua/user/prefs.lua')
 local WorldView = import('/lua/ui/game/worldview.lua')
 local CommandMode = import('/lua/ui/game/commandmode.lua')
+local Selection = import('/lua/ui/game/selection.lua')
 local Opened = import('/fafre_ui/lua/fafre/opened.lua')
 local Hud = import('/fafre_ui/lua/fafre/griffhud.lua')
 local Groups = import('/fafre_ui/lua/fafre/griffgroups.lua')
@@ -452,6 +453,19 @@ function SelectGroup(ids, how, camera)
         cam:SetZoom(settings.Zoom, 0)
     end
     cam:RevertRotation()
+end
+
+--- The undo's button gives control group `group` back the units a rest on its slot stored over (the program's GroupBack; the
+--- hook of FAF's controlgroups.lua): FAF's AddSelectionSet, as Ctrl and the number store a selection, whose callbacks show
+--- its control. Those of them that live; answers whether any does.
+function GroupBack(group, ids)
+    local units = UnitsOf(ids)
+    if table.empty(units) then
+        FafreGriffAnswer(No)
+        return
+    end
+    Selection.AddSelectionSet(tostring(group), units)
+    FafreGriffAnswer(Yes)
 end
 
 -- --- The draft ------------------------------------------------------------------------------------------------------------
