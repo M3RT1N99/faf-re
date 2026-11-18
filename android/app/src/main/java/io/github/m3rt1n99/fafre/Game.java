@@ -270,9 +270,10 @@ final class Game {
      * how many numbers that is. SAID_TAP: a tap's number and what it was (TouchInput.TAP_) with the rail's bits it used
      * shifted by 8; SAID_GROUP_STORED: a rest on a slot of Griff's control groups stored a group; SAID_COMMITTED: the draft was
      * ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the program made a pan of;
-     * SAID_ORDERED: a gesture ordered where its undo saves work, the number of its record, which the undo's button takes back
-     * from now on (a record told anew after its undo was not done is offered again), or 0: an order no gesture's, or one whose
-     * undo would save nothing, ended the record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
+     * SAID_ORDERED: a gesture ordered where its undo saves work, or one of Griff's own threw work away (a dropped
+     * draft), the number of its record, which the undo's button takes back from now on (a record told anew after
+     * its undo was not done is offered again), or 0: an order no gesture's, or one whose undo would save nothing, ended the
+     * record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
      * SAID_FORMATION: a drag's number that the program made FAF's formation of, which a drag without its lift gives up.
      */
     static native int griffSaid(int[] said);
@@ -421,7 +422,10 @@ final class Game {
 
     // --- What Griff's gestures order: the undo (buildstage/griff-v3-spec.md, T3.1; Griff v4) -----------------------------
 
-    /** The undo's button was tapped for record `record`: its orders taken back, once no clicks of the tick's or an undo's run. */
+    /**
+     * The undo's button was tapped for record `record`: its orders taken back, once no clicks of the tick's or an undo's run; or
+     * what a record of Griff's own keeps put back at once.
+     */
     static native void griffUndo(int record);
 
     /**

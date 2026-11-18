@@ -356,7 +356,7 @@ the draft is open there is no handle, and a finger makes plans (`TouchInput`'s `
 | Drag with *Box* and a deposit's building picked | From anywhere: a box, FAF's selection box as its world view draws a box drag (`SelectionDragger2D`: a dark fill, a light edge 2 pixels wide), and at the lift every free deposit in it gets a plan; *Box* is used |
 | Drag elsewhere | A pan, whatever the rail says |
 | Rest 400 ms on no plan, without *Box* | The plan its lift places shows under the finger, also where its ground is taken, then red, as FAF's ghost over ground its check refuses, and the lift says "Taken" (a deposit's building shows none where no free deposit is within reach), with a loupe 14 mm above it (below where the top has no room): a circle of 12 mm, the 6 mm about the finger at twice their size, copied from the game's surface (`PixelCopy`, at most 30 times a second; on the emulator 0.6 to 15 ms, median 1.4 ms, for its 71 pixels), with the plan in it, framed by FAF's marker ring (`marker/ring_yellow02.dds`, which FAF's UI lays about the circle where the activity says it is). The copy is kept on the picture (`Draft.loupeFrom`, tested), and the loupe shows it where it was taken: within 3 mm of the picture's edge, or where the finger has moved on since the copy, beside the finger over the game's black, so the finger's spot is always the circle's middle. A copy that fails or comes back blank (the emulator's at the main menu did) shows no loupe, and the game's report says so once. On a panel no loupe, and the lift is the rest's right click there |
-| Two fingers' tap | The draft goes |
+| Two fingers' tap | The draft goes; one of two plans or more comes back by the undo's button (The undo) |
 
 Plans are the ghosts of FAF's build preview (`CBuildDragPreview`: the building's mesh through the UnitPlace shader, `FafreGriffGhost`), in
 its green, red where the ground is taken (another plan's, or FAF's check). The shader draws every ghost at a fifth of its colour, whatever
@@ -397,7 +397,7 @@ The cross is Griff's Esc (the decision of 2026-11-17 on the user's verdict on 0.
 chosen, the building being placed and the selection, as Esc and the right button do on the PC). It shows while the draft is open and
 wherever a PC player's Esc would act in a game (FAF's `eschandler.lua` `HandleEsc`: an armed command mode, else the selection), in its
 place beside the tick's, also where the tick does not show, and a tap puts away one of them, in this order (`include/GriffTap.h`
-`EscapeFor`, tested): the draft goes, with nothing ordered; else the armed command mode ends (`EndCommandMode`, FAF's build mode of its
+`EscapeFor`, tested): the draft goes, with nothing ordered (one of two plans or more comes back by the undo's button); else the armed command mode ends (`EndCommandMode`, FAF's build mode of its
 keys or hotbuild too); else the selection goes (`SelectUnits(nil)`). With none of them it does not show. The program finds each frame
 after its paint whether there is any (`EscapeNow`: the draft, `UI_GetCommandMode`, the session's selection), by which FAF's UI draws
 the cross (`FafreGriffEscapes`) and the activity lays the view that takes its finger (`Game.griffEscapes`); the tap goes by what there
@@ -536,6 +536,13 @@ or two orders or more that come back (a route, a patrol, a line of reclaims), an
 units with one plain move or one assist, offer none, as a Stop or the next order does as much: such an order ends the record before it,
 as any order does, and the activity hears record 0. A factory's own builds and what the orders panel has no mode for count for nothing,
 as no click brings them back; an attack-move's script and its AggressiveMove are one order.
+
+A record is Griff's own, of what a stray gesture throws away that a PC player only throws away by a deliberate key (Esc),
+and orders nothing (the user's choice of 2026-11-18): a draft of two plans or more that the cross or two fingers' tap dropped
+(`include/GriffUndo.h` `DropSavesWork`, tested; a second thumb that brushes the glass in quick taps is two fingers' tap). Its
+undo comes at the tap, with nothing clicked and nothing for the sim: the draft is open again as it was, its plans where they
+stood and its builders with it (`DraftBack`). It is a record as a gesture's is: one level, the next replaces it, any order
+ends it, the button offers it for its 3 s; and so that the undo never undoes what came after, a draft that opens ends it.
 
 The undo's button (Griff v4) is FAF's UI's (`griffhud.lua`): a button of FAF's orders panel (its empty slot's frame,
 `orders/basic-empty_bmp.dds`, at the HUD's factor as its order buttons) with *Undo* in FAF's font, white with a shadow, as FAF writes

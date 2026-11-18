@@ -178,6 +178,7 @@ namespace
   constexpr char kPinchEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').PinchEnd()";
   constexpr char kTypeInView[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').SelectTypeInView()";
   constexpr char kDraftEnded[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').DraftEnded()";
+  constexpr char kDraftBack[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').DraftBack()";
   constexpr char kCommitBegin[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').CommitBegin()";
   constexpr char kCommitEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').CommitEnd()";
   constexpr char kLookBack[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').LookBack()";
@@ -672,16 +673,26 @@ namespace
   Watch gWatch;
   int gWatches = 0;
 
+  /// What a record's undo puts back: a gesture's orders, by FAF's clicks once the sim took them; or, at the undo's tap, what a
+  /// gesture of Griff's own threw away that ordered nothing (Offer): the draft the cross or two fingers' tap dropped.
+  enum class Kept
+  {
+    kOrders,
+    kDraft,
+  };
+
   /// The last gesture that ordered where its undo saves work (SavesWork), which the undo's button takes back: its number (0:
   /// none), whether the button asked for its
   /// undo, which comes once the sim took the gesture and no clicks run, its units as it began with what its orders did to
   /// their queues, whether it ordered units it knew no queue of, the units its Guards went to and the upgrades FAF ordered
   /// for them; the watches it holds (the tap ladder's attack-move joins the move's) and the groups their orders took units
   /// from, where an undo that takes all of it back puts them again (griffgroups::Book::Undone). One level: the next
-  /// gesture's replaces it, and any other order ends it.
+  /// gesture's replaces it, and any other order ends it. A record of Griff's own holds what its gesture threw away instead
+  /// (`kept`): the draft as it was, with its buildings' blueprints.
   struct Record
   {
     int number = 0;
+    Kept kept = Kept::kOrders;
     bool asked = false;
     std::unordered_map<int, Stored> stored;
     bool unknown = false;
@@ -689,6 +700,8 @@ namespace
     int upgrades = 0;
     std::vector<std::uint32_t> gestures;
     std::vector<griffgroups::Earlier> earlier;
+    griffdraft::Draft draft;
+    std::unordered_map<std::string, moho::RUnitBlueprint*> blueprints;
   };
 
   Record gRecord;
@@ -1096,6 +1109,7 @@ namespace
   [[nodiscard]] bool ClicksRun();
   void ReadTaken(std::unordered_map<int, Stored>& stored);
   void DropRecord();
+  void EndRecord();
 
   /// A tick that waits until no clicks run and no finger's drag holds FAF's dragger (DraftCommitTask): whether Plus counted
   /// for it, plus one; 0: none.
@@ -1412,8 +1426,20 @@ namespace
     return blueprint;
   }
 
+  /// The draft is open with this building picked: the next frame shows it, but a finger that comes before needs to know at once.
+  void ShowDraftOpen(const griffdraft::Building& picked)
+  {
+    const float deposit = picked.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f;
+    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+    if (gDraftShown.empty() || gDraftShown[0] == 0) {
+      gDraftShown = {1, deposit, 0, 0, 0, 0};
+    } else {
+      gDraftShown[1] = deposit;
+    }
+  }
+
   /// A building of FAF's construction panel goes into the draft (griff.lua BuildIconClicked), not while the program's clicks
-  /// run, whose draft it is.
+  /// run, whose draft it is. A draft that opens ends the record of one dropped, whose undo would take its place.
   int PickForDraft(lua_State* const lua)
   {
     const char* const id = lua_tostring(lua, 1);
@@ -1427,15 +1453,12 @@ namespace
       gpg::Warnf("Griff: no blueprint %s for the draft", id);
       return 0;
     }
+    if (!gDraft.Open() && gRecord.kept == Kept::kDraft) {
+      EndRecord();
+    }
     gDraftBlueprints[building.id] = blueprint;
     gDraft.Pick(building);
-    // The next frame shows it; a finger that comes before needs to know at once whether the draft is open.
-    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
-    if (gDraftShown.empty() || gDraftShown[0] == 0) {
-      gDraftShown = {1, building.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f, 0, 0, 0, 0};
-    } else {
-      gDraftShown[1] = building.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f;
-    }
+    ShowDraftOpen(building);
     return 0;
   }
 
@@ -2099,13 +2122,30 @@ namespace
   }
 
   /// The undo's record is gone: an order came that no gesture's watch counted, or one whose undo would save nothing, and only
-  /// the last order counts.
+  /// the last order counts; or what a record of Griff's own keeps would undo what came after its gesture.
   void EndRecord()
   {
     if (gRecord.number != 0) {
       DropRecord();
       Say(kSaidOrdered, 0, 0);
     }
+  }
+
+  /// A record of Griff's own (Kept), which ordered nothing: the undo's button takes it back from now on, one level, as a
+  /// gesture's orders (EndWatch), and any order ends it as ever; an undo the button asked for the record it replaces is not
+  /// done.
+  void Offer(Record record)
+  {
+    DropRecord();
+    gRecord = std::move(record);
+    gRecord.number = ++gRecords;
+    Say(kSaidOrdered, gRecord.number, 0);
+  }
+
+  /// Whether the record is a gesture's orders, which the tap ladder's attack-move in place of a move joins.
+  [[nodiscard]] bool OrdersRecorded()
+  {
+    return gRecord.number != 0 && gRecord.kept == Kept::kOrders;
   }
 
   /// Whether FAF's capping may ring this unit for a Guard of engineers on it (capping.lua AssistToCap, 3835): a structure that
@@ -2256,8 +2296,9 @@ namespace
   /// now on, one level, and the activity hears of it (SAID_ORDERED); an undo the button asked for the record it replaces is
   /// not done. An order whose undo would save nothing ends the record before it, as any order does, and offers none. The tap
   /// ladder's attack-move adds to the move's record, whose time goes on, and noted its orders there; where that record ended
-  /// meanwhile, or the move made none, it is an order like any other, whose queues as it began are not known (its own were
-  /// the move's). A unit the gesture ordered whose queue was not known as it began (not selected then) is not taken back.
+  /// meanwhile or one of Griff's own took its place, or the move made none, it is an order like any other, whose queues as it
+  /// began are not known (its own were the move's). A unit the gesture ordered whose queue was not known as it began (not
+  /// selected then) is not taken back.
   void EndWatch()
   {
     if (gWatch.number == 0) {
@@ -2268,7 +2309,7 @@ namespace
     if (!watch.any) {
       return;
     }
-    const bool joined = watch.joins && gRecord.number != 0;
+    const bool joined = watch.joins && OrdersRecorded();
     if (!joined && !SavesWork(watch.tick, watch.stored)) {
       EndRecord();
       return;
@@ -2298,7 +2339,7 @@ namespace
     }
     EndWatch();
     gWatch.number = ++gWatches;
-    gWatch.joins = join && gRecord.number != 0;
+    gWatch.joins = join && OrdersRecorded();
     if (!gWatch.joins) {
       gWatch.stored = StoreSelection();
     }
@@ -4462,22 +4503,51 @@ namespace
     StartClicks(std::move(clicks));
   }
 
-  /// The undo's button was tapped for record `number`: its undo, now or once the tick's or another undo's clicks are over. A record
-  /// replaced or ended meanwhile is not taken back (one level).
+  /// The undo of a draft the cross or two fingers' tap dropped (Kept::kDraft): it is open again as it was, its builders with
+  /// it (griff.lua DraftBack), at once, as nothing is clicked and nothing goes to the sim. No other draft is open by then, as
+  /// one that opens ends the record (PickForDraft), and no clicks run, which only an open draft's tick or an order record's
+  /// undo starts.
+  void DraftBack()
+  {
+    Record record = std::move(gRecord);
+    gRecord = Record{};
+    if (!moho::UI_GamePlaying()) {
+      SayUndone(record.number, kNotUndone);
+      return;
+    }
+    gDraft = std::move(record.draft);
+    gDraftBlueprints = std::move(record.blueprints);
+    ShowDraftOpen(gDraft.Picked());
+    moho::CON_Execute(kDraftBack);
+    SayUndone(record.number, kUndoneWhole);
+  }
+
+  /// The undo's button was tapped for record `number`: a gesture's orders taken back, now or once the tick's or another undo's
+  /// clicks are over; what a gesture of Griff's own threw away put back at once. A record replaced or ended meanwhile is not
+  /// taken back (one level).
   void UndoTask(const WPARAM number)
   {
     try {
-      if (gRecord.number != 0 && static_cast<WPARAM>(gRecord.number) == number) {
-        gRecord.asked = true;
-        TryUndo();
+      if (gRecord.number == 0 || static_cast<WPARAM>(gRecord.number) != number) {
+        return;
+      }
+      switch (gRecord.kept) {
+        case Kept::kOrders:
+          gRecord.asked = true;
+          TryUndo();
+          break;
+        case Kept::kDraft:
+          DraftBack();
+          break;
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
   }
 
-  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered. Not while the program's clicks run, which end
-  /// the tick's draft themselves; a tick that waits goes all the same.
+  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered, and one of plans enough is a record of Griff's
+  /// own (griffundo::DropSavesWork), which the undo's button brings back as it was, at rest where its plans stood. Not while
+  /// the program's clicks run, which end the tick's draft themselves; a tick that waits goes all the same.
   void DraftDropTask(const WPARAM)
   {
     gCommitAsked = 0;
@@ -4485,9 +4555,20 @@ namespace
       if (ClicksRun() || !gDraft.Open()) {
         return;
       }
+      const bool playing = moho::UI_GamePlaying();
+      Record dropped;
+      if (playing && griffundo::DropSavesWork(gDraft.Plans().size())) {
+        dropped.kept = Kept::kDraft;
+        dropped.draft = gDraft;
+        dropped.draft.MoveEnd();
+        dropped.blueprints = gDraftBlueprints;
+      }
       ForgetDraft();
-      if (moho::UI_GamePlaying()) {
+      if (playing) {
         moho::CON_Execute(kDraftEnded);
+      }
+      if (dropped.kept == Kept::kDraft) {
+        Offer(std::move(dropped));
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());

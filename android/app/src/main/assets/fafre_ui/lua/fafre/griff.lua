@@ -456,9 +456,10 @@ end
 
 -- --- The draft ------------------------------------------------------------------------------------------------------------
 
---- The draft's builders: the engineers selected when a building was picked, who build it if none is selected at the tick;
---- the selection the tick replaced; the camera as it was before the tick moved it to a plan.
-local draft = {builders = false, before = false, camera = false}
+--- The draft's builders: the engineers selected when a building was picked, who build it if none is selected at the tick,
+--- and those of the draft that ended last, which the undo's button may bring back; the selection the tick replaced; the
+--- camera as it was before the tick moved it to a plan.
+local draft = {builders = false, ended = false, before = false, camera = false}
 
 --- Whether two lists hold the same units.
 local function SameUnits(units, others)
@@ -505,9 +506,16 @@ function BuildIconClicked(item, modifiers)
     FafreGriffDraft(item.id)
 end
 
---- The draft ended (ticked, dropped, ended by an order mode): its builders are forgotten.
+--- The draft ended (ticked, dropped, ended by an order mode): its builders are forgotten, but for the undo of a drop.
 function DraftEnded()
+    draft.ended = draft.builders
     draft.builders = false
+end
+
+--- The undo's button brought the dropped draft back (the program's DraftBack): its builders are the draft's again.
+function DraftBack()
+    draft.builders = draft.ended
+    draft.ended = false
 end
 
 --- An order mode armed while the draft is open (FAF's orders panel, a key): with plans the draft comes first, by its tick or

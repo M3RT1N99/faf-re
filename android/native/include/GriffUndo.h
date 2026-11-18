@@ -327,6 +327,13 @@ namespace griffundo
     return back >= 2;
   }
 
+  /// Whether the undo's button offers to bring back a draft that the cross or two fingers' tap dropped, a record of Griff's own
+  /// that orders nothing (the user's choice of 2026-11-18): one of two plans or more, as one plan comes back by a tap.
+  [[nodiscard]] constexpr bool DropSavesWork(const std::size_t plans)
+  {
+    return plans >= 2;
+  }
+
   /// Whether an order is the script FAF's attack-move button gives (commandmode.lua's OnScriptIssued then asks the sim's
   /// AttackMove callback for an AggressiveMove at its place).
   [[nodiscard]] inline bool AttackMoveScript(const Entry& entry)

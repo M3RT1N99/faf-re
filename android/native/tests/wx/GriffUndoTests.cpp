@@ -1317,3 +1317,14 @@ WXT_TEST(GriffUndoSavesWorkOnlyForABuildingOrTwoOrdersThatComeBack)
   WXT_CHECK(SavesWork({Order(3, "Patrol", 10, 10), Order(4, "Patrol", 20, 20)}));
   WXT_CHECK(SavesWork({On(Order(3, "Reclaim", 10, 10), 51), On(Order(4, "Reclaim", 12, 10), 52)}));
 }
+
+// A draft the cross or two fingers' tap dropped is a record of Griff's own, which orders nothing: offered from two plans on, as
+// one plan comes back by a tap.
+WXT_TEST(GriffUndoADroppedDraftComesBackFromTwoPlansOn)
+{
+  using griffundo::DropSavesWork;
+  WXT_CHECK(!DropSavesWork(0));
+  WXT_CHECK(!DropSavesWork(1));
+  WXT_CHECK(DropSavesWork(2));
+  WXT_CHECK(DropSavesWork(30));
+}
