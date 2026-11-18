@@ -1527,7 +1527,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                         showRail();
                     }
                 } else if (mGriffSaid[at] == Game.SAID_PAN) {
-                    mTouch.panned(mGriffSaid[at + 1]);
+                    // A second finger that waited for the word becomes one now, on the fingers' clock.
+                    mTouch.panned(mGriffSaid[at + 1], SystemClock.uptimeMillis());
                 } else if (mGriffSaid[at] == Game.SAID_FORMATION) {
                     mTouch.formation(mGriffSaid[at + 1]);
                 } else if (mGriffSaid[at] == Game.SAID_GROUP_STORED) {

@@ -1139,7 +1139,7 @@ public class TouchInputTest {
         down(0, 100, 100, 1000);
         moveFirst(150, 100, 1100);
         // The program says that it made a pan of the drag (Game.SAID_PAN).
-        touch.panned(mouse.lastDrag);
+        touch.panned(mouse.lastDrag, 1150);
         down(1, 400, 100, 1200);
         moveBoth(130, 100, 420, 100);
         expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "griff drag end 150 100", "move 400 100",
@@ -1163,25 +1163,100 @@ public class TouchInputTest {
 
     @Test
     public void griffTheProgramsWordIsForOneDragAlone() {
-        // A pan, its word in time; then a drag on a panel, which no word makes a pan, nor a late word for the pan before.
+        // A pan, its word in time; then a drag on a panel, which no word makes a pan, nor a late word for the pan before: the
+        // second finger waits, and a third is beyond the two a gesture uses.
         griff();
         down(0, 100, 100, 1000);
         moveFirst(150, 100, 1100);
         int pan = mouse.lastDrag;
-        touch.panned(pan);
+        touch.panned(pan, 1150);
         up(0, 1200);
         down(0, 600, 100, 2000);
         moveFirst(650, 100, 2100);
         mouse.events.clear();
         down(1, 900, 100, 2200);
-        touch.panned(pan);
+        touch.panned(pan, 2210);
         down(2, 900, 120, 2250);
         moveBoth(630, 100, 920, 100);
         expect("move 630 100");
-        // Its own word does.
-        touch.panned(mouse.lastDrag);
-        down(3, 900, 100, 2300);
-        assertEquals("griff drag end 630 100", mouse.events.get(1));
+        // Its own word does, and takes the second finger where it is now.
+        touch.panned(mouse.lastDrag, 2300);
+        expect("move 630 100", "griff drag end 630 100", "move 920 100");
+    }
+
+    @Test
+    public void griffASecondFingerBeforeThePansWordIsTakenAtTheWord() {
+        // It landed before the program said that the drag is a pan, one program frame and a post after the drag began: the
+        // word makes two fingers of it, which pinch, as of a finger after the word. Their quick lift is no tap of two: the first
+        // finger had travelled.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1030);
+        down(1, 400, 100, 1060);
+        touch.move(1, 410, 100);
+        touch.moved(1070);
+        touch.panned(mouse.lastDrag, 1090);
+        moveBoth(130, 100, 430, 100);
+        up(1, 1150);
+        up(0, 1160);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 150 100", "griff drag end 150 100",
+               "move 410 100", "pinch start 280 100 300", "pinch start 130 100 0", "pinch end");
+        // Two that stay and lift within 350 ms of the first finger's down.
+        mouse.events.clear();
+        down(0, 100, 100, 3000);
+        moveFirst(150, 100, 3030);
+        down(1, 400, 100, 3060);
+        touch.panned(mouse.lastDrag, 3090);
+        up(1, 3150);
+        up(0, 3160);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+        // With no word, on a panel's drag or a box, it waits for its lift and is no gesture's: the drag goes on to its own lift.
+        mouse.events.clear();
+        down(0, 100, 100, 2000);
+        moveFirst(150, 100, 2030);
+        down(1, 400, 100, 2060);
+        up(1, 2100);
+        moveFirst(170, 100, 2110);
+        up(0, 2200);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 170 100", "griff drag end 170 100");
+    }
+
+    @Test
+    public void griffASecondFingerBeforeTheFormationsWordGivesItUpAtTheWord() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        down(1, 400, 100, 1420);
+        mouse.events.clear();
+        touch.formation(mouse.lastDrag);
+        expect("griff drag given up 200 100", "given up");
+        // Both rest until they lift: no pinch, no order.
+        moveBoth(260, 100, 450, 100);
+        up(1, 1600);
+        up(0, 1700);
+        expect("griff drag given up 200 100", "given up");
+    }
+
+    @Test
+    public void griffTwoFingersAfterAPanAreNoTapOfTwo() {
+        // The first finger panned: with the second still beside it, their quick lift lets nothing go, nor drops the draft.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1040);
+        touch.panned(mouse.lastDrag, 1090);
+        down(1, 400, 100, 1150);
+        up(1, 1250);
+        up(0, 1300);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+        mouse.drafting = true;
+        down(0, 100, 100, 2000);
+        moveFirst(150, 100, 2040);
+        touch.panned(mouse.lastDrag, 2090);
+        down(1, 400, 100, 2150);
+        up(1, 2250);
+        up(0, 2300);
+        assertFalse(mouse.events.toString(), mouse.events.contains("draft drop"));
     }
 
     @Test

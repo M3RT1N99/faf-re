@@ -63,8 +63,8 @@ package io.github.m3rt1n99.fafre;
  *       finger. Where the ladder may climb, the handle leaves the finger's quick lift to it, which is the handle's tap where
  *       it does not climb after all; a rest of that finger or a move past the slop is the handle's, from where it came down;
  *   <li>two fingers zoom at their middle and move the camera with it ({@link Mouse#pinch}), and the one left of them
- *       moves it on; a second finger on a pan, once the program has said it is one ({@link #panned}), makes two of it; a
- *       quick tap of two lets the selection go;
+ *       moves it on; a second finger on a pan, once the program has said it is one ({@link #panned}), makes two of it, as
+ *       does one that came before the word, at the word; a quick tap of two lets the selection go;
  *   <li>the rail's buttons ({@link Mouse#rail}) count for the next action, or while held (Rail says what an action uses); for
  *       a tap or a rest Box as it counted when the finger came down, as FAF's reach for a unit beside the finger was set for
  *       it then ({@link Mouse#griffDown}).
@@ -656,6 +656,14 @@ final class TouchInput implements Fingers {
     private int mDrag;
     private boolean mPanned;
     private boolean mFormation;
+    /**
+     * Griff: a second finger that came while the program had not said what the first one's drag is: no gesture's until the word
+     * comes (#panned, #formation), which takes it as it takes a finger that comes after it; none comes for a box or a panel's
+     * drag, and it waits for its lift. Not `mSecond`, whose lift would end the drag.
+     */
+    private final Finger mWaiting = new Finger();
+    /** Griff: two fingers that began where the first had travelled already, as on a pan: their lift is no tap of two. */
+    private boolean mNoTapOfTwo;
     /** Griff: a rest's ring is shown; the program heard of the rest, and not yet how its gesture went on (Mouse#griffRest). */
     private boolean mRing;
     private boolean mRestSaid;
@@ -733,22 +741,50 @@ final class TouchInput implements Fingers {
 
     /**
      * Griff: the program made a pan of drag number `drag` (Game.SAID_PAN), which only it can tell from a panel's drag or the
-     * minimap's: a second finger turns that drag into two fingers. A word for an earlier drag counts for nothing.
+     * minimap's: a second finger turns that drag into two fingers, and so does one that came before the word, now (`time`, as
+     * a finger's, SystemClock.uptimeMillis). A word for an earlier drag counts for nothing.
      */
-    void panned(int drag) {
-        if (drag == mDrag) {
-            mPanned = true;
+    void panned(int drag, long time) {
+        if (drag != mDrag) {
+            return;
+        }
+        mPanned = true;
+        if (takeWaiting()) {
+            twoOfPan(mWaiting.id, mWaiting.x, mWaiting.y, time);
+            mWaiting.id = -1;
         }
     }
 
     /**
      * Griff: the program made FAF's formation of drag number `drag` (Game.SAID_FORMATION), after a rest on the ground: a second
-     * finger gives it up, nothing ordered. A word for an earlier drag counts for nothing.
+     * finger gives it up, nothing ordered, and so does one that came before the word, now. A word for an earlier drag counts
+     * for nothing.
      */
     void formation(int drag) {
-        if (drag == mDrag) {
-            mFormation = true;
+        if (drag != mDrag) {
+            return;
         }
+        mFormation = true;
+        if (takeWaiting()) {
+            mWaiting.id = -1;
+            giveUpFormation();
+        }
+    }
+
+    /**
+     * Griff: whether a second finger waits for the program's word on the first one's drag, which goes on: the word takes it. A
+     * drag the program's clicks came into is given up instead, and the finger with it.
+     */
+    private boolean takeWaiting() {
+        if (mWaiting.id < 0 || mState != State.PRESSED || !mPressedGriff) {
+            return false;
+        }
+        if (clicksCame()) {
+            mWaiting.id = -1;
+            giveUpForClicks();
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -789,6 +825,7 @@ final class TouchInput implements Fingers {
             finishClick();
             bringCursorBackToGhost();
             mSecond.id = -1;
+            mWaiting.id = -1;
             startOneFinger(id, x, y, time);
         } else if (live() && clicksCame()) {
             // The finger joins a gesture the program's clicks came into: both rest until they lift.
@@ -818,17 +855,14 @@ final class TouchInput implements Fingers {
             restGone();
             startTwo(id, x, y, time);
         } else if (mState == State.PRESSED && mPressedGriff && mPanned) {
-            // Griff: a second finger turns a pan into two fingers, which move the camera themselves. Only a drag that the program
-            // has said is a pan: on a panel or the minimap the left button drags, and the map is not the fingers' to pinch.
-            mMouse.griffDragEnd(mFirst.x, mFirst.y, 0, 0);
-            mPressedGriff = false;
-            startTwo(id, x, y, time);
+            twoOfPan(id, x, y, time);
         } else if (mState == State.PRESSED && mPressedGriff && mFormation) {
-            // Griff: a second finger gives FAF's formation up, nothing ordered, as it gives a route up; both rest until they lift.
-            mMouse.griffDragGiveUp(mFirst.x, mFirst.y);
-            mPressedGriff = false;
-            mMouse.strokeGivenUp();
-            mState = State.SPENT;
+            giveUpFormation();
+        } else if (mState == State.PRESSED && mPressedGriff && mWaiting.id < 0) {
+            // Griff: the program has not said yet what the drag is (one program frame and a post after it began): the finger
+            // waits for its word, which takes it as above.
+            mWaiting.id = id;
+            mWaiting.place(x, y);
         } else if (mState == State.PINCH_PAN) {
             // Griff: a finger again beside the one left of a pinch pinches anew, from where the two are.
             endPinch(false, time);
@@ -849,9 +883,30 @@ final class TouchInput implements Fingers {
         mStartY = middleY();
         mStartDistance = distance();
         mStartTime = time;
+        mNoTapOfTwo = false;
         mLadder.clear();
         mMouse.move(x, y);
         mState = State.TWO_PENDING;
+    }
+
+    /**
+     * Griff: a second finger turns a pan into two fingers, which move the camera themselves. Only a drag that the program has
+     * said is a pan: on a panel or the minimap the left button drags, and the map is not the fingers' to pinch. As the first
+     * finger travelled, their lift is no tap of two.
+     */
+    private void twoOfPan(int id, float x, float y, long time) {
+        mMouse.griffDragEnd(mFirst.x, mFirst.y, 0, 0);
+        mPressedGriff = false;
+        startTwo(id, x, y, time);
+        mNoTapOfTwo = true;
+    }
+
+    /** Griff: a second finger gives FAF's formation up, nothing ordered, as it gives a route up; both rest until they lift. */
+    private void giveUpFormation() {
+        mMouse.griffDragGiveUp(mFirst.x, mFirst.y);
+        mPressedGriff = false;
+        mMouse.strokeGivenUp();
+        mState = State.SPENT;
     }
 
     private void startOneFinger(int id, float x, float y, long time) {
@@ -968,6 +1023,8 @@ final class TouchInput implements Fingers {
             mFirst.place(x, y);
         } else if (id == mSecond.id) {
             mSecond.place(x, y);
+        } else if (id == mWaiting.id) {
+            mWaiting.place(x, y);
         }
     }
 
@@ -1090,6 +1147,10 @@ final class TouchInput implements Fingers {
 
     @Override
     public void up(int id, long time, boolean last) {
+        if (id == mWaiting.id) {
+            // It waited for the program's word, which did not come: it was no gesture's.
+            mWaiting.id = -1;
+        }
         if ((id == mFirst.id || id == mSecond.id) && live() && clicksCame()) {
             giveUpForClicks();
         }
@@ -1147,7 +1208,7 @@ final class TouchInput implements Fingers {
                     break;
                 case TWO_PENDING:
                     // Griff counts both fingers, from the first one down: a finger that rested and a quick second are no tap.
-                    if (time - (mGriff ? mFirstDown : mStartTime) <= TWO_FINGER_TAP_MILLISECONDS) {
+                    if (!mNoTapOfTwo && time - (mGriff ? mFirstDown : mStartTime) <= TWO_FINGER_TAP_MILLISECONDS) {
                         if (mGriff && !mMouse.placing() && mMouse.drafting()) {
                             mMouse.draftDrop();
                         } else if (mGriff && !mMouse.placing()) {
@@ -1185,6 +1246,7 @@ final class TouchInput implements Fingers {
             mState = State.NONE;
             mFirst.id = -1;
             mSecond.id = -1;
+            mWaiting.id = -1;
             mMouse.leaveSoon();
         }
     }
@@ -1195,7 +1257,10 @@ final class TouchInput implements Fingers {
      */
     @Override
     public void forget(int id, long time) {
-        if ((id == mFirst.id || id == mSecond.id) && live() && clicksCame()) {
+        if (id == mWaiting.id) {
+            // A palm that waited for the program's word.
+            mWaiting.id = -1;
+        } else if ((id == mFirst.id || id == mSecond.id) && live() && clicksCame()) {
             // The finger left rests, as the gesture it was part of is given up.
             giveUpForClicks();
         } else if (mState == State.TWO_PENDING && (id == mFirst.id || id == mSecond.id)) {
