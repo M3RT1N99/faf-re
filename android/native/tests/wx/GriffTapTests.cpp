@@ -1,5 +1,5 @@
-// What a tap of the touch scheme Griff uses (include/GriffTap.h): the rail's buttons by what the tap turned out to be, and FAF's
-// reach for a unit beside it as the console's text.
+// What a tap of the touch scheme Griff uses (include/GriffTap.h): the rail's buttons by what the tap turned out to be, FAF's
+// reach for a unit beside it as the console's text, what the cross puts away, and where a drag on FAF's UI presses nothing.
 
 #include <cstdlib>
 #include <string>
@@ -21,6 +21,20 @@ namespace
   float Read(const std::string& text)
   {
     return static_cast<float>(std::atof(text.c_str()));
+  }
+
+  /// A control of FAF's UI as the program walks it for a drag's press: its parent, and whether it is a Checkbox.
+  struct Control
+  {
+    const Control* parent;
+    bool checkbox;
+  };
+
+  bool PressesNothing(const Control* const control)
+  {
+    return grifftap::DragPressesNothing(
+      control, [](const Control* const at) { return at->parent; }, [](const Control* const at) { return at->checkbox; }
+    );
   }
 } // namespace
 
@@ -63,6 +77,28 @@ WXT_TEST(GriffEscapePutsAwayTheDraftThenTheModeThenTheSelection)
   WXT_CHECK_EQ(EscapeFor(false, false, true), Escape::kDeselect);
   // With none of them the cross does not show.
   WXT_CHECK_EQ(EscapeFor(false, false, false), Escape::kNothing);
+}
+
+WXT_TEST(GriffTapADragPressesNothingWhereItsPressComesToACheckbox)
+{
+  // The orders panel's grid of Checkboxes (orders.lua AddOrder), one a toggle with its ring over it, which takes hit tests,
+  // and the construction panel's grid of FAF's buttons beside it.
+  const Control root{nullptr, false};
+  const Control orders{&root, false};
+  const Control stop{&orders, true};
+  const Control toggle{&orders, true};
+  const Control ring{&toggle, false};
+  const Control construction{&root, false};
+  const Control queued{&construction, false};
+  WXT_CHECK(PressesNothing(&stop));
+  // The press on the ring goes on to the toggle, which acts on it.
+  WXT_CHECK(PressesNothing(&ring));
+  // A factory queue's item keeps its press, which its drag to reorder starts with; so does the panel between the buttons.
+  WXT_CHECK(!PressesNothing(&queued));
+  WXT_CHECK(!PressesNothing(&orders));
+  WXT_CHECK(!PressesNothing(&root));
+  // Where no control takes the press, a mouse's drag presses as ever.
+  WXT_CHECK(!PressesNothing(nullptr));
 }
 
 WXT_TEST(GriffTapReachIsReadBackAsTheSameFloat)

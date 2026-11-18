@@ -287,6 +287,22 @@ namespace
     return view != nullptr && !view->IsMiniMap();
   }
 
+  /// Whether a press here comes to a Checkbox of FAF's, which acts on the press (grifftap::DragPressesNothing): the control
+  /// under it or a parent whose Lua object has Checkbox's ToggleCheck (maui/checkbox.lua), its class's as FAF's Lua finds it.
+  [[nodiscard]] bool PressComesToCheckbox(const float x, const float y)
+  {
+    moho::CMauiControl* const root = InputRoot();
+    return root != nullptr
+        && grifftap::DragPressesNothing(
+             moho::CMauiControl::GetTopmostControl(root, x, y), [](moho::CMauiControl* const control) { return control->GetParent(); },
+             [](moho::CMauiControl* const control) {
+               LuaPlus::LuaObject toggle;
+               control->FindScript(&toggle, "ToggleCheck");
+               return toggle.IsFunction();
+             }
+           );
+  }
+
   /// Whether FAF's Lua has armed a command mode, which the next click on the map gives. Only with the session's UI up.
   [[nodiscard]] bool CommandModeArmed()
   {
@@ -2958,8 +2974,9 @@ namespace
   /// neither a waypoint nor the ground for a formation, a selection box from where it came down, which Plus makes add to the
   /// selection (Shift's); after a rest on the ground the right button's from there, FAF's formation, which turns to face the
   /// way the finger goes and is ordered at the lift (with Shift for Plus); after a rest on a waypoint nothing, as the finger
-  /// slid off the waypoint it marked; on a panel or the minimap the left button's from there, as a mouse drags there. The
-  /// activity hears which drag is a pan, which a second finger makes two of.
+  /// slid off the waypoint it marked; on a panel or the minimap the left button's from there, as a mouse drags there, but
+  /// from a Checkbox of FAF's nothing, also after a rest on it, as its press would act (PressComesToCheckbox). The activity
+  /// hears which drag is a pan, which a second finger makes two of.
   void DragTask(const WPARAM)
   {
     DragStart drag;
@@ -2977,6 +2994,7 @@ namespace
     const bool formation = drag.rested && gRest.formation;
     ForgetRest();
     bool map = false;
+    bool checkbox = false;
     try {
       const bool playing = moho::UI_GamePlaying();
       // A box, a panel's drag or a pan would come between the undo's or the tick's clicks; and one of the app's pieces that
@@ -2985,10 +3003,13 @@ namespace
         return;
       }
       map = playing && OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
+      checkbox = !map && PressComesToCheckbox(static_cast<float>(drag.x), static_cast<float>(drag.y));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
-    if (!map) {
+    if (checkbox) {
+      // A slide from the button presses nothing, as a mouse's: the pointer only goes with the finger.
+    } else if (!map) {
       gDrag = Drag::kPanel;
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, drag.x, drag.y);
     } else if (rest == Rest::kWaypoint) {

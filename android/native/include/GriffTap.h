@@ -1,9 +1,9 @@
 #pragma once
 
 // What a tap of the touch scheme Griff (android/TOUCH_UI.md, "Griff") uses: of the rail's buttons those its outcome used (the
-// rule of the app's Rail.java), and FAF's reach for a unit beside it as the console's text; and what the tap on Griff's Esc,
-// the cross, does. The program decides a tap (src/host/GriffAndroid.cpp); here the rules alone, for their tests
-// (tests/wx/GriffTapTests.cpp).
+// rule of the app's Rail.java), and FAF's reach for a unit beside it as the console's text; what the tap on Griff's Esc, the
+// cross, does; and where a finger's drag on FAF's UI presses nothing. The program decides a tap (src/host/GriffAndroid.cpp);
+// here the rules alone, for their tests (tests/wx/GriffTapTests.cpp).
 
 #include <cstdio>
 #include <limits>
@@ -61,6 +61,26 @@ namespace grifftap
       return Escape::kEndCommandMode;
     }
     return selected ? Escape::kDeselect : Escape::kNothing;
+  }
+
+  /// Whether a finger's drag that starts on FAF's UI presses nothing where it came down (DragTask presses the left button
+  /// there, as a mouse's drag): where the press comes to a Checkbox of FAF's (maui/checkbox.lua), which acts on the press, as
+  /// the orders panel's buttons and toggles, the construction panel's tabs and the panels' collapse arrows do. A thumb that
+  /// slid from the orders panel onto the map fired the button it started on, Stop or a toggle, which no mouse does by
+  /// sliding, and a rest that reads a tooltip had no way off it that did nothing. A press goes on from the control under the
+  /// finger to its parents (CMauiControl::PostEvent), so a mark over a button that takes hit tests of its own (an order
+  /// toggle's ring, its question mark for a mixed selection) counts as the button. What acts at the release or by its drag
+  /// keeps its press: FAF's buttons (the build icons, the factory queue's reorder), the minimap, windows, scroll bars,
+  /// sliders. `parent` gives a control's parent, none above the root; `checkbox` whether a control is a Checkbox.
+  template <class Control, class Parent, class IsCheckbox>
+  [[nodiscard]] bool DragPressesNothing(Control* control, Parent&& parent, IsCheckbox&& checkbox)
+  {
+    for (; control != nullptr; control = parent(control)) {
+      if (checkbox(control)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// A float as the console's text, which the console reads back as the same float (std::atof, then a float: its
