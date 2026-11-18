@@ -1,5 +1,6 @@
 // What a tap of the touch scheme Griff uses (include/GriffTap.h): the rail's buttons by what the tap turned out to be, FAF's
-// reach for a unit beside it as the console's text, what the cross puts away, and where a drag on FAF's UI presses nothing.
+// reach for a unit beside it as the console's text, what the cross puts away, where a drag on FAF's UI presses nothing, and
+// when the pointer leaves while Griff's Distribute orders holds the cursor.
 
 #include <cstdlib>
 #include <string>
@@ -99,6 +100,33 @@ WXT_TEST(GriffTapADragPressesNothingWhereItsPressComesToACheckbox)
   WXT_CHECK(!PressesNothing(&root));
   // Where no control takes the press, a mouse's drag presses as ever.
   WXT_CHECK(!PressesNothing(nullptr));
+}
+
+WXT_TEST(GriffTapThePointersLeaveWaitsWhileDistributeOrdersHoldsTheCursor)
+{
+  // The activity asks for the leave 300 ms after the last finger lifted, with the count of fingers that had come down then.
+  grifftap::Leave leave;
+  WXT_CHECK(leave.Asked(3, 3, false, false));
+  // A finger came since: the pointer is its own. Griff's clicks run: their end has it leave anew. Neither waits.
+  WXT_CHECK(!leave.Asked(3, 4, false, false));
+  WXT_CHECK(!leave.Asked(3, 3, true, false));
+  WXT_CHECK(!leave.Asked(3, 3, true, true));
+  WXT_CHECK(!leave.Freed(4, false));
+  // The handle's lift that distributes: the frame came after the leave, which waits until Griff frees the cursor.
+  WXT_CHECK(!leave.Asked(5, 5, false, true));
+  WXT_CHECK(leave.Freed(5, false));
+  // Once: the next free has nothing that waits.
+  WXT_CHECK(!leave.Freed(5, false));
+  // A finger that came while the leave waited keeps the pointer, as do Griff's clicks that run when it is freed.
+  WXT_CHECK(!leave.Asked(6, 6, false, true));
+  WXT_CHECK(!leave.Freed(7, false));
+  WXT_CHECK(!leave.Asked(8, 8, false, true));
+  WXT_CHECK(!leave.Freed(8, true));
+  WXT_CHECK(!leave.Freed(8, false));
+  // Of two leaves asked while the cursor is held, the later counts: the fingers that came between have lifted again.
+  WXT_CHECK(!leave.Asked(9, 9, false, true));
+  WXT_CHECK(!leave.Asked(10, 10, false, true));
+  WXT_CHECK(leave.Freed(10, false));
 }
 
 WXT_TEST(GriffTapReachIsReadBackAsTheSameFloat)

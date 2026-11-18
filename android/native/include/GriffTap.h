@@ -2,9 +2,11 @@
 
 // What a tap of the touch scheme Griff (android/TOUCH_UI.md, "Griff") uses: of the rail's buttons those its outcome used (the
 // rule of the app's Rail.java), and FAF's reach for a unit beside it as the console's text; what the tap on Griff's Esc, the
-// cross, does; and where a finger's drag on FAF's UI presses nothing. The program decides a tap (src/host/GriffAndroid.cpp);
-// here the rules alone, for their tests (tests/wx/GriffTapTests.cpp).
+// cross, does; where a finger's drag on FAF's UI presses nothing; and when the pointer leaves after a lift that Griff's
+// Distribute orders holds the cursor for. The program decides a tap (src/host/GriffAndroid.cpp); here the rules alone, for
+// their tests (tests/wx/GriffTapTests.cpp).
 
+#include <cstdint>
 #include <cstdio>
 #include <limits>
 #include <string>
@@ -82,6 +84,44 @@ namespace grifftap
     }
     return false;
   }
+
+  /// The pointer's leave once the last finger has lifted (src/host/GameHost.cpp PointerLeave), by how many fingers had come down
+  /// when the activity asked for it: none where a finger came since, nor while Griff's own clicks run, whose end has the
+  /// pointer leave anew. While Griff holds the cursor where it put it, which its Distribute orders does until a frame was drawn
+  /// with the cursor at the group's middle (FAF reads the world place under it), the leave waits and comes once Griff frees the
+  /// cursor: the handle's lift asks for it, and where the frame came after the leave, the leave took the cursor off the group
+  /// and the lift gave nothing but Cancelled.
+  class Leave
+  {
+  public:
+    /// A leave asked when `fingersThen` fingers had come down, now `fingersNow`: whether the pointer leaves now.
+    [[nodiscard]] bool Asked(const std::uintptr_t fingersThen, const std::uintptr_t fingersNow, const bool clicking, const bool held)
+    {
+      if (fingersNow != fingersThen || clicking) {
+        return false;
+      }
+      if (held) {
+        mWaits = true;
+        mFingersThen = fingersThen;
+        return false;
+      }
+      return true;
+    }
+
+    /// Griff frees the cursor: whether the leave that waited for it comes now, by the same rules.
+    [[nodiscard]] bool Freed(const std::uintptr_t fingersNow, const bool clicking)
+    {
+      if (!mWaits) {
+        return false;
+      }
+      mWaits = false;
+      return Asked(mFingersThen, fingersNow, clicking, false);
+    }
+
+  private:
+    bool mWaits = false;
+    std::uintptr_t mFingersThen = 0;
+  };
 
   /// A float as the console's text, which the console reads back as the same float (std::atof, then a float: its
   /// ParseFloatToken): as many digits as a float needs for that, where %g's six round most reaches to another float.

@@ -12,4 +12,13 @@ namespace hostclicks
   /// Whether Griff's own clicks run, the draft's tick's or the undo's (GriffAndroid.cpp): a finger's input reaches the game no
   /// more meanwhile.
   [[nodiscard]] bool GriffClicking() noexcept;
+
+  /// Whether Griff holds the cursor where it put it (GriffAndroid.cpp): its Distribute orders waits for a frame drawn with the
+  /// cursor at the group's middle, within the clicks' patience. The pointer's leave waits for it (grifftap::Leave). On the
+  /// program's thread.
+  [[nodiscard]] bool GriffHoldsCursor() noexcept;
+
+  /// Griff holds the cursor no more (GriffAndroid.cpp): the pointer's leave that waited for it comes now, unless a finger came
+  /// since it was asked (GameHost.cpp). On the program's thread.
+  void CursorFreed();
 } // namespace hostclicks

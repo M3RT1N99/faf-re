@@ -1127,7 +1127,8 @@ namespace
   WPARAM gCommitAsked = 0;
 
   /// FAF's Distribute orders that waits for a frame drawn with the cursor at the group's middle (DistributeTask): where the
-  /// cursor is, the frame it waits after, and since when (0: none waits).
+  /// cursor is, the frame it waits after, and since when (0: none waits). Meanwhile Griff holds the cursor, and the pointer's
+  /// leave that the handle's lift asked for waits (hostclicks::GriffHoldsCursor).
   struct Distributing
   {
     POINT cursor{};
@@ -1137,6 +1138,13 @@ namespace
 
   Distributing gDistributing;
   void DistributeAfterFrame();
+
+  /// No Distribute orders waits for its frame any more: the pointer's leave that waited for it comes now.
+  void StopDistributing()
+  {
+    gDistributing = Distributing{};
+    hostclicks::CursorFreed();
+  }
 
   /// How FAF's panels along the view's edges are told (cameraclear::Rules), the pixels as parts of the view's height: the
   /// pieces of a panel overlap by more than 0.4 % (3 of the phone's 768 lines, where FAF's unit view lies 2 of them on its
@@ -1375,7 +1383,7 @@ namespace
     }
     // A rest's mark and its Shift go with the game, as does a Distribute orders that waits for a frame.
     ForgetRest();
-    gDistributing = Distributing{};
+    StopDistributing();
     // The orders of this game: no watch, record or undo button any more; an undo the button asked for that waits is not done.
     gWatch = Watch{};
     DropRecord();
@@ -2795,11 +2803,12 @@ namespace
   }
 
   /// The lift of the handle's rest that distributes (Game.distribute): the cursor goes to the group's middle, where it stays for
-  /// a drawn frame, as FAF reads the world place under the cursor with the frame's (DistributeAfterFrame, from PlaceTask).
+  /// a drawn frame, as FAF reads the world place under the cursor with the frame's (DistributeAfterFrame, from PlaceTask). The
+  /// pointer's leave that the lift asked for waits for it: on a slow frame it came first and took the cursor off the group.
   /// Where the group's middle left the map since the rest, nothing, which says Cancelled. Not between the program's clicks.
   void DistributeTask(const WPARAM)
   {
-    gDistributing = Distributing{};
+    StopDistributing();
     try {
       int x = 0;
       int y = 0;
@@ -2825,23 +2834,23 @@ namespace
   /// After a frame drew the cursor at the group's middle: FAF's own key action G, Distribute orders, which takes the selection's
   /// non-factory unit nearest the cursor's world place, clears every unit's queue and deals that unit's orders out over them,
   /// and says what it did where FAF prints its messages ('Distributing orders'). The undo's record ends, as G gives every queue
-  /// anew, which no record takes back. Where the cursor moved meanwhile (a finger, the pointer's leave) or no frame came in the
-  /// clicks' patience, nothing, which says Cancelled; nothing between the program's clicks.
+  /// anew, which no record takes back. Where the cursor moved meanwhile (a finger) or no frame came in the clicks' patience,
+  /// nothing, which says Cancelled; nothing between the program's clicks. Then the pointer's leave comes, which waited for this.
   void DistributeAfterFrame()
   {
     const Distributing waited = gDistributing;
     gDistributing = Distributing{};
-    if (!moho::UI_GamePlaying() || ClicksRun()) {
-      return;
+    if (moho::UI_GamePlaying() && !ClicksRun()) {
+      POINT cursor{};
+      (void)::GetCursorPos(&cursor);
+      if (cursor.x != waited.cursor.x || cursor.y != waited.cursor.y || Outwaited(waited.since, Now())) {
+        Hint(kHintCancelled);
+      } else {
+        moho::CON_Execute(kDistributeOrders);
+        EndRecord();
+      }
     }
-    POINT cursor{};
-    (void)::GetCursorPos(&cursor);
-    if (cursor.x != waited.cursor.x || cursor.y != waited.cursor.y || Outwaited(waited.since, Now())) {
-      Hint(kHintCancelled);
-      return;
-    }
-    moho::CON_Execute(kDistributeOrders);
-    EndRecord();
+    hostclicks::CursorFreed();
   }
 
   // --- Drags, the pan's glide and the pinch ---------------------------------------------------------
@@ -5145,4 +5154,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffClickR
 bool hostclicks::GriffClicking() noexcept
 {
   return gClicking.load();
+}
+
+bool hostclicks::GriffHoldsCursor() noexcept
+{
+  // As the clicks' wait, only within their patience: without frames (the activity in the back) the leave is not held for good.
+  return gDistributing.since != 0 && !Outwaited(gDistributing.since, Now());
 }

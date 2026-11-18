@@ -47,6 +47,8 @@
 #include <Win32AndroidHost.h>
 #include <winsock2.h>
 
+#include <GriffTap.h>
+
 #include "../audio/FAudioPlatformAndroid.h"
 #include "HostClicks.h"
 #include "KeysAndroid.h"
@@ -458,21 +460,37 @@ namespace
   /// How many fingers have come down: a leave that was given before the last of them has come too late.
   std::atomic<WPARAM> gFingersDown{0};
 
-  /// On the program's thread, unless a finger has come since: the pointer leaves what it is over, as a mouse that leaves the
-  /// window does, so that rollovers and tooltips go. A building's ghost follows the pointer over the world, and stays with it.
-  /// So does the cursor Griff's own clicks aim with while they run, which a finger lifted before they began would take away.
-  void PointerLeave(const WPARAM fingersDownThen)
+  /// Whether the pointer's leave comes, and the one that waits while Griff holds the cursor (on the program's thread).
+  grifftap::Leave gLeave;
+
+  /// The pointer leaves what it is over, as a mouse that leaves the window does, so that rollovers and tooltips go. A
+  /// building's ghost follows the pointer over the world, and stays with it.
+  void LeaveNow()
   {
-    if (gFingersDown.load() != fingersDownThen || hostclicks::GriffClicking()) {
-      return;
-    }
     POINT cursor{};
     (void)::GetCursorPos(&cursor);
     if (!moho::UI_GhostWaitsAt(static_cast<float>(cursor.x), static_cast<float>(cursor.y))) {
       Win32Android_MouseMove(kPointerAway, kPointerAway);
     }
   }
+
+  /// On the program's thread, unless a finger has come since: the pointer leaves (LeaveNow). It stays with the cursor Griff's
+  /// own clicks aim with while they run, which a finger lifted before they began would take away; where Griff holds the cursor
+  /// for its Distribute orders' frame, the leave comes once it is freed (hostclicks::CursorFreed).
+  void PointerLeave(const WPARAM fingersDownThen)
+  {
+    if (gLeave.Asked(fingersDownThen, gFingersDown.load(), hostclicks::GriffClicking(), hostclicks::GriffHoldsCursor())) {
+      LeaveNow();
+    }
+  }
 } // namespace
+
+void hostclicks::CursorFreed()
+{
+  if (gLeave.Freed(gFingersDown.load(), hostclicks::GriffClicking())) {
+    LeaveNow();
+  }
+}
 
 /// On the program's thread, which knows the controls around the place.
 void hostclicks::ClickNear(const float x, const float y, const float reach, const float smallSide, const int button)
