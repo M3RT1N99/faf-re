@@ -1100,7 +1100,7 @@ public class TouchInputTest {
         up(1, 1360);
         up(0, 1370);
         assertFalse(mouse.events.contains("deselect"));
-        // 1.4 mm apart more still taps; 1.5 mm pinches.
+        // Their distance 1.4 mm longer still taps; 1.6 mm longer pinches, though each finger moved 0.8 mm about a still middle.
         down(0, 100, 50, 2000);
         down(1, 200, 50, 2050);
         moveBoth(93, 50, 207, 50);
