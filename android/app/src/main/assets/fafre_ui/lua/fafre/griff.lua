@@ -457,7 +457,8 @@ end
 
 --- The undo's button gives control group `group` back the units a rest on its slot stored over (the program's GroupBack; the
 --- hook of FAF's controlgroups.lua): FAF's AddSelectionSet, as Ctrl and the number store a selection, whose callbacks show
---- its control. Those of them that live; answers whether any does.
+--- its control and, as for any store, send the sim FAF's OnControlGroupAssign, which orders nothing. Those of them that live;
+--- answers whether any does.
 function GroupBack(group, ids)
     local units = UnitsOf(ids)
     if table.empty(units) then

@@ -6,8 +6,9 @@ package io.github.m3rt1n99.fafre;
  * a replaced queue that held a building or two orders or more, or the draft's tick), a tap on the button takes the gesture's
  * orders back; so it does for two records of Griff's own that order nothing, a draft of two plans or more the cross or two
  * fingers' tap dropped and a control group a rest stored over other units, which it puts back. One level: a new record
- * replaces the last, and any other order ends it (the program says so as a record 0). The program holds the record
- * (GriffAndroid.cpp, include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED) and when its undo is over
+ * replaces the last, and any other order ends it, as do FAF's Distribute orders, a draft that opens in place of a dropped
+ * one's and a store that changes the group of a group's record (the program says so as a record 0). The program holds the
+ * record (GriffAndroid.cpp, include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED) and when its undo is over
  * (Game.SAID_UNDONE), which takes as long as the sim takes to take the gesture and FAF's clicks that take its orders back run.
  * Between the tap and then the button says it waits, also past its 3 s. An undo that clicked nothing leaves the record as it
  * was: the program tells it anew, and the button offers it again for its 3 s.

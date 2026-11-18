@@ -274,8 +274,9 @@ final class Game {
      * ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the program made a pan of;
      * SAID_ORDERED: a gesture ordered where its undo saves work, or one of Griff's own threw work away (a dropped draft, a
      * group stored over), the number of its record, which the undo's button takes back from now on (a record told anew after
-     * its undo was not done is offered again), or 0: an order no gesture's, or one whose undo would save nothing, ended the
-     * record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
+     * its undo was not done is offered again), or 0: the record ended, by an order no gesture's or one whose undo would save
+     * nothing, FAF's Distribute orders, a draft that opened in place of a dropped one's, or a store that changed the group of a
+     * group's record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
      * SAID_FORMATION: a drag's number that the program made FAF's formation of, which a drag without its lift gives up;
      * SAID_DRAFT_REST: a rest's number in the draft ({@link #draftRest}) and 1 where its finger is on FAF's UI, else 0;
      * SAID_DISTRIBUTES: a rest's number on the handle ({@link #handleRest}) and 1 where its lift gives FAF's Distribute orders.
