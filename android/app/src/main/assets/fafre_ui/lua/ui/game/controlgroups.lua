@@ -9,6 +9,7 @@ do
     local ok, problem = pcall(function()
         local Scale = import('/fafre_ui/lua/fafre/scale.lua')
         local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
+        local Prefs = import('/lua/user/prefs.lua')
         local SLOTS = {'1', '2', '3'}
         -- FAF's first group stands 10 of its pixels into the panel and 15 from its right, each next one 8 over the one before
         -- (controlgroups_mini.lua LayoutGroups).
@@ -48,7 +49,9 @@ do
         --- A rest on a slot, FAF's right press: the selection is the group from now on (Ctrl and its number's key action), or with
         --- Plus (Shift) it joins the group, as FAF's own right press does. With nothing selected the group stays as it was. The
         --- phone buzzes once for a group stored, and the program hears what the group held and holds now: the undo's button
-        --- gives back the units a store put others in place of.
+        --- gives back the units a store put others in place of. With FAF's option to steal from other control groups On (Off by
+        --- default), a store takes its units out of the other groups they were in without a word (selection.lua AddSelectionSet),
+        --- and so would the undo's: the program hears it as Plus's append, which offers no undo.
         local function Store(name, add)
             if table.empty(GetSelectedUnits() or {}) then
                 Hint(NOTHING_SELECTED)
@@ -61,7 +64,8 @@ do
                 ConExecute('UI_MakeSelectionSet ' .. name)
             end
             Hint(GROUP_STORED, tonumber(name))
-            FafreGriffGroupStored(tonumber(name), add and 1 or 0, Ids(before), Ids(Living(name)))
+            local asAppend = add or Prefs.GetFromCurrentProfile('options.steal_from_other_control_groups') == 'On'
+            FafreGriffGroupStored(tonumber(name), asAppend and 1 or 0, Ids(before), Ids(Living(name)))
         end
 
         --- The right press on a slot is Store's; FAF's own control's other presses are FAF's (`faf`, its handler). An empty

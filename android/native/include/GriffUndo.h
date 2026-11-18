@@ -354,7 +354,9 @@ namespace griffundo
   /// Whether the undo's button offers to give a control group back the units a rest stored over, a record of Griff's own that
   /// orders nothing (the user's choice of 2026-11-18): where the store took out a unit that lived, one of `before`, the
   /// group's units that lived as it came, that `after`, those it holds now, lacks. Not for a store on an empty slot, nor for
-  /// one that kept every unit and added others, and never for Plus's append (`appended`), which takes none of them out.
+  /// one that kept every unit and added others, and never for Plus's append (`appended`), which takes none of them out. The
+  /// hook says the same of any store while FAF's option to steal from other control groups is On (Off by default), which
+  /// takes the stored units out of their other groups without a word (selection.lua AddSelectionSet), as the undo's would.
   [[nodiscard]] inline bool StoreSavesWork(const bool appended, std::vector<int> before, std::vector<int> after)
   {
     if (appended) {

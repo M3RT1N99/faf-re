@@ -2278,7 +2278,8 @@ namespace
   moho::CScrLuaBinder gOrderedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffOrdered", &Ordered, nullptr, "<global>", kOrderedHelp);
 
   constexpr char kGroupStoredHelp[] = "FafreGriffGroupStored(group, appended, before, after) - a group of Griff's control groups "
-                                      "was stored, by Plus's append or not: the ids of the units it held before and of those now";
+                                      "was stored, by Plus's append (or while FAF's option to steal from other control groups "
+                                      "is On) or not: the ids of the units it held before and of those now";
 
   /// A group stored by a rest on its slot (the hook of FAF's controlgroups.lua, after its hint): the activity buzzes once.
   /// Where the store took out units it held that lived, it is a record of Griff's own, whose undo gives the group those units
