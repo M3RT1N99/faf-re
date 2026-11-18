@@ -357,3 +357,30 @@ from the head's builds; both native presets build.
   *S* the orders' Stop).
 - **Next**: the touch half of stage 2b (the touch schemes, Griff v4 and the pages on SDL's input) once Griff v4 is merged
   in from android-client.
+
+*2026-11-19, C5's GPGNet connect on the SDL3 client:* the FAF client, the phone's launcher in the same APK, hosts GPGNet
+and starts the game with `/gpgnet 127.0.0.1:<port>` (`docs/LAUNCHER_NATIVE_NETWORK.md`); the game connects to it over
+TCP ([native README](native/README.md), The network). On the emulator (fafre_api36, x86_64), with the activity's
+`LAUNCHER_ARGUMENTS` and `adb reverse` to `android/tools/gpgnet_host.py` on the PC:
+- **The connect needed no change.** GPGNet's socket is the engine's TCP stream on `platform::net`, which the build already
+  made as Linux does; the patch of `CGpgNetInterface.cpp` stopped only the other way, the launch through `/bin/sh`. The
+  game connected some 7 s after its start, said `GameState Idle`, and on `CreateLobby [0, 0, "tester", 1, 1]` answered
+  `GameState Lobby` within 30 ms and showed FAF's lobby (*Connecting...*, which waits for `HostGame` or `JoinGame`), its
+  UDP port open and the network service running. When the launcher closed the connection 25 s later, the game stayed in
+  its lobby, as before.
+- **A launcher that is not there** left the game on gpgnet.lua's black screen for good: a refused connect
+  (`WSAECONNREFUSED`) and a connection closed before `CreateLobby` were each one warning of an unknown command, and Back
+  ran into a Lua error of FAF's Esc handler. Now the game says so in a box and ends after its OK (`exit 0`, so a launcher
+  gets `RESULT_CANCELED`), both checked. On POSIX `WIN_OkBox` wrote to stderr alone, so that none of the engine's boxes came
+  to a screen; it shows SDL's now (`patches/README.md`).
+- **Found for native mode:** upstream's `CNetTCPBuf::Read` counts too few bytes for a read of 2 KB or more that it takes
+  from the socket itself, so a launcher's argument with 2 KB or more left after what the stream's buffer holds of it ends
+  the game's GPGNet connection (`CommunicationError`); one of 4 KB does so wherever it starts. FAF's messages to the game
+  are shorter; an ICE server list (`IceServers`) or a peer's `IceMsg` need not be. `faf_net_tests` pins it.
+- **Tests**: `faf_net_tests` checks GPGNet's socket (23 tests), with `faf_griff_tests` (140), `faf_shell_tests` (5) and
+  `faf_movie_tests` (three movies) passing on the x86_64 emulator; the app's unit tests (372, 2 skipped) pass; both native
+  presets build.
+- **Not shown**: anything on a phone or on arm64 beyond the build; the FAF client as the launcher; `HostGame`, `JoinGame`
+  and a whole online game; the end of a `/rejoin` start or a server session whose launcher is not there (by reading
+  only: they go on, as before).
+- **Next**: the game's own links in native mode (`/nativenet`), with netlink's libraries built for Android.
