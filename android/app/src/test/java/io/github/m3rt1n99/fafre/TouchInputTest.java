@@ -1405,6 +1405,26 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffATwoFingerTapWhoseFirstFingerIsOnTheHandleLetsTheSelectionGo() {
+        // The first finger had not left the handle: no stroke was given up, and the two are two fingers, as anywhere else.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 50, 1000);
+        down(1, 300, 50, 1020);
+        assertEquals("the stroke went", 0, mouse.shown);
+        up(1, 1120);
+        up(0, 1130);
+        expect("move 300 50", "deselect");
+        // They pinch where they move.
+        mouse.events.clear();
+        down(0, 100, 50, 2000);
+        down(1, 300, 50, 2020);
+        moveBoth(80, 50, 320, 50);
+        assertTrue(mouse.events.toString(), mouse.events.contains("pinch start 200 50 240"));
+    }
+
+    @Test
     public void griffTheCursorHoversAtTheStrokesEndAtMostEachTenthOfASecond() {
         griff();
         mouse.griffX = 100;

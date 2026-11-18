@@ -60,8 +60,9 @@ package io.github.m3rt1n99.fafre;
  *   <li>a finger that starts on the handle over the selection ({@link Mouse#onGriff}) draws a route, whose waypoints go to
  *       {@link Mouse#route} when it lifts, counted where the finger was a moment before; one that lifts where it began was
  *       a tap on the handle, a long loop back to the handle is a patrol, a short one gives the route up, as does a second
- *       finger. Where the ladder may climb, the handle leaves the finger's quick lift to it, which is the handle's tap where
- *       it does not climb after all; a rest of that finger or a move past the slop is the handle's, from where it came down;
+ *       finger once the first has left the slop, before which the two are two fingers. Where the ladder may climb, the
+ *       handle leaves the finger's quick lift to it, which is the handle's tap where it does not climb after all; a rest of
+ *       that finger or a move past the slop is the handle's, from where it came down;
  *   <li>two fingers zoom at their middle and move the camera with it ({@link Mouse#pinch}), and the one left of them
  *       moves it on; a second finger on a pan, once the program has said it is one ({@link #panned}), makes two of it, as
  *       does one that came before the word, at the word; a quick tap of two lets the selection go;
@@ -833,6 +834,12 @@ final class TouchInput implements Fingers {
         } else if (mState == State.PLACE_LINE) {
             giveUpLine();
             mState = State.SPENT;
+        } else if (mState == State.STROKE && mStrokeFar <= mGriffSlop) {
+            // A second finger while the first has not left the handle: two fingers, whose quick tap lets the selection go as
+            // anywhere else, and which pinch where they move. Nothing was given up: no word of it.
+            hideStroke();
+            mMouse.stopTimer();
+            startTwo(id, x, y, time);
         } else if (mState == State.STROKE) {
             // A second finger gives the route up.
             giveUpStroke();
