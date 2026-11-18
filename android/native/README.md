@@ -148,11 +148,21 @@ configure and make, which an Android cross build on Windows cannot.
 The game's own lobby, its games and the discovery of LAN games run on the engine's UDP transport on
 `platform::net` (`src/platform/posix/NetPosix.cpp`), as on Linux; `patches/README.md` has the lines of the
 transport that change. The app holds a `MulticastLock` while the activity is in front, without which
-Wi-Fi hands a phone no broadcasts. The in-engine peer links are off (`src/net`), and an app starts no
-programs: the GPGNet launch fails at once (`patches/`). While a UDP connector has its socket open, a network lobby's
-or game's, the app's `NetworkGameService` keeps the process's network in the back (`../README.md`, Network games):
-the patched `CNetUDPConnector.cpp` counts those connectors from its thread's start to its deletion
-(`NET_OpenUDPConnectors`), which the service asks through `Game.networkInUse`.
+Wi-Fi hands a phone no broadcasts. The in-engine peer links are off (`src/net`). While a UDP connector has its socket
+open, a network lobby's or game's, the app's `NetworkGameService` keeps the process's network in the back
+(`../README.md`, Network games): the patched `CNetUDPConnector.cpp` counts those connectors from its thread's start to
+its deletion (`NET_OpenUDPConnectors`), which the service asks through `Game.networkInUse`.
+
+GPGNet, the game's line to its launcher, is the engine's TCP stream on `platform::net` (`CNetTCPBuf`), built as on
+Linux. A launcher in the app (`../README.md`, Game) listens on the loopback and starts the game with
+`/gpgnet 127.0.0.1:<port>`; the game connects to it, says `GameState Idle`, and opens FAF's lobby on the launcher's
+`CreateLobby`. The other way, in which the game listens and launches its GPGNet side through `/bin/sh`, fails at once,
+as an app starts no programs (`patches/`). A game started with `/gpgnet` alone whose launcher cannot be reached, or
+closes the connection before its `CreateLobby`, says so in a box and ends, where it stayed on a black screen before
+(`patches/README.md`, `CGpgNetInterface.cpp` and `PlatformPosix.cpp`). Upstream's stream counts too few bytes for a
+read of 2 KB or more that it takes from the socket itself, so an argument from the launcher with 2 KB or more left
+after what the stream's buffer holds of it ends the connection (`CommunicationError`, `tests/net`): FAF's messages to
+the game are shorter, an ICE server list or a peer's ICE message for the game's own links (`/nativenet`) need not be.
 
 ## Tests
 

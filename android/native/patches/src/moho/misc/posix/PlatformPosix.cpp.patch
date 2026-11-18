@@ -1,0 +1,17 @@
+diff --git a/src/moho/misc/posix/PlatformPosix.cpp b/src/moho/misc/posix/PlatformPosix.cpp
+index 0398883..8ce31b1 100644
+--- a/src/moho/misc/posix/PlatformPosix.cpp
++++ b/src/moho/misc/posix/PlatformPosix.cpp
+@@ -168,6 +168,12 @@ void moho::WIN_OkBox(
+   const gpg::StrArg text
+ )
+ {
++  // Android client build: the client's box where there is a client (sOkBoxPresenter, which WinApp.cpp sets to the
++  // window system's message box, SDL's on POSIX), as moho/misc/WinPlatform.cpp has it; a line on stderr without one.
++  if (sOkBoxPresenter != nullptr) {
++    sOkBoxPresenter(caption, text);
++    return;
++  }
+   std::fprintf(stderr, "[%s] %s\n", caption != nullptr ? caption : "", text != nullptr ? text : "");
+   std::fflush(stderr);
+ }

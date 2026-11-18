@@ -1,5 +1,5 @@
 diff --git a/src/moho/net/CGpgNetInterface.cpp b/src/moho/net/CGpgNetInterface.cpp
-index f2449b3..4b590ed 100644
+index f2449b3..71e5c8a 100644
 --- a/src/moho/net/CGpgNetInterface.cpp
 +++ b/src/moho/net/CGpgNetInterface.cpp
 @@ -11,7 +11,7 @@
@@ -11,14 +11,75 @@ index f2449b3..4b590ed 100644
  #include <spawn.h>
  #include <unistd.h> // environ
  #endif
-@@ -1828,7 +1828,13 @@ void CGpgNetInterface::ConnectThread(
+@@ -149,6 +149,51 @@ namespace
+     gpg::Warnf("GPGNET: Ignoring unknown gpg.net command \"%s\".", commandName.c_str());
+   }
+ 
++  /**
++   * Android client build: a game started with `/gpgnet` alone has nothing but its launcher until the launcher's
++   * `CreateLobby`. gpgnet.lua leaves the screen empty, and FAF's Esc handler fails on it, so a launcher that could
++   * not be reached, or that went before then, left the player there for good. On the command that says so, this
++   * says it on the screen and ends the game, as StartGpgNetFromCommandLine (CScApp.cpp) does when the attach fails,
++   * and returns true. A game that comes back with `/rejoin`, or plays on a game server, has a screen of its own and
++   * needs the launcher for its results alone.
++   */
++  [[nodiscard]] bool EndWithoutLauncher(
++    const fa::string& commandName,
++    const fa::vector<SNetCommandArg>& args
++  )
++  {
++    fa::string reason;
++    if (commandName == "ConnectFailed") {
++      reason = "the connection failed"; // NET_TCPConnect logged why
++    } else if (commandName == "ConnectionShutdown") {
++      reason = "the connection closed before the lobby";
++    } else if (commandName == "CommunicationError") {
++      reason = args.empty() ? fa::string("communication error") : args[0].mStr;
++    } else {
++      return false;
++    }
++#if FAF_SERVER_MODE
++    if (faf::remote::ServerSessionStarted()) {
++      return false;
++    }
++#endif
++    if (moho::CFG_GetArgOption(gpg::StrArg{"/rejoin"}, 0u, nullptr)) {
++      return false;
++    }
++
++    fa::vector<fa::string> endpoint;
++    (void)moho::CFG_GetArgOption(gpg::StrArg{"/gpgnet"}, 1u, &endpoint);
++    const fa::string message = gpg::STR_Printf(
++      "Unable to connect to gpgnet endpoint \"%s\":\n%s", endpoint.empty() ? "" : endpoint[0].c_str(), reason.c_str()
++    );
++    gpg::Warnf("GPGNET: %s", message.c_str());
++    WIN_OkBox("Ack!", message.c_str());
++    if (sAppExitMainLoop != nullptr) {
++      sAppExitMainLoop();
++    }
++    return true;
++  }
++
+   /**
+    * What it does:
+    * Says whether the next "received nat packet" line may be logged. Anyone
+@@ -1335,6 +1380,8 @@ void CGpgNetInterface::PullTask()
+         SendNatPacket(command.mArgs);
+       } else if (commandName == "EjectPlayer") {
+         EjectPlayer(command.mArgs);
++      } else if (mLobbyObject.m_state == nullptr && EndWithoutLauncher(command.mName, command.mArgs)) {
++        // Android client build: the launcher went before its lobby, and the game ends.
+       } else if (!NETLINK_HandleCommand(command.mName, command.mArgs)) {
+         // Engine addition (issue #233): Netlink* commands are in-engine links'.
+         LogUnknownCommand(command.mName);
+@@ -1828,7 +1875,13 @@ void CGpgNetInterface::ConnectThread(
    const fa::string listenerAddress = gpg::STR_Printf("127.0.0.1:%d", static_cast<int>(localPort));
    const fa::string launchCommand = gpg::STR_Printf(launchCommandTemplate.c_str(), listenerAddress.c_str());
  
 -#if !FAFRE_PLATFORM_WINDOWS
 +#if FAFRE_PLATFORM_ANDROID
 +  // An app starts no programs of its own on Android, which has no /bin/sh either: the GPGNet side is
-+  // the app that started the game, and it connects to the game.
++  // the app that started the game, and the game connects to it (/gpgnet, the ConnectThread above).
 +  gpg::Logf("CreateProcess() failed: Android starts no programs (%s)", launchCommand.c_str());
 +  EnqueueCommand0("LaunchFailed", kNetStateTimedOut);
 +  return;
