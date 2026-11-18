@@ -2,6 +2,7 @@ package io.github.m3rt1n99.fafre;
 
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
@@ -30,8 +31,6 @@ import org.libsdl.app.SDLSurface;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
@@ -40,20 +39,19 @@ import java.util.Locale;
  * The game: the engine's program (libfafgame.so, the engine's own POSIX client on SDL3, android/native) in
  * SDL's activity, in a process of its own (":game") that ends with the program, as a Windows program's does.
  * It plays FAF's game files of the newest version this app has (the Game card's "Get FAF's newest version" or
- * the replay test downloads them) on the user's Supreme Commander: Forged Alliance.
+ * the replay test downloads them), or of the version a launcher's start asks for (GameStart: its extras, and the
+ * result of a start that fails), on the user's Supreme Commander: Forged Alliance.
  *
  * <p>SDL gives the program the screen (the activity's surface, through Vulkan), the fingers as the mouse,
  * the keys and the sound. The app gives the command line (getArguments, the program's path first, as FAF's
- * client starts the game), the program's folders (HOME, TMPDIR) and what a game on a phone needs around it:
- * the whole screen, the picture's own size (PictureSize), the UI package for fingers and the HUD's factor
- * (android/TOUCH_UI.md), Back as Esc, the multicast lock that finds LAN games, the audio focus that the game's sound
- * follows. The program keeps running while the activity is in the back (android/native/src/app/GameMainAndroid.cpp),
- * without its sound. The touch scheme Griff and the bar are not on this activity yet; {@link LegacyGameActivity} has
+ * client starts the game, and a launcher's arguments before the display mode), the program's folders (HOME, TMPDIR)
+ * and what a game on a phone needs around it: the whole screen, the picture's own size (PictureSize), the UI package
+ * for fingers and the HUD's factor (android/TOUCH_UI.md), Back as Esc, the multicast lock that finds LAN games, the
+ * audio focus that the game's sound follows. The program keeps running while the activity is in the back
+ * (android/native/src/app/GameMainAndroid.cpp), without its sound. The touch scheme Griff and the bar are not on this activity yet; {@link LegacyGameActivity} has
  * them on the earlier host.
  */
 public final class GameActivity extends SDLActivity {
-    /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
-    private static final String PROGRAM = "bin/ForgedAlliance.exe";
     /**
      * Tests' extras (am start --ef, --es, --ez): the HUD's factor in place of the screen's, as the emulator keeps its own
      * millimetres at another size; more of the engine's arguments, as one string; BC textures decoded on the CPU, as on
@@ -63,9 +61,9 @@ public final class GameActivity extends SDLActivity {
     private static final String EXTRA_ARGUMENTS = "arguments";
     private static final String EXTRA_BC_ON_CPU = "bcOnCpu";
 
-    /** The program's command line without its display mode, or null with mProblem saying why there is none. */
+    /** The program's command line without its display mode, or null with mFailure saying why there is none. */
     private List<String> mArguments;
-    private String mProblem;
+    private GameStart.Failure mFailure;
     /** The lines the user chose (PictureSize), which the picture has on any screen. */
     private int mLines;
     /** The program can run, or runs, in this activity: no problem stopped it, and SDL's library loaded. */
@@ -99,7 +97,11 @@ public final class GameActivity extends SDLActivity {
         if (program == null) {
             // Before SDL's activity loads the library: the program reads its environment when it starts.
             GameReport.begin(this);
-            mProblem = prepare();
+            try {
+                mArguments = prepare();
+            } catch (GameStart.Failure failure) {
+                mFailure = failure;
+            }
         }
         Hashtable<Integer, PointerIcon> cursors = mCursors;
         int lastCursor = mLastCursorID;
@@ -118,9 +120,17 @@ public final class GameActivity extends SDLActivity {
                 Game.report("game: the start's extras do not reach the running program; am start -S starts it anew");
             }
         }
-        if (mProblem != null) {
-            GameReport.append(this, GameReport.END + mProblem);
-            Toast.makeText(this, mProblem, Toast.LENGTH_LONG).show();
+        if (mFailure != null) {
+            // For a starter that waits for the result, a launcher's activity (GameStart).
+            setResult(RESULT_FIRST_USER, new Intent().putExtra(GameStart.RESULT_FAILURE, mFailure.code.name())
+                .putExtra(GameStart.RESULT_MESSAGE, mFailure.getMessage()));
+            for (String line : mFailure.reportLines()) {
+                GameReport.append(this, line);
+            }
+            if (getCallingActivity() == null) {
+                // The Game card's start or a test's: a starter that waits for the result says it in its own words.
+                Toast.makeText(this, mFailure.cardLine(), Toast.LENGTH_LONG).show();
+            }
             // Before it is resumed, so SDL's activity starts no program.
             finish();
             return;
@@ -159,26 +169,22 @@ public final class GameActivity extends SDLActivity {
         mHandler.post(mPoll);
     }
 
-    /** The program's command line and its environment, or why the game cannot start. */
-    private String prepare() {
+    /** The program's command line without its display mode, with its environment set; or why the game cannot start. */
+    private List<String> prepare() throws GameStart.Failure {
         Storage storage;
         try {
             storage = new Storage(this);
         } catch (IOException e) {
-            return "FAIL: " + e.getMessage();
+            throw GameStart.Failure.storage(e.getMessage());
         }
         int archives = ScfaImport.archives(storage);
         if (archives == 0) {
-            return "FAIL: no Supreme Commander: Forged Alliance imported yet (card 2)";
+            throw GameStart.Failure.noScfa();
         }
         if (ScfaImport.fonts(storage) == 0) {
-            return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder again (card 2), which takes fonts/ too";
+            throw GameStart.Failure.noFonts();
         }
-        List<Integer> versions = GameFiles.readyVersions(storage);
-        if (versions.isEmpty()) {
-            return "FAIL: no whole FAF game files yet; \"Get FAF's newest version\" on card 5 downloads them, as does the replay test (card 3)";
-        }
-        int version = versions.get(versions.size() - 1);
+        int version = GameStart.version(storage, extra(GameStart.EXTRA_GAME_VERSION));
         File game = storage.game(version);
         File folder = Storage.mkdirs(GameReport.folder(storage));
         File vault = Storage.mkdirs(new File(folder, "vault"));
@@ -189,7 +195,7 @@ public final class GameActivity extends SDLActivity {
             // With the UI package for fingers (android/TOUCH_UI.md), from the APK.
             init = GameFiles.gameInit(getAssets(), game, vault);
         } catch (IOException e) {
-            return "FAIL: the init file: " + e.getMessage();
+            throw GameStart.Failure.initFile(e.getMessage());
         }
         File home = Storage.mkdirs(GameReport.home(storage));
         try {
@@ -200,27 +206,22 @@ public final class GameActivity extends SDLActivity {
                 Os.setenv("FAF_VULKAN_BC_ON_CPU", "1", true);
             }
         } catch (ErrnoException e) {
-            return "FAIL: the program's environment: " + e.getMessage();
+            throw GameStart.Failure.environment(e.getMessage());
         }
         String hudScale = HudScale.argument(hudScale());
-        mArguments = new ArrayList<>(Arrays.asList(new File(game, PROGRAM).getPath(), "/init", init.getPath(),
-            "/log", GameReport.log(storage).getPath(),
-            // The engine would send its records of desyncs and of a game's end to its author's server, with the
-            // players' names, and nobody here has agreed to that.
-            "/notelemetry",
-            // The HUD's factor, which the UI package's Lua reads (fafre/scale.lua), and the most the user's UI scale can make of it.
-            HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, HudScale.argument(HudScale.most(pictureLines()))));
-        // An import by an earlier release has no movies, and the splash screen would wait for a tap for each.
-        if (ScfaImport.movies(storage) == 0) {
-            mArguments.add("/nomovie");
-        }
-        String more = getIntent().getStringExtra(EXTRA_ARGUMENTS);
-        if (more != null && !more.trim().isEmpty()) {
-            mArguments.addAll(Arrays.asList(more.trim().split("\\s+")));
-        }
+        List<String> arguments = GameStart.arguments(game, init, GameReport.log(storage), hudScale,
+            HudScale.argument(HudScale.most(pictureLines())), ScfaImport.movies(storage) == 0,
+            getIntent().getStringExtra(EXTRA_ARGUMENTS), extra(GameStart.EXTRA_LAUNCHER_ARGUMENTS));
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
         GameReport.append(this, "game: HUD scale " + hudScale + " on " + screenInWords());
-        return null;
+        return arguments;
+    }
+
+    /** The start's extra of that name, of whatever type the starter gave it (GameStart checks it); null without one. */
+    @SuppressWarnings("deprecation")
+    private Object extra(String name) {
+        Bundle extras = getIntent().getExtras();
+        return extras != null ? extras.get(name) : null;
     }
 
     @Override
@@ -244,11 +245,11 @@ public final class GameActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         Rect picture = mSurface.getHolder().getSurfaceFrame();
-        List<String> arguments = new ArrayList<>(mArguments);
-        arguments.addAll(Arrays.asList("/fullscreen", Integer.toString(picture.width()), Integer.toString(picture.height())));
+        String[] arguments = GameStart.commandLine(mArguments, picture.width(), picture.height());
         GameReport.append(this, String.format(Locale.ROOT, "game: display mode %dx%d on a %dx%d view", picture.width(),
             picture.height(), mSurface.getWidth(), mSurface.getHeight()));
-        return arguments.toArray(new String[0]);
+        GameReport.append(this, "game: command line " + GameStart.inWords(arguments));
+        return arguments;
     }
 
     // --- The picture ----------------------------------------------------------------------------
@@ -352,7 +353,7 @@ public final class GameActivity extends SDLActivity {
         super.onDestroy();
         // A game that could not start leaves no process behind: SDL's activity takes the next start in this
         // process for one made anew around a program, and would end it.
-        if (mProblem != null) {
+        if (mFailure != null) {
             System.exit(0);
         }
     }

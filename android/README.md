@@ -90,8 +90,8 @@ the game data they imported. Everything lives in the app's external files folder
   game card's report names what it showed (below).
 - **Game** (card 5, `GameActivity`): `libfafgame.so`, the engine's own POSIX client on SDL3, starts as
   the PC starts it, with the SCFA import and FAF's game files of the newest version on the phone (the
-  highest whole one): `ForgedAlliance.exe /init <its init file> /log game/engine.sclog /notelemetry
-  /fafre_hud_scale <factor> /fafre_hud_most <factor> /fullscreen <the picture's size>`, the program's path
+  highest whole one; a launcher's start names its own, below): `ForgedAlliance.exe /init <its init file>
+  /log game/engine.sclog /notelemetry /fafre_hud_scale <factor> /fafre_hud_most <factor> /fullscreen <the picture's size>`, the program's path
   in the game files' `bin` folder. `GameActivity` is SDL's activity (`SDLActivity`), which loads the library
   and starts the program on a thread of its own; it runs in a process of its own (`:game`), which ends with
   the program, as a Windows program's does, and goes on while the activity is in the back, its simulation
@@ -119,10 +119,22 @@ the game data they imported. Everything lives in the app's external files folder
     keyboard, and so does *Keyboard* in the game's Menu tab; typed text goes to the field, Back hides the
     keyboard before it is Esc again, Enter goes to the game and then hides it.
   - The report (`game.txt`) names the GPU, each swap chain, whether BC textures are the GPU's or decoded
-    on the CPU, and the sound's output or why the sound did not start. Tests' extras of the activity (`am start -S ... --ef hudScale 1.6
-    --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
+    on the CPU, the sound's output or why the sound did not start, and the whole command line. Tests' extras
+    of the activity (`am start -S ... --ef hudScale 1.6 --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
     arguments, and the phones' way with BC textures on a GPU that has BC. Only the program's start reads them:
     without `-S` a running program goes on as it was, and the report says so.
+  - A launcher, the FAF client in an activity of the app's main process, starts it for a result (`GameStart`), with
+    `io.github.m3rt1n99.fafre.extra.GAME_VERSION` (int), the lobby's game version, whose files must be ready (no other:
+    a lobby would refuse it or desync; without the extra the newest), and
+    `io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS` (String[], never split, as a value may hold spaces), such as
+    `/gpgnet 127.0.0.1:<port> /nativenet`, which go after the activity's arguments and a test's, before `/fullscreen`.
+    The activity's own switches (`/init`, `/log`, `/notelemetry`, `/nomovie`, `/fullscreen`, the HUD's two) are not among
+    them. A start that fails before the program runs gives `RESULT_FIRST_USER` with `failure`, its code (`NO_SCFA`,
+    `NO_FONTS`, `NO_GAME_FILES`, also for a version that is not ready, `INIT_FILE`, `ENVIRONMENT`, `STORAGE`, `ARGUMENTS`
+    for such a switch or an extra of another type), and `message`, the reason in words that name no card; the report has
+    both, and its end, like the toast of a start that waits for no result, keeps the card's words. The program's end,
+    which ends the process, gives `RESULT_CANCELED`: the report and `ProcessExit` say how it ended. A start while the
+    program runs shows it, as above.
 
   What follows is the game card of release 0.14, on the earlier host (`LegacyGameActivity`, the
   Win32 message layer and wx-lite): the bar, the touch controls and the pages come back on SDL's activity
