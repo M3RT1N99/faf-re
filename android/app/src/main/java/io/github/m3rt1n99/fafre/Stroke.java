@@ -5,10 +5,14 @@ package io.github.m3rt1n99.fafre;
  * its waypoints, and what the screen says it gives.
  */
 final class Stroke {
-    /** What lifting the stroke gives (the mockup's classifyStroke): a route out, a patrol by a loop, or nothing. */
+    /**
+     * What lifting the stroke gives (the mockup's classifyStroke): a route out, a patrol by a loop, or nothing; or, which no
+     * stroke's shape gives, FAF's Distribute orders, the lift of the handle's rest where the program said its selection can.
+     */
     static final int ROUTE = 0;
     static final int PATROL = 1;
     static final int CANCEL = 2;
+    static final int DISTRIBUTE = 3;
     /** A stroke that ends this near its start is a loop: a patrol if it is longer than PATROL_MM, else taken back. */
     static final float LOOP_MM = 8;
     static final float PATROL_MM = 40;
@@ -47,6 +51,8 @@ final class Stroke {
     static final int SAYS_RECLAIM = 8;
     static final int SAYS_CAPTURE = 9;
     static final int SAYS_ORDER = 10;
+    /** FAF's own words for its key action G, key_desc_distribute_orders (keydescriptions.lua). */
+    static final int SAYS_DISTRIBUTE = 11;
 
     private Stroke() {
     }
@@ -75,9 +81,13 @@ final class Stroke {
      * What lifting gives, in the mockup's order, by what the end is on (END_ and its flags, 0 unknown) and the stroke's mode: a
      * panel gives nothing, the minimap its place; then a loop; then FAF's order there: an attack, and with FAF's attack-move
      * armed an attack-move, assist with engineers or guard, reclaim; a plain move is the route. A loop is a patrol where FAF
-     * offers one; for factories alone it is their rally route, as any stroke.
+     * offers one; for factories alone it is their rally route, as any stroke. The handle's rest is FAF's Distribute orders,
+     * whatever lies under it.
      */
     static int meaning(int end, int mode) {
+        if (mode == DISTRIBUTE) {
+            return SAYS_DISTRIBUTE;
+        }
         int place = end & END_PLACE;
         if (place == END_PANEL) {
             return SAYS_CANCEL;

@@ -31,8 +31,9 @@ local FAINT = 0.35
 
 --- A resting finger's ring, as large as two order buttons: FAF's ping rings (ping.lua), drawn in the glow pass as the world
 --- view draws a ping's (worldview.lua DisplayPing), by the program's REST_ look of what the finger's drag gives: FAF's
---- formation the move ping's; the left button's drag, as a mouse's there (a box on the map, an armed mode's own drag, the
---- minimap's camera, a panel's), the marker ping's; the lift's deletion of a marked waypoint the attack ping's. It stays as
+--- formation the move ping's, as is the handle's rest whose lift distributes the orders (its drag is the route); the left
+--- button's drag, as a mouse's there (a box on the map, an armed mode's own drag, the minimap's camera, a panel's), the
+--- marker ping's; the lift's deletion of a marked waypoint the attack ping's. It stays as
 --- strong as a ping's ring as it begins, where FAF's fades as it grows: at this size on the phone's picture to about a fifth.
 local RING_SIDE = 96
 local Rings = {
@@ -49,8 +50,9 @@ local Rings = {
 --- CreateToolTip). FAF's Lua draws plain lines on the map (UI_DrawLine): the line runs straight from waypoint to waypoint,
 --- where the command graph rounds its corners and ends it in its arrowhead, and a patrol's and an attack-move's are the same
 --- band, where FAF's run as chevrons (orderline_arrow02.dds).
---- By Stroke.SAYS_, in the app's English as the mockup has it; the waypoints before the last are the route's (a patrol's,
---- an attack-move's, else moves).
+--- By Stroke.SAYS_, in the app's English as the mockup has it, but for FAF's own Distribute orders, its key action G's words
+--- (keydescriptions.lua, localized), which the handle's rest shows alone, with no route; the waypoints before the last are the
+--- route's (a patrol's, an attack-move's, else moves).
 local MOVE, ATTACK, ENGINEERING, NOTHING = '00ffff', 'ff0000', 'ffff00', 'ffffff'
 --- The order line's selected alpha (dd) times its texture's, the band's 122 of 255 and the edge's 202; a stroke that lifting
 --- gives up, half as strong.
@@ -74,6 +76,7 @@ local Says = {
     [8] = {words = 'Reclaim', colour = ENGINEERING, icon = 'reclaim_btn_up'},
     [9] = {words = 'Capture', colour = ENGINEERING, icon = 'convert_btn_up'},
     [10] = {words = 'Order', colour = MOVE, icon = 'move_btn_up'},
+    [11] = {words = '<LOC key_desc_distribute_orders>Distribute orders', colour = MOVE},
 }
 
 --- The draft's plans: the ghosts of FAF's build preview (CBuildDragPreview: the building's mesh through the UnitPlace shader)
@@ -316,11 +319,12 @@ end
 
 --- The stroke (SHOWN_STROKE: what lifting gives, Stroke.SAYS_; whether FAF's attack-move is armed; the label's place; how many
 --- points its route has; the route's points on the picture, where the stroke began and then each waypoint, the last where
---- the finger is): its order line through the ground under them, FAF's waypoint icon at each waypoint, its label.
+--- the finger is): its order line through the ground under them, FAF's waypoint icon at each waypoint, its label. One point,
+--- where the stroke began, is the label alone: the handle's rest.
 local function Stroke(made, units)
     local count = FafreGriffShown(SHOWN_STROKE, values)
     local points = count >= 5 and values[5] or 0
-    if points < 2 or count < 5 + 2 * points then
+    if points < 1 or count < 5 + 2 * points then
         HideStroke(made)
         return
     end

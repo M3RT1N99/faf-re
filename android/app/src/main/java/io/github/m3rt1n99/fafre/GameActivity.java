@@ -385,6 +385,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
+        public void handleRest(int rest) {
+            Game.handleRest(rest);
+        }
+
+        @Override
+        public void distribute() {
+            Game.distribute();
+        }
+
+        @Override
         public void route(float[] xs, float[] ys, int count, int rail, boolean patrol) {
             int[] places = new int[2 * count];
             for (int at = 0; at < count; ++at) {
@@ -1225,10 +1235,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /**
      * The stroke a finger draws (count 0: none), what lifting it now gives (Stroke.ROUTE, PATROL, CANCEL) and the waypoints that
      * would be ordered, for FAF's UI to draw as FAF's command graph will draw the route (Game.SHOWN_STROKE): where the stroke
-     * began, then each waypoint, in the picture's pixels.
+     * began, then each waypoint, in the picture's pixels. After the handle's rest (Stroke.DISTRIBUTE) only where it began, for
+     * the label alone.
      */
     private void showStroke(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints) {
-        if (count < 2 || waypoints < 1) {
+        boolean labelAlone = mode == Stroke.DISTRIBUTE && count > 0;
+        if (!labelAlone && (count < 2 || waypoints < 1)) {
             mStrokeShownCount = 0;
             Game.setGriffShown(Game.SHOWN_STROKE, mStrokeShown, 0);
             return;
@@ -1552,6 +1564,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 } else if (mGriffSaid[at] == Game.SAID_DRAFT_REST) {
                     if (mGriffSaid[at + 2] != 0) {
                         mTouch.draftRestOnUi(mGriffSaid[at + 1]);
+                    }
+                } else if (mGriffSaid[at] == Game.SAID_DISTRIBUTES) {
+                    if (mGriffSaid[at + 2] != 0) {
+                        mTouch.distributes(mGriffSaid[at + 1]);
                     }
                 } else if (mGriffSaid[at] == Game.SAID_GROUP_STORED) {
                     // A group stored buzzes once, as the mockup's: as the ring of the rest that stored it came, or now (TouchInput).

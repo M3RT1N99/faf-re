@@ -199,6 +199,7 @@ final class Game {
     static final int SAID_UNDONE = 7;
     static final int SAID_FORMATION = 8;
     static final int SAID_DRAFT_REST = 9;
+    static final int SAID_DISTRIBUTES = 10;
 
     /**
      * {@link #griffHint}: a hint of the activity's, which FAF's UI says where FAF prints its own messages (griffhud.lua Words,
@@ -276,7 +277,8 @@ final class Game {
      * its undo was not done is offered again), or 0: an order no gesture's, or one whose undo would save nothing, ended the
      * record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
      * SAID_FORMATION: a drag's number that the program made FAF's formation of, which a drag without its lift gives up;
-     * SAID_DRAFT_REST: a rest's number in the draft ({@link #draftRest}) and 1 where its finger is on FAF's UI, else 0.
+     * SAID_DRAFT_REST: a rest's number in the draft ({@link #draftRest}) and 1 where its finger is on FAF's UI, else 0;
+     * SAID_DISTRIBUTES: a rest's number on the handle ({@link #handleRest}) and 1 where its lift gives FAF's Distribute orders.
      */
     static native int griffSaid(int[] said);
 
@@ -298,6 +300,19 @@ final class Game {
 
     /** The camera goes to the selection, by a flight (`fly`) or at once. */
     static native void toGroup(boolean fly);
+
+    /**
+     * A finger rests on the handle, its rest number `rest`: whether its lift gives FAF's Distribute orders, with the cursor at the
+     * group's middle ({@link #SAID_DISTRIBUTES}); where it does, the ring's look is the move ping's.
+     */
+    static native void handleRest(int rest);
+
+    /**
+     * The lift of the handle's rest that distributes: the cursor goes to the group's middle and, after a frame drew it there,
+     * FAF's key action G runs, Distribute orders, which deals the queue of the selection's unit nearest the cursor out over the
+     * others; the undo's record ends.
+     */
+    static native void distribute();
 
     /**
      * A route of `count` waypoints, x and y pairs in the picture's pixels: FAF's right click at each, the last on what is there;

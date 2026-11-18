@@ -116,6 +116,16 @@ public class StrokeTest {
     }
 
     @Test
+    public void theHandlesRestSaysFafsDistributeOrdersWhateverItsEndIsOn() {
+        // The finger is on the handle, over the map beside the group: what FAF's right click there would order counts for nothing.
+        assertEquals(Stroke.SAYS_DISTRIBUTE, Stroke.meaning(0, Stroke.DISTRIBUTE));
+        assertEquals(Stroke.SAYS_DISTRIBUTE, Stroke.meaning(Stroke.END_MOVE | Stroke.END_ATTACK_MOVE, Stroke.DISTRIBUTE));
+        assertEquals(Stroke.SAYS_DISTRIBUTE, Stroke.meaning(Stroke.END_PANEL, Stroke.DISTRIBUTE));
+        // No stroke's shape gives it.
+        assertEquals(Stroke.CANCEL, classify(0, 0, 5, 0));
+    }
+
+    @Test
     public void theLengthIsAlongThePoints() {
         float[] xs = {0, 30, 30};
         float[] ys = {0, 0, 40};

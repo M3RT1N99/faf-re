@@ -114,6 +114,7 @@ namespace
   constexpr int kSaidUndone = 7;
   constexpr int kSaidFormation = 8;
   constexpr int kSaidDraftRest = 9;
+  constexpr int kSaidDistributes = 10;
 
   /// Game.GRIFF_VALUES: what Game.griff gives of the handle.
   constexpr int kHandleValues = 11;
@@ -160,6 +161,8 @@ namespace
   constexpr float kRestFormation = 1;
   constexpr float kRestLeftDrag = 2;
   constexpr float kRestWaypoint = 3;
+  /// The handle's rest whose lift gives FAF's Distribute orders: its drag is the handle's route, a move, so the formation's.
+  constexpr float kRestDistribute = kRestFormation;
 
   // griff.lua's yes and no for Ask, whose 0 is no answer.
   constexpr int kYes = 2;
@@ -189,6 +192,8 @@ namespace
   /// not the base), select_all_onscreen.
   constexpr char kAllOfType[] = "UI_ExpandCurrentSelection";
   constexpr char kAllMobile[] = "UI_SelectByCategory +inview MOBILE";
+  /// FAF's key action spreadattack, G (its shift_spreadattack, Shift-G, has the same): Distribute orders (keyactions.lua).
+  constexpr char kDistributeOrders[] = "UI_Lua import(\"/lua/ui/game/hotkeys/distribute-queue.lua\").DistributeOrders(true)";
 
   /// Shift's and Ctrl's keys, as the keyboard's left ones (KeysAndroid.cpp).
   constexpr UINT kShiftScanCode = 0x2A;
@@ -1115,10 +1120,23 @@ namespace
   void ReadTaken(std::unordered_map<int, Stored>& stored);
   void DropRecord();
   void EndRecord();
+  [[nodiscard]] bool Outwaited(std::int64_t since, std::int64_t now);
 
   /// A tick that waits until no clicks run and no finger's drag holds FAF's dragger (DraftCommitTask): whether Plus counted
   /// for it, plus one; 0: none.
   WPARAM gCommitAsked = 0;
+
+  /// FAF's Distribute orders that waits for a frame drawn with the cursor at the group's middle (DistributeTask): where the
+  /// cursor is, the frame it waits after, and since when (0: none waits).
+  struct Distributing
+  {
+    POINT cursor{};
+    std::uint32_t afterFrame = 0;
+    std::int64_t since = 0;
+  };
+
+  Distributing gDistributing;
+  void DistributeAfterFrame();
 
   /// How FAF's panels along the view's edges are told (cameraclear::Rules), the pixels as parts of the view's height: the
   /// pieces of a panel overlap by more than 0.4 % (3 of the phone's 768 lines, where FAF's unit view lies 2 of them on its
@@ -1211,6 +1229,9 @@ namespace
     }
     const Selection selection = gSelection;
     try {
+      if (gDistributing.since != 0 && gFrame != gDistributing.afterFrame) {
+        DistributeAfterFrame();
+      }
       ReadTaken(gWatch.stored);
       ReadTaken(gRecord.stored);
       if (gRecord.asked) {
@@ -1352,8 +1373,9 @@ namespace
       const std::lock_guard<std::mutex> lock(gOpenedMutex);
       gOpened.clear();
     }
-    // A rest's mark and its Shift go with the game.
+    // A rest's mark and its Shift go with the game, as does a Distribute orders that waits for a frame.
     ForgetRest();
+    gDistributing = Distributing{};
     // The orders of this game: no watch, record or undo button any more; an undo the button asked for that waits is not done.
     gWatch = Watch{};
     DropRecord();
@@ -2731,6 +2753,95 @@ namespace
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
+  }
+
+  // --- The handle's rest: FAF's Distribute orders -----------------------------------------------------------------------
+
+  /// The group's middle on the picture as griff.lua reported it in the last frame, the handle's group's (Report), where it is on
+  /// the main map: a cursor there is the map's, whose world place under it FAF's Distribute orders reads (GetMouseWorldPos).
+  [[nodiscard]] bool GroupMiddleOnMap(int& x, int& y)
+  {
+    const Selection selection = gSelection;
+    x = static_cast<int>(std::lround(selection.middleX));
+    y = static_cast<int>(std::lround(selection.middleY));
+    return selection.count > 0 && OnMap(static_cast<float>(x), static_cast<float>(y));
+  }
+
+  /// A finger rests on the handle (Game.handleRest, number `rest`): whether its lift gives FAF's Distribute orders, with the
+  /// cursor at the group's middle, as griff.lua's CanDistribute finds FAF's own pick there: two of the selection's non-factory
+  /// units or more, and the queue of the one nearest the cursor's world place two orders or more. Then the ring shows the move
+  /// ping's look, as a drag from the rest is the handle's route. The activity hears it (SAID_DISTRIBUTES). No, where the
+  /// group's middle is not on the map (its units out of view or under a panel), where the cursor could not point at them, and
+  /// between the program's clicks.
+  void HandleRestTask(const WPARAM rest)
+  {
+    bool distributes = false;
+    try {
+      int x = 0;
+      int y = 0;
+      if (moho::UI_GamePlaying() && !ClicksRun() && GroupMiddleOnMap(x, y)) {
+        char call[64];
+        std::snprintf(call, sizeof call, "CanDistribute(%d, %d)", x, y);
+        distributes = Ask((std::string(kGriffLua) + call).c_str()) == kYes;
+      }
+      if (distributes) {
+        griffshown::Set(griffshown::kRest, {kRestDistribute});
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+      distributes = false;
+    }
+    Say(kSaidDistributes, static_cast<int>(rest), distributes ? 1 : 0);
+  }
+
+  /// The lift of the handle's rest that distributes (Game.distribute): the cursor goes to the group's middle, where it stays for
+  /// a drawn frame, as FAF reads the world place under the cursor with the frame's (DistributeAfterFrame, from PlaceTask).
+  /// Where the group's middle left the map since the rest, nothing, which says Cancelled. Not between the program's clicks.
+  void DistributeTask(const WPARAM)
+  {
+    gDistributing = Distributing{};
+    try {
+      int x = 0;
+      int y = 0;
+      if (!moho::UI_GamePlaying() || ClicksRun()) {
+        return;
+      }
+      if (!GroupMiddleOnMap(x, y)) {
+        Hint(kHintCancelled);
+        return;
+      }
+      Win32Android_MouseMove(x, y);
+      Distributing waits;
+      // Where the cursor went, within the game's clip of it: a later move would take it elsewhere.
+      (void)::GetCursorPos(&waits.cursor);
+      waits.afterFrame = gFrame;
+      waits.since = Now();
+      gDistributing = waits;
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// After a frame drew the cursor at the group's middle: FAF's own key action G, Distribute orders, which takes the selection's
+  /// non-factory unit nearest the cursor's world place, clears every unit's queue and deals that unit's orders out over them,
+  /// and says what it did where FAF prints its messages ('Distributing orders'). The undo's record ends, as G gives every queue
+  /// anew, which no record takes back. Where the cursor moved meanwhile (a finger, the pointer's leave) or no frame came in the
+  /// clicks' patience, nothing, which says Cancelled; nothing between the program's clicks.
+  void DistributeAfterFrame()
+  {
+    const Distributing waited = gDistributing;
+    gDistributing = Distributing{};
+    if (!moho::UI_GamePlaying() || ClicksRun()) {
+      return;
+    }
+    POINT cursor{};
+    (void)::GetCursorPos(&cursor);
+    if (cursor.x != waited.cursor.x || cursor.y != waited.cursor.y || Outwaited(waited.since, Now())) {
+      Hint(kHintCancelled);
+      return;
+    }
+    moho::CON_Execute(kDistributeOrders);
+    EndRecord();
   }
 
   // --- Drags, the pan's glide and the pinch ---------------------------------------------------------
@@ -4771,6 +4882,18 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deselect(JN
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_toGroup(JNIEnv*, jclass, const jboolean fly)
 {
   Win32Android_RunOnWindowThread(&ToGroupTask, fly != JNI_FALSE ? 1 : 0);
+}
+
+/// A finger rests on the handle, rest number `rest` (HandleRestTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_handleRest(JNIEnv*, jclass, const jint rest)
+{
+  Win32Android_RunOnWindowThread(&HandleRestTask, static_cast<WPARAM>(rest & 0xFFFF));
+}
+
+/// The lift of the handle's rest that distributes (DistributeTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_distribute(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&DistributeTask, 0);
 }
 
 /// A route's waypoints, `count` places as x, y pairs in the picture's pixels; `rail`: the RAIL_ bits that count for it; `patrol`:

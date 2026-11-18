@@ -149,6 +149,21 @@ public class TouchInputTest {
             events.add("griff tap");
         }
 
+        /** Griff: how many of the handle's rests the program was asked about, and the last one's number. */
+        int handleRests;
+        int lastHandleRest;
+
+        @Override
+        public void handleRest(int rest) {
+            ++handleRests;
+            lastHandleRest = rest;
+        }
+
+        @Override
+        public void distribute() {
+            events.add("distribute");
+        }
+
         @Override
         public void route(float[] xs, float[] ys, int count, int railNow, boolean patrol) {
             StringBuilder route = new StringBuilder(patrol ? "patrol" : "route");
@@ -1016,6 +1031,7 @@ public class TouchInputTest {
         tapRaisingTheHandle(1000);
         down(0, 150, 50, 1300);
         timerRuns();
+        assertEquals("the handle's rest asks whether its lift distributes", 1, mouse.handleRests);
         moveFirst(158, 52, 1700);
         assertFalse("no ring", mouse.ringShown);
         up(0, 1800);
@@ -1391,6 +1407,87 @@ public class TouchInputTest {
         up(0, 1100);
         // 1.8 mm is still a tap on it.
         expect("griff tap");
+    }
+
+    @Test
+    public void griffTheHandlesRestThatTheProgramSaysDistributesLiftsAsFafsDistributeOrders() {
+        // FAF's key action G: the program says it deals a queue out for this selection (CanDistribute), and the ring and the
+        // label show, the label alone, no route; a wobble within the slop keeps them, the ring with the finger.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 50, 1000);
+        assertEquals("the handle's rest", TouchInput.REST_MILLISECONDS, mouse.timer);
+        timerRuns();
+        assertEquals("the program asked", 1, mouse.handleRests);
+        assertFalse("nothing shows until it says", mouse.ringShown);
+        touch.distributes(mouse.lastHandleRest);
+        assertTrue(mouse.ringShown);
+        assertEquals(Stroke.DISTRIBUTE, mouse.shownMode);
+        assertEquals("the label alone", 0, mouse.shownWaypoints);
+        moveFirst(110, 55, 1400);
+        moveFirst(116, 57, 1410);
+        assertEquals(Stroke.DISTRIBUTE, mouse.shownMode);
+        assertEquals("the ring follows the finger", 116, mouse.ringX, 0);
+        up(0, 1500);
+        expect("held", "distribute");
+        assertFalse(mouse.ringShown);
+        assertEquals(0, mouse.shown);
+        // A word for an earlier rest counts for nothing, and a second finger makes two fingers: the ring goes.
+        down(0, 100, 50, 3000);
+        int earlier = mouse.lastHandleRest;
+        timerRuns();
+        touch.distributes(earlier);
+        assertFalse(mouse.ringShown);
+        touch.distributes(mouse.lastHandleRest);
+        assertTrue(mouse.ringShown);
+        down(1, 300, 50, 3400);
+        assertFalse(mouse.ringShown);
+        up(1, 3450);
+        up(0, 3460);
+        expect("held", "distribute", "held", "move 300 50");
+    }
+
+    @Test
+    public void griffTheHandlesRestThatTheProgramDoesNotSayDistributesShowsNothingAndLiftsAsTheHandlesTap() {
+        // So a slow tap on the handle never deals the units' queues out: the camera flies to the group, as for a quick one.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        assertEquals(1, mouse.handleRests);
+        assertFalse(mouse.ringShown);
+        up(0, 1700);
+        expect("griff tap");
+        // A word after the lift counts for nothing.
+        touch.distributes(mouse.lastHandleRest);
+        assertFalse(mouse.ringShown);
+        expect("griff tap");
+    }
+
+    @Test
+    public void griffAMovePastTheSlopAfterTheDistributeLabelIsTheStrokeWhichALoopBackGivesUp() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.distributes(mouse.lastHandleRest);
+        strokeFirst(100, 50, 300, 50);
+        assertFalse("the ring went", mouse.ringShown);
+        assertEquals("the route's label", Stroke.ROUTE, mouse.shownMode);
+        strokeFirst(300, 50, 110, 50);
+        assertEquals(Stroke.CANCEL, mouse.shownMode);
+        up(0, 2000);
+        expect("held", "given up");
+        // Past the slop before the rest's time: no rest is asked.
+        mouse.events.clear();
+        down(0, 100, 50, 3000);
+        strokeFirst(100, 50, 400, 50);
+        up(0, 3500);
+        assertEquals(1, mouse.handleRests);
+        expect("route 250 50, 400 50 rail 0");
     }
 
     @Test

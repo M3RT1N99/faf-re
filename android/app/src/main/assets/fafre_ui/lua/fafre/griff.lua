@@ -961,6 +961,31 @@ function OffersPatrol()
     FafreGriffAnswer(units and OffersPatrolFor(units) and Yes or No)
 end
 
+--- For the handle's rest: whether FAF's Distribute orders, its key action G, deals out a queue with the cursor at this place of
+--- the picture, the group's middle: FAF picks the selected non-factory unit nearest the world place under the cursor
+--- (distribute-queue.lua DistributeOrders, by the same filter, the same distance and the same first pick), here two of them
+--- at least, so that something is dealt out, and that unit's queue two orders or more, so that there is more than one order.
+function CanDistribute(x, y)
+    local units = GetSelectedUnits()
+    local view = WorldView.viewLeft
+    local place = view and UnProject(view, {x, y})
+    local valid = units and EntityCategoryFilterOut(categories.FACTORY, units)
+    local can = false
+    if Valid(place) and valid and table.getn(valid) >= 2 then
+        local nearest, shortest = valid[1], 4096 * 4096
+        for _, unit in valid do
+            local position = unit:GetPosition()
+            local dx, dz = position[1] - place[1], position[3] - place[3]
+            local distance = dx * dx + dz * dz
+            if distance < shortest then
+                nearest, shortest = unit, distance
+            end
+        end
+        can = table.getn(nearest:GetCommandQueue() or {}) >= 2
+    end
+    FafreGriffAnswer(can and Yes or No)
+end
+
 --- The next click on the map is FAF's attack-move there, as its orders panel's button makes it, where that button is offered
 --- for the selection: the tap ladder's attack-move in place of a move, and a route's next waypoint where FAF ended the mode.
 function StartAttackMove()

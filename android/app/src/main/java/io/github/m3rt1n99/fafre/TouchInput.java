@@ -59,7 +59,9 @@ package io.github.m3rt1n99.fafre;
  *       unit's type on the screen, then on the map, an attack-move in place of a move, all one's own on the screen;
  *   <li>a finger that starts on the handle over the selection ({@link Mouse#onGriff}) draws a route, whose waypoints go to
  *       {@link Mouse#route} when it lifts, counted where the finger was a moment before; one that lifts where it began was
- *       a tap on the handle, a long loop back to the handle is a patrol, a short one gives the route up, as does a second
+ *       a tap on the handle, but after the handle's rest ({@link #REST_MILLISECONDS}) FAF's Distribute orders where the
+ *       program said its selection can ({@link #distributes}: then a ring and the label show, and a move past the slop is the
+ *       route still); a long loop back to the handle is a patrol, a short one gives the route up, as does a second
  *       finger once the first has left the slop, before which the two are two fingers. Where the ladder may climb, the
  *       handle leaves the finger's quick lift to it, which is the handle's tap where it does not climb after all; a rest of
  *       that finger or a move past the slop is the handle's, from where it came down;
@@ -170,6 +172,15 @@ final class TouchInput implements Fingers {
         void griffTap();
 
         /**
+         * Griff: the handle's rest number `rest` (REST_MILLISECONDS on the handle, within the slop): the program says whether its
+         * lift gives FAF's Distribute orders ({@link TouchInput#distributes}).
+         */
+        void handleRest(int rest);
+
+        /** Griff: the lift of a handle's rest that the program said distributes: FAF's Distribute orders, its key action G. */
+        void distribute();
+
+        /**
          * Griff: a route from the handle, `count` waypoints, each FAF's right click there, the last on what is there; all but the
          * first with Shift, the first too with RAIL_QUEUE; with FAF's attack-move armed attack-moves ({@link Game#route}).
          * `patrol`: a loop, the waypoints FAF's patrol where it offers one.
@@ -178,7 +189,8 @@ final class TouchInput implements Fingers {
 
         /**
          * Griff: the stroke as far as it goes, for the screen: its points (count 0: none, and the handle is free again), what
-         * lifting now gives (Stroke.ROUTE, PATROL or CANCEL) and the waypoints it would order.
+         * lifting now gives (Stroke.ROUTE, PATROL or CANCEL; DISTRIBUTE after the handle's rest, with no waypoints) and the
+         * waypoints it would order.
          */
         void strokeShown(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints);
 
@@ -702,6 +714,14 @@ final class TouchInput implements Fingers {
     /** Griff: when the cursor last hovered for the stroke, and whether a hover waits for its time. */
     private long mHoverAt;
     private boolean mHoverWaits;
+    /**
+     * Griff: the handle's rest (REST_MILLISECONDS of the stroke's finger within the slop): whether its time runs, which has the
+     * timer until then, the number of the last rest the program was asked about (Mouse#handleRest), and whether the program
+     * said that its lift gives FAF's Distribute orders (#distributes), for which the ring and the label show.
+     */
+    private boolean mHandleRestWaits;
+    private int mHandleRests;
+    private boolean mDistributes;
     /** Griff's draft: the plan the finger came down on (0: none), and the one a waiting tap was on. */
     private int mDraftPlan;
     private int mClickPlan;
@@ -851,8 +871,9 @@ final class TouchInput implements Fingers {
             mState = State.SPENT;
         } else if (mState == State.STROKE && mStrokeFar <= mGriffSlop) {
             // A second finger while the first has not left the handle: two fingers, whose quick tap lets the selection go as
-            // anywhere else, and which pinch where they move. Nothing was given up: no word of it.
+            // anywhere else, and which pinch where they move. Nothing was given up: no word of it; a handle's rest goes.
             hideStroke();
+            hideRing();
             mMouse.stopTimer();
             startTwo(id, x, y, time);
         } else if (mState == State.STROKE) {
@@ -1018,11 +1039,61 @@ final class TouchInput implements Fingers {
         addStrokePoint(x, y);
         startTrail(x, y, time);
         mLadder.clear();
+        mDistributes = false;
         showStroke();
         mHoverAt = time;
         mHoverWaits = false;
         mMouse.strokeHover(x, y);
+        // The handle's rest, unless the finger leaves the slop first (#leaveHandleRest).
+        mHandleRestWaits = true;
+        mMouse.startTimer(REST_MILLISECONDS);
         mState = State.STROKE;
+    }
+
+    /** Griff: the stroke's finger rested on the handle: the program says whether its lift gives FAF's Distribute orders. */
+    private void restOnHandle() {
+        mHandleRestWaits = false;
+        mMouse.stopTimer();
+        mHandleRests = (mHandleRests + 1) & 0xFFFF;
+        mMouse.handleRest(mHandleRests);
+    }
+
+    /**
+     * Griff: the stroke's finger left the slop: no rest on the handle any more, and what one showed goes. Whether the ring and
+     * the label went, so that the screen says the route's meaning now.
+     */
+    private boolean leaveHandleRest() {
+        if (mHandleRestWaits) {
+            mHandleRestWaits = false;
+            mMouse.stopTimer();
+        }
+        if (!mDistributes) {
+            return false;
+        }
+        mDistributes = false;
+        hideRing();
+        return true;
+    }
+
+    /**
+     * Griff: the program says that the lift of the handle's rest number `rest` gives FAF's Distribute orders
+     * (Game.SAID_DISTRIBUTES): its ring shows and buzzes and the label above the finger says FAF's own words, while the finger
+     * stays within the slop. A word for an earlier rest, or after the finger left the slop or lifted, counts for nothing; with
+     * none the lift is the handle's tap.
+     */
+    void distributes(int rest) {
+        if (mState != State.STROKE || rest != mHandleRests || mHandleRestWaits || mStrokeFar > mGriffSlop || mDistributes) {
+            return;
+        }
+        if (clicksCame()) {
+            giveUpForClicks();
+            return;
+        }
+        mDistributes = true;
+        mRing = true;
+        mMouse.ring(true, mFirst.x, mFirst.y);
+        mMouse.held();
+        showStroke();
     }
 
     /**
@@ -1094,6 +1165,9 @@ final class TouchInput implements Fingers {
             case STROKE:
                 addTrail(time);
                 strokeTo(mFirst.x, mFirst.y, time);
+                if (mRing) {
+                    mMouse.ring(true, mFirst.x, mFirst.y);
+                }
                 break;
             case DRAFT_PENDING:
                 addTrail(time);
@@ -1413,6 +1487,7 @@ final class TouchInput implements Fingers {
                 // The handle's finger, which the ladder had only for a quick lift, rested: the handle's rest, never the map's,
                 // which would be the right button at the handle's place, a move or a formation there.
                 takeForHandle();
+                restOnHandle();
             } else if (mGriff) {
                 startRest();
             } else {
@@ -1426,6 +1501,8 @@ final class TouchInput implements Fingers {
                 startTakingGhost();
             }
             mMouse.held();
+        } else if (mState == State.STROKE && mHandleRestWaits) {
+            restOnHandle();
         } else if (mState == State.STROKE && mHoverWaits) {
             mHoverWaits = false;
             mHoverAt += HOVER_MILLISECONDS;
@@ -1784,6 +1861,10 @@ final class TouchInput implements Fingers {
     /** Griff: the stroke follows the finger, a point a mm once it has left the handle's middle by one; the screen shows it. */
     private void strokeTo(float x, float y, long time) {
         mStrokeFar = Math.max(mStrokeFar, (float) Math.hypot(x - mStartX, y - mStartY));
+        if (mStrokeFar > mGriffSlop && leaveHandleRest()) {
+            // Past the slop the handle's rest is over: the route's meaning, which a short loop back gives up.
+            showStroke();
+        }
         hover(x, y, time);
         int last = mStrokeCount - 1;
         if (mStrokeFar <= STROKE_POINT_MM * mMillimetre
@@ -1798,10 +1879,13 @@ final class TouchInput implements Fingers {
     private void hover(float x, float y, long time) {
         if (time - mHoverAt >= HOVER_MILLISECONDS) {
             mHoverAt = time;
-            mHoverWaits = false;
-            mMouse.stopTimer();
+            if (mHoverWaits) {
+                mHoverWaits = false;
+                mMouse.stopTimer();
+            }
             mMouse.strokeHover(x, y);
-        } else if (!mHoverWaits) {
+        } else if (!mHoverWaits && !mHandleRestWaits) {
+            // The handle's rest has the timer while its time runs: a hover within the slop comes with a later move then.
             mHoverWaits = true;
             mMouse.startTimer(mHoverAt + HOVER_MILLISECONDS - time);
         }
@@ -1813,6 +1897,11 @@ final class TouchInput implements Fingers {
     }
 
     private void showStroke() {
+        if (mDistributes) {
+            // The handle's rest: the label alone, no route.
+            mMouse.strokeShown(mStrokeX, mStrokeY, mStrokeCount, Stroke.DISTRIBUTE, mWaypointX, mWaypointY, 0);
+            return;
+        }
         mMouse.strokeShown(mStrokeX, mStrokeY, mStrokeCount, Stroke.classify(mStrokeX, mStrokeY, mStrokeCount, mMillimetre), mWaypointX,
                            mWaypointY, strokeWaypoints());
     }
@@ -1845,14 +1934,21 @@ final class TouchInput implements Fingers {
     }
 
     /**
-     * Griff: the finger lifted from its stroke: a tap on the handle, or what the stroke gives where the finger was a moment
-     * before: a route, a patrol by a loop, or nothing for a loop taken back.
+     * Griff: the finger lifted from its stroke: within the slop FAF's Distribute orders where the handle's rest said so, else a
+     * tap on the handle; or what the stroke gives where the finger was a moment before: a route, a patrol by a loop, or nothing
+     * for a loop taken back.
      */
     private void finishStroke(long time) {
         mMouse.stopTimer();
         hideStroke();
+        hideRing();
         if (mStrokeFar <= mGriffSlop) {
-            mMouse.griffTap();
+            if (mDistributes) {
+                // As the PC's G with the cursor at the group's middle; as the handle's tap, it uses none of the rail.
+                mMouse.distribute();
+            } else {
+                mMouse.griffTap();
+            }
             return;
         }
         int settled = settled(time);
