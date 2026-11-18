@@ -60,8 +60,8 @@ package io.github.m3rt1n99.fafre;
  *   <li>a finger that starts on the handle over the selection ({@link Mouse#onGriff}) draws a route, whose waypoints go to
  *       {@link Mouse#route} when it lifts, counted where the finger was a moment before; one that lifts where it began was
  *       a tap on the handle, a long loop back to the handle is a patrol, a short one gives the route up, as does a second
- *       finger. Where the ladder may climb, the handle leaves the finger to it, and its lift is the handle's tap where it
- *       does not climb after all;
+ *       finger. Where the ladder may climb, the handle leaves the finger's quick lift to it, which is the handle's tap where
+ *       it does not climb after all; a rest of that finger or a move past the slop is the handle's, from where it came down;
  *   <li>two fingers zoom at their middle and move the camera with it ({@link Mouse#pinch}), and the one left of them
  *       moves it on; a second finger on a pan, once the program has said it is one ({@link #panned}), makes two of it; a
  *       quick tap of two lets the selection go;
@@ -641,7 +641,8 @@ final class TouchInput implements Fingers {
     private int mFingerBox;
     /**
      * Griff: the first finger came down on the handle, which left it to the ladder as that may climb; and so did a waiting tap's
-     * finger. A tap of it that does not climb after all is the handle's.
+     * finger. A tap of it that does not climb after all is the handle's; a rest of it or a move past the slop is the handle's
+     * gesture, never the map's (#takeForHandle).
      */
     private boolean mOnHandle;
     private boolean mClickOnHandle;
@@ -940,6 +941,17 @@ final class TouchInput implements Fingers {
         mState = State.STROKE;
     }
 
+    /**
+     * Griff: the finger the handle left to the ladder (#mOnHandle) rests or leaves the slop: only a lift climbs the ladder, and
+     * the finger is the handle's from where it came down, as one that came after the ladder's time. It stays where it is.
+     */
+    private void takeForHandle() {
+        float x = mFirst.x;
+        float y = mFirst.y;
+        startStroke(mFirst.id, mStartX, mStartY, mStartTime);
+        mFirst.place(x, y);
+    }
+
     private void startPlacing(int id, float x, float y, long time) {
         mFirst.id = id;
         mFirst.place(x, y);
@@ -973,6 +985,12 @@ final class TouchInput implements Fingers {
                     if (!mGriff) {
                         press(tapButton(), mStartX, mStartY);
                         mMouse.move(mFirst.x, mFirst.y);
+                    } else if (mOnHandle) {
+                        // The handle's finger, which the ladder had only for a quick lift: its stroke from where it came down,
+                        // with this move, which the settled lift may count.
+                        takeForHandle();
+                        addTrail(time);
+                        strokeTo(mFirst.x, mFirst.y, time);
                     } else {
                         startGriffDrag(false, time);
                     }
@@ -1293,7 +1311,11 @@ final class TouchInput implements Fingers {
             return;
         }
         if (mState == State.PENDING && !mDeleting) {
-            if (mGriff) {
+            if (mGriff && mOnHandle) {
+                // The handle's finger, which the ladder had only for a quick lift, rested: the handle's rest, never the map's,
+                // which would be the right button at the handle's place, a move or a formation there.
+                takeForHandle();
+            } else if (mGriff) {
                 mState = State.RESTED;
                 mLadder.clear();
                 // With Box a rest is none (the mockup's): no ring, nothing to feel, and its lift is Box's tap on the map. Else the

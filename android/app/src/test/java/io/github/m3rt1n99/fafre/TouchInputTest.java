@@ -989,6 +989,56 @@ public class TouchInputTest {
         assertTrue(mouse.events.toString(), mouse.events.get(0).startsWith("route "));
     }
 
+    /** A tap on one's own unit at 100 50, which raised the handle at 160 50: a finger on the handle within 350 ms may climb. */
+    private void tapRaisingTheHandle(long down) {
+        tap(100, 50, down, TouchInput.TAP_OWN);
+        mouse.griffX = 160;
+        mouse.griffY = 50;
+        mouse.events.clear();
+    }
+
+    @Test
+    public void griffARestOnTheHandleRightAfterATapIsTheHandlesNotTheMaps() {
+        // The ladder may climb, so the handle left the finger to it; but only a quick lift climbs. Its rest is the handle's:
+        // no ring and no rest at the handle's place, whose right button would be a move or a formation there; its lift within
+        // the slop is the handle's tap.
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        timerRuns();
+        moveFirst(158, 52, 1700);
+        assertFalse("no ring", mouse.ringShown);
+        up(0, 1800);
+        expect("move 150 50", "griff tap");
+    }
+
+    @Test
+    public void griffADragFromTheHandleRightAfterATapIsItsStrokeNotAPan() {
+        // From where the finger came down, as a stroke from the handle; the moves before it left the slop count.
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        strokeFirst(150, 50, 450, 50);
+        up(0, 1800);
+        expect("move 150 50", "route 300 50, 450 50 rail 0");
+        // A quick one that lifts 60 ms after it left the slop counts where it was then, not where it came down: a route.
+        tapRaisingTheHandle(3000);
+        down(0, 150, 50, 3300);
+        moveFirst(240, 50, 3340);
+        up(0, 3400);
+        expect("move 150 50", "route 240 50 rail 0");
+    }
+
+    @Test
+    public void griffAQuickLiftOnTheHandleRightAfterATapClimbsTheLadder() {
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        moveFirst(160, 52, 1320);
+        up(0, 1300 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 150 50", "smart tap 150 50 rail 0 type in view at 100 50");
+    }
+
     @Test
     public void griffATwoFingerTapLetsTheSelectionGo() {
         griff();
