@@ -1024,9 +1024,9 @@ public class TouchInputTest {
 
     @Test
     public void griffARestOnTheHandleRightAfterATapIsTheHandlesNotTheMaps() {
-        // The ladder may climb, so the handle left the finger to it; but only a quick lift climbs. Its rest is the handle's:
-        // no ring and no rest at the handle's place, whose right button would be a move or a formation there; its lift within
-        // the slop is the handle's tap.
+        // The ladder may climb, so the handle left the finger to it; but only a quick lift climbs. Its rest is the handle's,
+        // never a rest at the handle's place, whose right button would be a move or a formation there: where the program does
+        // not say that its lift distributes, no ring, and its lift within the slop is the handle's tap.
         griff();
         tapRaisingTheHandle(1000);
         down(0, 150, 50, 1300);
@@ -1036,6 +1036,21 @@ public class TouchInputTest {
         assertFalse("no ring", mouse.ringShown);
         up(0, 1800);
         expect("move 150 50", "griff tap");
+    }
+
+    @Test
+    public void griffARestOnTheHandleRightAfterATapGivesFafsDistributeOrdersWhereTheProgramSays() {
+        // The handle's rest of the finger the ladder had: where the program says that its lift distributes, the ring and the
+        // label show, and the lift is FAF's Distribute orders, as after the ladder's time.
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        timerRuns();
+        touch.distributes(mouse.lastHandleRest);
+        assertTrue("the ring", mouse.ringShown);
+        assertEquals(Stroke.DISTRIBUTE, mouse.shownMode);
+        up(0, 1800);
+        expect("move 150 50", "held", "distribute");
     }
 
     @Test
@@ -1279,6 +1294,84 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffASecondFingerThatWaitedForTheWordAndWentIsNoGestures() {
+        // It lifted before the program said that the drag is a pan, or Android took it for a palm: the word makes no two fingers
+        // of it, and the first finger's pan goes on to its own lift.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1030);
+        down(1, 400, 100, 1060);
+        up(1, 1080);
+        touch.panned(mouse.lastDrag, 1090);
+        moveFirst(170, 100, 1100);
+        up(0, 1200);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 170 100", "griff drag end 170 100");
+        mouse.events.clear();
+        down(0, 100, 100, 2000);
+        moveFirst(150, 100, 2030);
+        down(1, 400, 100, 2060);
+        touch.forget(1, 2070);
+        --fingers;
+        touch.panned(mouse.lastDrag, 2090);
+        moveFirst(170, 100, 2100);
+        up(0, 2200);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 170 100", "griff drag end 170 100");
+    }
+
+    @Test
+    public void griffTheProgramsWordAfterItsClicksBeganGivesTheGestureUp() {
+        // The clicks of the tick or the undo began after the first finger came down: the program's word on its rest or its drag
+        // gives the gesture up, and nothing more of it goes to the game.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        // The handle's rest: its stroke goes, Cancelled, with no ring.
+        down(0, 100, 50, 1000);
+        timerRuns();
+        mouse.clicksBegin();
+        touch.distributes(mouse.lastHandleRest);
+        assertFalse(mouse.ringShown);
+        up(0, 1500);
+        expect("given up");
+        // The draft's rest on FAF's UI: no panel's rest.
+        mouse.clicking = false;
+        mouse.drafting = true;
+        mouse.events.clear();
+        down(0, 400, 50, 2000);
+        timerRuns();
+        mouse.clicksBegin();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        assertFalse(mouse.ringShown);
+        up(0, 2500);
+        expect("move 400 50");
+        // A second finger that waited for the word on a pan: no two fingers, nor a pinch.
+        mouse.clicking = false;
+        mouse.drafting = false;
+        mouse.events.clear();
+        down(0, 400, 100, 3000);
+        moveFirst(450, 100, 3030);
+        down(1, 700, 100, 3060);
+        mouse.clicksBegin();
+        touch.panned(mouse.lastDrag, 3090);
+        moveBoth(430, 100, 720, 100);
+        up(1, 3150);
+        up(0, 3160);
+        expect("move 400 100", "griff drag 400 100 now 450 100 rail 0", "move 450 100");
+        // One that waited for the word on FAF's formation: nothing more either.
+        mouse.clicking = false;
+        mouse.events.clear();
+        down(0, 400, 100, 4000);
+        timerRuns();
+        moveFirst(500, 150, 4400);
+        down(1, 700, 100, 4420);
+        mouse.clicksBegin();
+        touch.formation(mouse.lastDrag);
+        up(1, 4500);
+        up(0, 4600);
+        expect("move 400 100", "held", "griff rest 400 100", "griff drag 400 100 now 500 150 rested rail 0", "move 500 150");
+    }
+
+    @Test
     public void griffASecondFingerBeforeTheFormationsWordGivesItUpAtTheWord() {
         griff();
         down(0, 100, 50, 1000);
@@ -1488,6 +1581,23 @@ public class TouchInputTest {
         up(0, 3500);
         assertEquals(1, mouse.handleRests);
         expect("route 250 50, 400 50 rail 0");
+    }
+
+    @Test
+    public void griffTheHandlesWordThatComesAfterTheFingerLeftTheSlopCountsForNothing() {
+        // The finger rested on the handle, then drew past the slop before the program said that its lift distributes: the stroke
+        // is the route, with no ring and no label.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        strokeFirst(100, 50, 300, 50);
+        touch.distributes(mouse.lastHandleRest);
+        assertFalse(mouse.ringShown);
+        assertEquals("the route's label", Stroke.ROUTE, mouse.shownMode);
+        up(0, 1500);
+        expect("route 300 50 rail 0");
     }
 
     @Test
