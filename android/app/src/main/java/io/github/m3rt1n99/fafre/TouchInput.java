@@ -596,9 +596,11 @@ final class TouchInput implements Fingers {
     private long mStartTime;
     /** When the gesture's first finger came down. */
     private long mFirstDown;
-    /** Where the second finger came down. */
+    /** Where the second finger came down, and where the first was then. */
     private float mSecondX;
     private float mSecondY;
+    private float mFirstAtTwoX;
+    private float mFirstAtTwoY;
     private int mPressed;
     private float mWheelDistance;
     private double mWheelRemainder;
@@ -871,13 +873,15 @@ final class TouchInput implements Fingers {
             mWaiting.id = id;
             mWaiting.place(x, y);
         } else if (mState == State.PINCH_PAN) {
-            // Griff: a finger again beside the one left of a pinch pinches anew, from where the two are.
+            // Griff: a finger again beside the one left of a pinch pinches anew, from where the two are; the camera moved, and
+            // their lift is no tap of two.
             endPinch(false, time);
             if (mFollowed != mFirst) {
                 mFirst.id = mFollowed.id;
                 mFirst.place(mFollowed.x, mFollowed.y);
             }
             startTwo(id, x, y, time);
+            mNoTapOfTwo = true;
         }
     }
 
@@ -886,6 +890,8 @@ final class TouchInput implements Fingers {
         mSecond.place(x, y);
         mSecondX = x;
         mSecondY = y;
+        mFirstAtTwoX = mFirst.x;
+        mFirstAtTwoY = mFirst.y;
         mStartX = middleX();
         mStartY = middleY();
         mStartDistance = distance();
@@ -1119,9 +1125,13 @@ final class TouchInput implements Fingers {
                 break;
             case TWO_PENDING:
                 if (mGriff) {
-                    // The mockup's: two fingers that hardly move may still be a tap, and past that they pinch at once.
+                    // The mockup's: two fingers that hardly move may still be a tap, and past that they pinch at once. Each
+                    // finger counts from where it was as the two began, so a twist about a still middle pinches too, moving
+                    // nothing.
                     float still = TWO_FINGERS_STILL_MM * mMillimetre;
-                    if (Math.abs(distance() - mStartDistance) >= still || Math.hypot(middleX() - mStartX, middleY() - mStartY) >= still) {
+                    if (Math.abs(distance() - mStartDistance) >= still || Math.hypot(middleX() - mStartX, middleY() - mStartY) >= still
+                        || Math.hypot(mFirst.x - mFirstAtTwoX, mFirst.y - mFirstAtTwoY) >= still
+                        || Math.hypot(mSecond.x - mSecondX, mSecond.y - mSecondY) >= still) {
                         startPinch();
                     }
                 } else if (Math.abs(distance() - mStartDistance) > 2 * mSlop) {

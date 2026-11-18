@@ -1077,6 +1077,37 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffTwoFingersThatTwistAboutAStillMiddlePinchAndAreNoTap() {
+        // Each finger 2 mm one way, about a middle that stays, their distance 0.4 mm longer: no tap of two, which would let the
+        // selection go, but a pinch, which moves nothing; a finger counts from where it was as the second came down.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(104, 51, 1030);
+        down(1, 300, 50, 1050);
+        moveBoth(104, 41, 300, 60);
+        expect("move 100 50", "move 300 50");
+        moveBoth(104, 31, 300, 70);
+        up(1, 1150);
+        up(0, 1160);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+        assertEquals("pinch start 202 50 200", mouse.events.get(2));
+    }
+
+    @Test
+    public void griffTwoFingersAgainAfterAPinchAreNoTapOfTwo() {
+        // A pinch, one finger up and down again beside the other within 350 ms of the first down: the camera moved, no tap.
+        griff();
+        down(0, 100, 100, 1000);
+        down(1, 300, 100, 1020);
+        moveBoth(80, 100, 320, 100);
+        up(1, 1080);
+        down(2, 300, 100, 1100);
+        up(2, 1200);
+        up(0, 1210);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+    }
+
+    @Test
     public void griffTwoFingersZoomAndPanTheCameraTogether() {
         griff();
         down(0, 100, 100, 1000);
