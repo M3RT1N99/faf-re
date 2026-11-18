@@ -526,8 +526,12 @@ function DraftEnded()
     draft.builders = false
 end
 
---- The undo's button brought the dropped draft back (the program's DraftBack): its builders are the draft's again.
+--- The undo's button brought the dropped draft back (the program's DraftBack): its builders are the draft's again. An order
+--- mode armed since the drop ends first, as OrderWhileDrafting keeps none armed while plans wait: the draft comes first.
 function DraftBack()
+    if CommandMode.GetCommandMode()[1] == 'order' then
+        CommandMode.EndCommandMode(true)
+    end
     draft.builders = draft.ended
     draft.ended = false
 end

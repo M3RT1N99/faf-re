@@ -4658,9 +4658,9 @@ namespace
   }
 
   /// The undo of a draft the cross or two fingers' tap dropped (Kept::kDraft): it is open again as it was, its builders with
-  /// it (griff.lua DraftBack), at once, as nothing is clicked and nothing goes to the sim. No other draft is open by then, as
-  /// one that opens ends the record (PickForDraft), and no clicks run, which only an open draft's tick or an order record's
-  /// undo starts.
+  /// it, and an order mode armed since the drop ends, as none stays armed while plans wait (griff.lua DraftBack), at once, as
+  /// nothing is clicked and nothing goes to the sim. No other draft is open by then, as one that opens ends the record
+  /// (PickForDraft), and no clicks run, which only an open draft's tick or an order record's undo starts.
   void DraftBack()
   {
     Record record = std::move(gRecord);

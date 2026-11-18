@@ -554,11 +554,12 @@ store on an empty slot, nor one of the group's units and more, nor *Plus*'s appe
 from other control groups* is On (Off by default), a store takes the stored units out of their other groups without a word, and
 so would the undo's (`selection.lua` `AddSelectionSet`): the hook of `controlgroups.lua` reports every store then as *Plus*'s
 append, and none offers an undo. Their undo comes at the tap, with nothing clicked and nothing for the sim: the draft is open
-again as it was, its plans where they stood and its builders with it (`DraftBack`); the group holds again those of its units that
-live, by FAF's `AddSelectionSet`, as Ctrl and the number store a selection, whose callbacks show its control (`griff.lua`
-`GroupBack`; with none alive *Not undone*, and the group stays as the store left it). They are records as a gesture's are: one
-level, the next replaces one, any order ends it, the button offers it for its 3 s; and so that the undo never undoes what came
-after, a draft that opens ends a dropped draft's record, and the next store on a slot that group's.
+again as it was, its plans where they stood and its builders with it, and an order mode armed since the drop ends, as none stays
+armed while plans wait (`DraftBack`); the group holds again those of its units that live, by FAF's `AddSelectionSet`, as Ctrl
+and the number store a selection, whose callbacks show its control (`griff.lua` `GroupBack`; with none alive *Not undone*, and the
+group stays as the store left it). They are records as a gesture's are: one level, the next replaces one, any order ends it, the
+button offers it for its 3 s; and so that the undo never undoes what came after, a draft that opens ends a dropped draft's
+record, and the next store on a slot that group's.
 
 The undo's button (Griff v4) is FAF's UI's (`griffhud.lua`): a button of FAF's orders panel (its empty slot's frame,
 `orders/basic-empty_bmp.dds`, at the HUD's factor as its order buttons) with *Undo* in FAF's font, white with a shadow, as FAF writes
