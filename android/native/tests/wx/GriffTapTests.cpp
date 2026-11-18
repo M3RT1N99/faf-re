@@ -1,6 +1,6 @@
 // What a tap of the touch scheme Griff uses (include/GriffTap.h): the rail's buttons by what the tap turned out to be, FAF's
-// reach for a unit beside it as the console's text, what the cross puts away, where a drag on FAF's UI presses nothing, and
-// when the pointer leaves while Griff's Distribute orders holds the cursor.
+// reach for a unit beside it as the console's text, what the cross puts away, where a drag on FAF's UI presses nothing and how
+// a rest's ring shows what its drag gives, and when the pointer leaves while Griff's Distribute orders holds the cursor.
 
 #include <cstdlib>
 #include <string>
@@ -100,6 +100,22 @@ WXT_TEST(GriffTapADragPressesNothingWhereItsPressComesToACheckbox)
   WXT_CHECK(!PressesNothing(&root));
   // Where no control takes the press, a mouse's drag presses as ever.
   WXT_CHECK(!PressesNothing(nullptr));
+}
+
+WXT_TEST(GriffTapARestsRingShowsWhatItsDragGives)
+{
+  using grifftap::RestLook;
+  using grifftap::RestLookOf;
+  // On the ground for FAF's formation; elsewhere the left button's drag: a box, an armed mode's drag, a panel's.
+  WXT_CHECK_EQ(RestLookOf(false, false, true), RestLook::kFormation);
+  WXT_CHECK_EQ(RestLookOf(false, false, false), RestLook::kLeftDrag);
+  // Nothing on a marked waypoint, and on a Checkbox of FAF's, whose press a drag leaves alone: its lift is the right click.
+  WXT_CHECK_EQ(RestLookOf(false, true, false), RestLook::kNothing);
+  WXT_CHECK_EQ(RestLookOf(true, false, false), RestLook::kNothing);
+  // griffmap.lua's rings by number: the move ping's, the alert ping's, the attack ping's.
+  WXT_CHECK_EQ(static_cast<int>(RestLook::kFormation), 1);
+  WXT_CHECK_EQ(static_cast<int>(RestLook::kLeftDrag), 2);
+  WXT_CHECK_EQ(static_cast<int>(RestLook::kNothing), 3);
 }
 
 WXT_TEST(GriffTapThePointersLeaveWaitsWhileDistributeOrdersHoldsTheCursor)

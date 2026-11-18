@@ -33,7 +33,8 @@ local FAINT = 0.35
 --- view draws a ping's (worldview.lua DisplayPing), by the program's REST_ look of what the finger's drag gives: FAF's
 --- formation the move ping's, as is the handle's rest whose lift distributes the orders (its drag is the route); the left
 --- button's drag, as a mouse's there (a box on the map, an armed mode's own drag, the minimap's camera, a panel's), the
---- marker ping's; the lift's deletion of a marked waypoint the attack ping's. It stays as
+--- marker ping's; a drag that gives nothing the attack ping's: from a waypoint marked for deletion, which the lift deletes,
+--- and from a Checkbox of FAF's, whose press a slide leaves alone, where the lift is the panel's right click. It stays as
 --- strong as a ping's ring as it begins, where FAF's fades as it grows: at this size on the phone's picture to about a fifth.
 local RING_SIDE = 96
 local Rings = {

@@ -2,9 +2,9 @@
 
 // What a tap of the touch scheme Griff (android/TOUCH_UI.md, "Griff") uses: of the rail's buttons those its outcome used (the
 // rule of the app's Rail.java), and FAF's reach for a unit beside it as the console's text; what the tap on Griff's Esc, the
-// cross, does; where a finger's drag on FAF's UI presses nothing; and when the pointer leaves after a lift that Griff's
-// Distribute orders holds the cursor for. The program decides a tap (src/host/GriffAndroid.cpp); here the rules alone, for
-// their tests (tests/wx/GriffTapTests.cpp).
+// cross, does; where a finger's drag on FAF's UI presses nothing, and how a rest's ring shows what its drag gives; and when the
+// pointer leaves after a lift that Griff's Distribute orders holds the cursor for. The program decides a tap
+// (src/host/GriffAndroid.cpp); here the rules alone, for their tests (tests/wx/GriffTapTests.cpp).
 
 #include <cstdint>
 #include <cstdio>
@@ -83,6 +83,28 @@ namespace grifftap
       }
     }
     return false;
+  }
+
+  /// How a resting finger's ring looks (Game.REST_; griffmap.lua's rings go by these numbers), by what a drag from the rest gives
+  /// (the program's DragTask): FAF's formation, the right button's drag; the left button's drag from there, as a mouse's,
+  /// which is FAF's box on the map, the armed mode's own drag where a command mode is armed (its formation, an area command),
+  /// the minimap's camera and a panel's drag; or nothing: on a waypoint marked for deletion, which the lift deletes, and on a
+  /// Checkbox of FAF's (DragPressesNothing), where the lift is the panel's right click all the same.
+  enum class RestLook
+  {
+    kFormation = 1,
+    kLeftDrag = 2,
+    kNothing = 3,
+  };
+
+  /// The look of a rest on a Checkbox of FAF's (`checkbox`), or of one that found a waypoint to mark (`waypoint`) or the ground
+  /// for FAF's formation (`formation`).
+  [[nodiscard]] constexpr RestLook RestLookOf(const bool checkbox, const bool waypoint, const bool formation)
+  {
+    if (checkbox || waypoint) {
+      return RestLook::kNothing;
+    }
+    return formation ? RestLook::kFormation : RestLook::kLeftDrag;
   }
 
   /// The pointer's leave once the last finger has lifted (src/host/GameHost.cpp PointerLeave), by how many fingers had come down

@@ -154,15 +154,9 @@ namespace
   /// is FAF's right click there either way.
   constexpr bool kRestDragGivesFormation = true;
 
-  // Game.REST_: how a resting finger's ring looks (griffmap.lua), by what a drag from the rest gives (DragTask): FAF's
-  // formation, the right button's drag; the left button's drag from there, as a mouse's, which is FAF's box on the map, the
-  // armed mode's own drag where a command mode is armed (its formation, an area command), the minimap's camera and a panel's
-  // drag; or, on a waypoint marked for deletion, which its lift deletes, nothing.
-  constexpr float kRestFormation = 1;
-  constexpr float kRestLeftDrag = 2;
-  constexpr float kRestWaypoint = 3;
-  /// The handle's rest whose lift gives FAF's Distribute orders: its drag is the handle's route, a move, so the formation's.
-  constexpr float kRestDistribute = kRestFormation;
+  /// The ring of the handle's rest whose lift gives FAF's Distribute orders (Game.REST_, grifftap::RestLook): its drag is the
+  /// handle's route, a move, so the formation's.
+  constexpr grifftap::RestLook kRestDistribute = grifftap::RestLook::kFormation;
 
   // griff.lua's yes and no for Ask, whose 0 is no answer.
   constexpr int kYes = 2;
@@ -2796,7 +2790,7 @@ namespace
         distributes = Ask((std::string(kGriffLua) + call).c_str()) == kYes;
       }
       if (distributes) {
-        griffshown::Set(griffshown::kRest, {kRestDistribute});
+        griffshown::Set(griffshown::kRest, {static_cast<float>(kRestDistribute)});
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3065,12 +3059,12 @@ namespace
     return true;
   }
 
-  /// How a resting finger's ring looks (Game.REST_, griffmap.lua): by what the rest found, what its drag gives.
-  void ShowRest()
+  /// How a resting finger's ring looks (Game.REST_, griffmap.lua): what its drag gives, by what the rest found, or nothing on a
+  /// Checkbox of FAF's (`checkbox`), from which a drag presses nothing (DragTask; grifftap::RestLookOf).
+  void ShowRest(const bool checkbox)
   {
-    griffshown::Set(
-      griffshown::kRest, {gRest.kind == Rest::kWaypoint ? kRestWaypoint : gRest.formation ? kRestFormation : kRestLeftDrag}
-    );
+    const grifftap::RestLook look = grifftap::RestLookOf(checkbox, gRest.kind == Rest::kWaypoint, gRest.formation);
+    griffshown::Set(griffshown::kRest, {static_cast<float>(look)});
   }
 
   /// A finger rested here on the map (Game.griffRest), without Box: on a waypoint of the selection's orders it is marked for
@@ -3079,15 +3073,16 @@ namespace
   /// is FAF's box as before. Not with a command mode armed, whose drag is its own (FAF's area attack), nor on FAF's UI or the
   /// minimap, nor between the program's clicks. Whatever it found, the ring about the finger shows what its drag gives
   /// (ShowRest, Game.REST_), also where it looked for nothing: there the left button's drag, the armed mode's, the minimap's or
-  /// the panel's.
+  /// the panel's, but from a Checkbox of FAF's nothing.
   void RestTask(const WPARAM places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
     try {
       ForgetRest();
-      if (moho::UI_GamePlaying() && !ClicksRun() && !Covered(x, y) && OnMap(static_cast<float>(x), static_cast<float>(y))
-          && !CommandModeArmed() && !MarkWaypoint(x, y)) {
+      // The map as DragTask finds it for the drag that may follow.
+      const bool map = moho::UI_GamePlaying() && OnMap(static_cast<float>(x), static_cast<float>(y));
+      if (map && !ClicksRun() && !Covered(x, y) && !CommandModeArmed() && !MarkWaypoint(x, y)) {
         // What the cursor is over, where it rests: the finger's place since its down.
         const int kind = Ask(kTapKind);
         if ((kind & kSelection) != 0 && (kind & kMoveOrder) != 0) {
@@ -3095,7 +3090,7 @@ namespace
           gRest.formation = kRestDragGivesFormation && (kind & kMobileSelected) != 0;
         }
       }
-      ShowRest();
+      ShowRest(!map && PressComesToCheckbox(static_cast<float>(x), static_cast<float>(y)));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
