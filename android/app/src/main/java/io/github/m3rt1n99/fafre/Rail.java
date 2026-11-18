@@ -12,7 +12,8 @@ package io.github.m3rt1n99.fafre;
  * nothing at all is no action and uses none (the mockup's). Without Box the activity puts them out at once; with Box the
  * program says what it used (Game.SAID_TAP, its rule in include/GriffTap.h). Of the other actions a box on the map uses Box
  * and Plus, a formation Plus, the draft's box over deposits Box, a route Plus, the draft's tick Plus; a pan, the handle's tap
- * and the draft's plans use none.
+ * and its Distribute orders use none, and in the draft its plans and its taps, rests and slides on FAF's UI none, so that a lit
+ * Plus stays for the tick (a held one is Shift for them as ever).
  *
  * <p>FAF's UI draws it (griffhud.lua: FAF's order buttons at the HUD's factor, at the top left, the user's decision of
  * 2026-11-13), as each button looks ({@link #look}); the activity takes the fingers on it. FAF's orders panel has the

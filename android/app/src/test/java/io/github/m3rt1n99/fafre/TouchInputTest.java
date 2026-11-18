@@ -2472,6 +2472,34 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffDraftARestOnFafsUiLeavesALitPlusForTheTick() {
+        // As the draft's tap there: the panel's right click takes no Plus, which stays lit for the tick, whose plans it appends to
+        // the builders' queues; nor does the rest's slide, the panel's drag.
+        draft(new int[] {1, 400, 50, 0});
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        up(0, 1500);
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 0");
+        mouse.events.clear();
+        down(0, 100, 50, 2000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        moveFirst(160, 50, 2400);
+        up(0, 2500);
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 160 50 rested rail 0", "move 160 50",
+               "griff drag end 160 50");
+        // The next rest outside the draft is the rail's as ever.
+        mouse.drafting = false;
+        mouse.events.clear();
+        down(0, 100, 50, 3000);
+        timerRuns();
+        up(0, 3500);
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 2", "rail used 2");
+    }
+
+    @Test
     public void griffDraftARestOnAPlanOrWithBoxIsNoAimAndItsLiftIsATap() {
         draft(new int[] {1, 100, 50, 0});
         down(0, 100, 50, 1000);

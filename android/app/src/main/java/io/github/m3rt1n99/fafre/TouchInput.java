@@ -81,9 +81,9 @@ package io.github.m3rt1n99.fafre;
  *   <li>a drag from the newest plan draws a line of them ({@link Mouse#draftLine}), from another plan moves the whole draft
  *       ({@link Mouse#draftMove}), with Box and an extractor picked is a box over deposits ({@link Mouse#draftBox}), else it
  *       pans; a second finger gives the line, the move or the box up and the two pinch;
- *   <li>a finger that rests on FAF's UI is the panel's rest there, as outside the draft, once the program has said at Griff's
- *       rest that it is there ({@link #draftRestOnUi}); on the map, {@link #DRAFT_REST_MILLISECONDS} on no plan and without Box,
- *       it shows the plan its lift places under it and a loupe ({@link Mouse#draftAim});
+ *   <li>a finger that rests on FAF's UI is the panel's rest there, as outside the draft but using none of the rail, once the
+ *       program has said at Griff's rest that it is there ({@link #draftRestOnUi}); on the map, {@link #DRAFT_REST_MILLISECONDS}
+ *       on no plan and without Box, it shows the plan its lift places under it and a loupe ({@link Mouse#draftAim});
  *   <li>a quick tap of two drops the draft ({@link Mouse#draftDrop}).
  * </ul>
  *
@@ -731,6 +731,11 @@ final class TouchInput implements Fingers {
      */
     private boolean mDraftRestAsked;
     private int mDraftRests;
+    /**
+     * Griff's draft: the finger's rest is the panel's on FAF's UI (#draftRestOnUi), whose lift and slide use none of the rail, as
+     * the draft's taps there do: a lit Plus stays for the tick (a held one is Shift for them as ever).
+     */
+    private boolean mRestInDraft;
     /** Griff: how many runs of the program's clicks had begun when the gesture's first finger came down (#clicksCame). */
     private int mClickRuns;
 
@@ -959,6 +964,7 @@ final class TouchInput implements Fingers {
     private void startOneFinger(int id, float x, float y, long time) {
         mFirstDown = time;
         mOnHandle = false;
+        mRestInDraft = false;
         int rail = mGriff ? mMouse.rail() : 0;
         mFingerBox = rail & RAIL_BOX;
         if (mGriff) {
@@ -1157,7 +1163,8 @@ final class TouchInput implements Fingers {
                 addTrail(time);
                 if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mGriffSlop) {
                     hideRing();
-                    startGriffDrag(true, time);
+                    // The draft's rest on FAF's UI slides as the panel's drag, with none of the rail: Plus stays for the tick.
+                    startGriffDrag(true, time, mRestInDraft ? 0 : mMouse.rail());
                 } else if (mRing) {
                     mMouse.ring(true, mFirst.x, mFirst.y);
                 }
@@ -1542,8 +1549,9 @@ final class TouchInput implements Fingers {
 
     /**
      * Griff: the program says that the finger of the draft's rest number `rest` is on FAF's UI (Game.SAID_DRAFT_REST): its rest
-     * is the panel's, as outside the draft, whose lift is FAF's right click there and whose slide the panel's drag. A word that
-     * comes after the finger moved, lifted or began its aim counts for nothing.
+     * is the panel's, as outside the draft, whose lift is FAF's right click there and whose slide the panel's drag, but neither
+     * uses the rail, as the draft's tap there does not: a lit Plus stays for the tick. A word that comes after the finger moved,
+     * lifted or began its aim counts for nothing.
      */
     void draftRestOnUi(int rest) {
         if (mState != State.DRAFT_PENDING || !mDraftRestAsked || rest != mDraftRests) {
@@ -1554,6 +1562,7 @@ final class TouchInput implements Fingers {
             return;
         }
         mMouse.stopTimer();
+        mRestInDraft = true;
         startRest();
     }
 
@@ -1663,7 +1672,8 @@ final class TouchInput implements Fingers {
 
     /**
      * Griff: a rest and no drag: on a panel the right click; on the map nothing, as the finger changed its mind. Either way the
-     * rail counted for it (Rail). With Box it was no rest, and on the map it is Box's tap, of which the program says what it used.
+     * rail counted for it (Rail), but Plus not for the draft's rest on FAF's UI (#mRestInDraft). With Box it was no rest, and on
+     * the map it is Box's tap, of which the program says what it used.
      */
     private void restTap() {
         hideRing();
@@ -1671,7 +1681,8 @@ final class TouchInput implements Fingers {
         mRestSaid = false;
         // It rang and buzzed unless Box counted at the finger's down (#timer), which on a panel is a rest all the same.
         mRestRang = mFingerBox == 0;
-        int rail = fingerRail();
+        // The draft's rest on FAF's UI takes no Plus, as the draft's tap there: a lit one stays for the tick.
+        int rail = mRestInDraft ? fingerRail() & ~RAIL_QUEUE : fingerRail();
         mMouse.restTap(mStartX, mStartY, rail);
         if (rail != 0 && (rail & RAIL_BOX) == 0) {
             mMouse.railUsed(rail);
