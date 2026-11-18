@@ -1346,3 +1346,33 @@ WXT_TEST(GriffUndoAGroupARestStoredOverComesBack)
   // Plus's append took none of them out.
   WXT_CHECK(!StoreSavesWork(true, {7, 8}, {7, 8, 9}));
 }
+
+// What a rest's store on a slot does to the undo's record: a store that took out a unit that lived is a record of its own, in
+// place of the one before; one that changed the group of a group's record ends it, as that record's undo would undo the store;
+// one that changed nothing, or another group, keeps it.
+WXT_TEST(GriffUndoAStoreOnASlotOffersEndsOrKeepsTheRecord)
+{
+  using griffundo::Kept;
+  using griffundo::OutcomeOfStore;
+  using griffundo::StoreOutcome;
+  // A second rest on the slot, or a double click there, stores the very units again.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8}, {8, 7}) == StoreOutcome::kKeep);
+  // Plus's append to the record's group, whose undo would take the units appended out again; one of units it held changed
+  // nothing.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, true, {7, 8}, {7, 8, 9}) == StoreOutcome::kEnd);
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, true, {7, 8}, {8, 7}) == StoreOutcome::kKeep);
+  // Other units over the group's: a record of its own, whatever the record before it.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8}, {9}) == StoreOutcome::kOffer);
+  WXT_CHECK(OutcomeOfStore(Kept::kOrders, 0, 2, false, {7, 8}, {9}) == StoreOutcome::kOffer);
+  WXT_CHECK(OutcomeOfStore(Kept::kDraft, 0, 2, false, {7, 8}, {9}) == StoreOutcome::kOffer);
+  // A store on another slot leaves the record's group as it was.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 3, 2, true, {7, 8}, {7, 8, 9}) == StoreOutcome::kKeep);
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 3, 2, false, {7, 8}, {9, 8, 7}) == StoreOutcome::kKeep);
+  // The group's units and more offer none, so the record of a gesture's orders stays on the button; the group's own ends.
+  WXT_CHECK(OutcomeOfStore(Kept::kOrders, 0, 2, false, {7, 8}, {9, 8, 7}) == StoreOutcome::kKeep);
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8}, {9, 8, 7}) == StoreOutcome::kEnd);
+  // Fewer of the group's units: a record of its own.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8, 9}, {8}) == StoreOutcome::kOffer);
+  // The record's group, all of whose units are gone, stored anew: changed.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {}, {9}) == StoreOutcome::kEnd);
+}

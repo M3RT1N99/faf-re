@@ -679,15 +679,8 @@ namespace
   Watch gWatch;
   int gWatches = 0;
 
-  /// What a record's undo puts back: a gesture's orders, by FAF's clicks once the sim took them; or, at the undo's tap, what a
-  /// gesture of Griff's own threw away that ordered nothing (Offer): the draft the cross or two fingers' tap dropped, the
-  /// units of a control group a rest stored over.
-  enum class Kept
-  {
-    kOrders,
-    kDraft,
-    kGroup,
-  };
+  /// What a record's undo puts back: a gesture's orders, or what a gesture of Griff's own threw away (Offer).
+  using griffundo::Kept;
 
   /// The last gesture that ordered where its undo saves work (SavesWork), which the undo's button takes back: its number (0:
   /// none), whether the button asked for its
@@ -2287,22 +2280,29 @@ namespace
                                       "was stored, by Plus's append or not: the ids of the units it held before and of those now";
 
   /// A group stored by a rest on its slot (the hook of FAF's controlgroups.lua, after its hint): the activity buzzes once.
-  /// Where the store took out units it held that lived (griffundo::StoreSavesWork), it is a record of Griff's own, whose undo
-  /// gives the group those units back (GroupBack); any other store on the group of such a record ends it, as its units would
-  /// undo that store.
+  /// Where the store took out units it held that lived, it is a record of Griff's own, whose undo gives the group those units
+  /// back (GroupBack); any other store that changed the group of such a record ends it, as its units would undo that store,
+  /// and one that changed nothing keeps it (griffundo::OutcomeOfStore).
   int GroupStored(lua_State* const lua)
   {
     Say(kSaidGroupStored, 0, 0);
     const int group = Whole(lua, 1);
+    const bool appended = Whole(lua, 2) != 0;
     std::vector<int> before = EntityIdsOf(Text(lua, 3));
-    if (griffundo::StoreSavesWork(Whole(lua, 2) != 0, before, EntityIdsOf(Text(lua, 4)))) {
-      Record stored;
-      stored.kept = Kept::kGroup;
-      stored.group = group;
-      stored.held = std::move(before);
-      Offer(std::move(stored));
-    } else if (gRecord.kept == Kept::kGroup && gRecord.group == group) {
-      EndRecord();
+    switch (griffundo::OutcomeOfStore(gRecord.kept, gRecord.group, group, appended, before, EntityIdsOf(Text(lua, 4)))) {
+      case griffundo::StoreOutcome::kOffer: {
+        Record stored;
+        stored.kept = Kept::kGroup;
+        stored.group = group;
+        stored.held = std::move(before);
+        Offer(std::move(stored));
+        break;
+      }
+      case griffundo::StoreOutcome::kEnd:
+        EndRecord();
+        break;
+      case griffundo::StoreOutcome::kKeep:
+        break;
     }
     return 0;
   }

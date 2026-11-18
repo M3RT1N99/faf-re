@@ -327,6 +327,16 @@ namespace griffundo
     return back >= 2;
   }
 
+  /// What a record of the undo's holds (the program's Record): a gesture's orders, which its undo takes back by FAF's clicks
+  /// once the sim took them; or what a gesture of Griff's own threw away that ordered nothing, which its undo puts back at the
+  /// tap: the draft the cross or two fingers' tap dropped, the units of a control group a rest stored over.
+  enum class Kept
+  {
+    kOrders,
+    kDraft,
+    kGroup,
+  };
+
   /// Whether the undo's button offers to bring back a draft that the cross or two fingers' tap dropped, a record of Griff's own
   /// that orders nothing (the user's choice of 2026-11-18): one of two plans or more, as one plan comes back by a tap.
   [[nodiscard]] constexpr bool DropSavesWork(const std::size_t plans)
@@ -346,6 +356,34 @@ namespace griffundo
     std::sort(before.begin(), before.end());
     std::sort(after.begin(), after.end());
     return !std::includes(after.begin(), after.end(), before.begin(), before.end());
+  }
+
+  /// What a store by a rest on a slot of Griff's control groups does to the undo's record (the program's GroupStored).
+  enum class StoreOutcome
+  {
+    /// The store is a record of Griff's own, whose undo gives the group back the units it took out (StoreSavesWork), in
+    /// place of the record before it.
+    kOffer,
+    /// The record ends: the store changed the group of a group's record, whose undo would undo that store.
+    kEnd,
+    /// The record stays as it was.
+    kKeep,
+  };
+
+  /// What a store on control group `group` does to the undo's record, which holds `kept`, where that is a group's, of group
+  /// `recordGroup`: `before` the group's units that lived as the store came and `after` those it holds now, `appended` for
+  /// Plus's append. A store that took out a unit that lived offers a record of its own; any other that changed the record's
+  /// group ends that record; one that changed nothing, as a second rest on the slot or a double click there, or that changed
+  /// another group keeps it.
+  [[nodiscard]] inline StoreOutcome OutcomeOfStore(const Kept kept, const int recordGroup, const int group, const bool appended,
+                                                   std::vector<int> before, std::vector<int> after)
+  {
+    if (StoreSavesWork(appended, before, after)) {
+      return StoreOutcome::kOffer;
+    }
+    std::sort(before.begin(), before.end());
+    std::sort(after.begin(), after.end());
+    return kept == Kept::kGroup && recordGroup == group && before != after ? StoreOutcome::kEnd : StoreOutcome::kKeep;
   }
 
   /// Whether an order is the script FAF's attack-move button gives (commandmode.lua's OnScriptIssued then asks the sim's
