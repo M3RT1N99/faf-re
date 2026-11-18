@@ -355,7 +355,10 @@ final class TouchInput implements Fingers {
     /** Griff: the tap ladder's next tap, this soon after the last one's lift and this near it. */
     static final long LADDER_MILLISECONDS = 350;
     static final float LADDER_MM = 6;
-    /** Griff: two fingers that move less than this, apart or together, are still a tap. */
+    /**
+     * Griff: two fingers whose distance, middle and each finger's own place since the two began move less than this are still a
+     * tap.
+     */
     static final float TWO_FINGERS_STILL_MM = 1.5f;
     /** Griff: a lift counts where the finger was this long before it: fingers wobble as they lift. */
     static final long SETTLE_LIFT_MILLISECONDS = 50;
