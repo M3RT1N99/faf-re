@@ -518,6 +518,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
+        public void draftRest(float x, float y, int rest) {
+            Game.draftRest(fingerX(x), fingerY(y), rest);
+        }
+
+        @Override
         public void draftBox(int phase, float x0, float y0, float x1, float y1) {
             if (phase == TouchInput.DRAFT_SHOW) {
                 mPieceShown[0] = pictureX(x0);
@@ -1544,6 +1549,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     mTouch.panned(mGriffSaid[at + 1], SystemClock.uptimeMillis());
                 } else if (mGriffSaid[at] == Game.SAID_FORMATION) {
                     mTouch.formation(mGriffSaid[at + 1]);
+                } else if (mGriffSaid[at] == Game.SAID_DRAFT_REST) {
+                    if (mGriffSaid[at + 2] != 0) {
+                        mTouch.draftRestOnUi(mGriffSaid[at + 1]);
+                    }
                 } else if (mGriffSaid[at] == Game.SAID_GROUP_STORED) {
                     // A group stored buzzes once, as the mockup's: as the ring of the rest that stored it came, or now (TouchInput).
                     if (mTouch.storeBuzzes()) {

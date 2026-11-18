@@ -79,8 +79,9 @@ package io.github.m3rt1n99.fafre;
  *   <li>a drag from the newest plan draws a line of them ({@link Mouse#draftLine}), from another plan moves the whole draft
  *       ({@link Mouse#draftMove}), with Box and an extractor picked is a box over deposits ({@link Mouse#draftBox}), else it
  *       pans; a second finger gives the line, the move or the box up and the two pinch;
- *   <li>a finger that rests {@link #DRAFT_REST_MILLISECONDS} on no plan, without Box, shows the plan its lift places under it
- *       and a loupe ({@link Mouse#draftAim});
+ *   <li>a finger that rests on FAF's UI is the panel's rest there, as outside the draft, once the program has said at Griff's
+ *       rest that it is there ({@link #draftRestOnUi}); on the map, {@link #DRAFT_REST_MILLISECONDS} on no plan and without Box,
+ *       it shows the plan its lift places under it and a loupe ({@link Mouse#draftAim});
  *   <li>a quick tap of two drops the draft ({@link Mouse#draftDrop}).
  * </ul>
  *
@@ -270,6 +271,12 @@ final class TouchInput implements Fingers {
         /** Griff: a finger rests here in the draft: the plan its lift places and the loupe shown, that plan placed, or gone. */
         void draftAim(int phase, float x, float y);
 
+        /**
+         * Griff: a finger in the draft rests here, Griff's rest: the program says whether it is on FAF's UI, by `rest`
+         * ({@link TouchInput#draftRestOnUi}), where it is the panel's rest as outside the draft.
+         */
+        void draftRest(float x, float y, int rest);
+
         /** Griff: Box over deposits from one corner to the other: shown as the finger moves, given where it lifted, or gone. */
         void draftBox(int phase, float x0, float y0, float x1, float y1);
 
@@ -329,7 +336,7 @@ final class TouchInput implements Fingers {
      * formation, a box, or the mark of a waypoint given up.
      */
     static final long REST_MILLISECONDS = 300;
-    /** Griff: how long a finger rests in the draft before the plan it would place shows under it, with the loupe. */
+    /** Griff: how long a finger rests on the map in the draft before the plan it would place shows under it, with the loupe. */
     static final long DRAFT_REST_MILLISECONDS = 400;
     /** Griff: how far a finger may wander and still stay, for a tap, a rest and a stroke's tap on the handle (the mockup's). */
     static final float GRIFF_SLOP_MM = 2.5f;
@@ -698,6 +705,12 @@ final class TouchInput implements Fingers {
     /** Griff's draft: the plan the finger came down on (0: none), and the one a waiting tap was on. */
     private int mDraftPlan;
     private int mClickPlan;
+    /**
+     * Griff's draft: whether the finger's rest asked the program if it is on FAF's UI (Mouse#draftRest), and the number of the
+     * last such question, of 16 bits as the program's task takes it.
+     */
+    private boolean mDraftRestAsked;
+    private int mDraftRests;
     /** Griff: how many runs of the program's clicks had begun when the gesture's first finger came down (#clicksCame). */
     private int mClickRuns;
 
@@ -986,7 +999,10 @@ final class TouchInput implements Fingers {
         mLadder.clear();
         mDraftPlan = mMouse.draftPlan(x, y);
         mMouse.move(x, y);
-        mMouse.startTimer(DRAFT_REST_MILLISECONDS);
+        // Griff's rest first, which on FAF's UI is the panel's (#draftRestOnUi); on the map the aim comes after
+        // DRAFT_REST_MILLISECONDS.
+        mDraftRestAsked = false;
+        mMouse.startTimer(REST_MILLISECONDS);
         mState = State.DRAFT_PENDING;
     }
 
@@ -1398,17 +1414,7 @@ final class TouchInput implements Fingers {
                 // which would be the right button at the handle's place, a move or a formation there.
                 takeForHandle();
             } else if (mGriff) {
-                mState = State.RESTED;
-                mLadder.clear();
-                // With Box a rest is none (the mockup's): no ring, nothing to feel, and its lift is Box's tap on the map. Else the
-                // program hears of it: a waypoint under it is marked, or the ground gives the right button.
-                if (mFingerBox == 0) {
-                    mRing = true;
-                    mMouse.ring(true, mFirst.x, mFirst.y);
-                    mMouse.held();
-                    mRestSaid = true;
-                    mMouse.griffRest(mStartX, mStartY);
-                }
+                startRest();
             } else {
                 press(holdButton(), mStartX, mStartY);
                 mMouse.held();
@@ -1424,6 +1430,13 @@ final class TouchInput implements Fingers {
             mHoverWaits = false;
             mHoverAt += HOVER_MILLISECONDS;
             mMouse.strokeHover(mFirst.x, mFirst.y);
+        } else if (mState == State.DRAFT_PENDING && !mDraftRestAsked) {
+            // Griff's rest: the program says whether the finger is on FAF's UI, whose rest it is then; meanwhile the aim's time
+            // goes on, which a slow answer leaves as it was, the aim with the UI's right click at its lift.
+            mDraftRestAsked = true;
+            mDraftRests = (mDraftRests + 1) & 0xFFFF;
+            mMouse.draftRest(mStartX, mStartY, mDraftRests);
+            mMouse.startTimer(DRAFT_REST_MILLISECONDS - REST_MILLISECONDS);
         } else if (mState == State.DRAFT_PENDING && mDraftPlan == 0 && (mMouse.rail() & RAIL_BOX) == 0) {
             // A rest on no plan, without Box (the mockup's): the plan its lift places shows under it, with the loupe.
             mState = State.DRAFT_AIM;
@@ -1431,6 +1444,40 @@ final class TouchInput implements Fingers {
             mMouse.held();
         }
         finishClick();
+    }
+
+    /**
+     * Griff: the first finger rests (REST_MILLISECONDS). With Box a rest is none (the mockup's): no ring, nothing to feel, and
+     * its lift is Box's tap on the map. Else the program hears of it: a waypoint under it is marked, or the ground gives the
+     * right button.
+     */
+    private void startRest() {
+        mState = State.RESTED;
+        mLadder.clear();
+        if (mFingerBox == 0) {
+            mRing = true;
+            mMouse.ring(true, mFirst.x, mFirst.y);
+            mMouse.held();
+            mRestSaid = true;
+            mMouse.griffRest(mStartX, mStartY);
+        }
+    }
+
+    /**
+     * Griff: the program says that the finger of the draft's rest number `rest` is on FAF's UI (Game.SAID_DRAFT_REST): its rest
+     * is the panel's, as outside the draft, whose lift is FAF's right click there and whose slide the panel's drag. A word that
+     * comes after the finger moved, lifted or began its aim counts for nothing.
+     */
+    void draftRestOnUi(int rest) {
+        if (mState != State.DRAFT_PENDING || !mDraftRestAsked || rest != mDraftRests) {
+            return;
+        }
+        if (clicksCame()) {
+            giveUpForClicks();
+            return;
+        }
+        mMouse.stopTimer();
+        startRest();
     }
 
     private void bringCursorBackToGhost() {

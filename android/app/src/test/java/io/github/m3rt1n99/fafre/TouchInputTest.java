@@ -299,6 +299,16 @@ public class TouchInputTest {
             events.add("draft box " + (phase == TouchInput.DRAFT_ABORT ? "abort" : phase(phase, x0, y0) + " to " + (int) x1 + " " + (int) y1));
         }
 
+        /** Griff's draft: where its rests asked whether they are on FAF's UI, and the last one's number. */
+        final List<String> draftRests = new ArrayList<>();
+        int lastDraftRest;
+
+        @Override
+        public void draftRest(float x, float y, int rest) {
+            draftRests.add((int) x + " " + (int) y);
+            lastDraftRest = rest;
+        }
+
         @Override
         public void draftDrop() {
             events.add("draft drop");
@@ -2318,12 +2328,50 @@ public class TouchInputTest {
     public void griffDraftARestOnNoPlanAimsAndItsLiftPlacesWhereTheFingerSettled() {
         draft(new int[] {1, 400, 50, 0});
         down(0, 100, 50, 1000);
-        assertEquals("the mockup's REST_LOUPE", 400, mouse.timer);
+        // Griff's rest asks whether the finger is on FAF's UI; on the map the mockup's REST_LOUPE, 400 ms, is the aim's.
+        assertEquals(TouchInput.REST_MILLISECONDS, mouse.timer);
+        timerRuns();
+        assertEquals(List.of("100 50"), mouse.draftRests);
+        assertEquals("the mockup's REST_LOUPE", 400 - TouchInput.REST_MILLISECONDS, mouse.timer);
         timerRuns();
         moveFirst(104, 52, 1410);
         moveFirst(130, 60, 1500);
         up(0, 1520);
         expect("move 100 50", "draft aim show 100 50", "held", "draft aim show 104 52", "draft aim show 130 60", "draft aim end 104 52");
+    }
+
+    @Test
+    public void griffDraftARestOnFafsUiIsThePanelsRestAsOutsideTheDraft() {
+        // At Griff's 300 ms the program says the finger is on FAF's UI: the ring and the panel's rest, whose lift is FAF's right
+        // click there; no aim and no loupe, which are the map's, 100 ms later.
+        draft(new int[] {1, 400, 50, 0});
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        assertTrue("its ring", mouse.ringShown);
+        assertEquals("no aim to come", -1, mouse.timer);
+        up(0, 1500);
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 0");
+        // With Box no ring, as outside the draft, and its lift is Box's on the panel.
+        mouse.events.clear();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 2000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        assertFalse(mouse.ringShown);
+        up(0, 2500);
+        expect("move 100 50", "rest tap 100 50 rail 1");
+        // A word that comes as the aim began counts for nothing: the aim's lift on FAF's UI is the right click there (the
+        // program's, DraftAimEndTask).
+        mouse.events.clear();
+        mouse.rail = 0;
+        down(0, 100, 50, 3000);
+        timerRuns();
+        int late = mouse.lastDraftRest;
+        timerRuns();
+        touch.draftRestOnUi(late);
+        up(0, 3600);
+        expect("move 100 50", "draft aim show 100 50", "held", "draft aim end 100 50");
     }
 
     @Test
@@ -2657,6 +2705,7 @@ public class TouchInputTest {
         up(0, 1510);
         mouse.events.clear();
         down(0, 200, 50, 2000);
+        timerRuns();
         timerRuns();
         down(1, 350, 50, 2450);
         assertEquals(List.of("move 200 50", "draft aim show 200 50", "held", "draft aim abort", "move 350 50"), mouse.events);

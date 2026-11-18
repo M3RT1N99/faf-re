@@ -113,6 +113,7 @@ namespace
   constexpr int kSaidOrdered = 6;
   constexpr int kSaidUndone = 7;
   constexpr int kSaidFormation = 8;
+  constexpr int kSaidDraftRest = 9;
 
   /// Game.GRIFF_VALUES: what Game.griff gives of the handle.
   constexpr int kHandleValues = 11;
@@ -3600,6 +3601,22 @@ namespace
     gAimOnMap = false;
   }
 
+  /// A finger rests in the draft, Griff's rest (Game.draftRest: its place and number): whether it is on FAF's UI, where the
+  /// rest is the panel's as outside the draft, its lift FAF's right click there (RestTapTask) as the aim's on FAF's UI gave it;
+  /// the activity hears it (SAID_DRAFT_REST). With no game behind the UI any more all of it is the UI's.
+  void DraftRestTask(const WPARAM places)
+  {
+    const float x = static_cast<float>(Coordinate(places, 0));
+    const float y = static_cast<float>(Coordinate(places, 1));
+    bool onUi = false;
+    try {
+      onUi = !moho::UI_GamePlaying() || !OnMap(x, y);
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+    Say(kSaidDraftRest, Coordinate(places, 2), onUi ? 1 : 0);
+  }
+
   /// Box over deposits with an extractor picked: every free deposit of its kind whose middle is in the box on the picture gets
   /// a plan (FAF's own box is not pressed).
   void DraftBoxTask(const WPARAM places)
@@ -4897,6 +4914,13 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftMove(
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftAim(JNIEnv*, jclass, const jint phase, const jint x, const jint y)
 {
   RunDraft(phase, &DraftAimTask, &DraftAimEndTask, &DraftAimGoneTask, Places(x, y));
+}
+
+/// A finger rests here in the draft, Griff's rest number `rest` (DraftRestTask).
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_draftRest(JNIEnv*, jclass, const jint x, const jint y, const jint rest)
+{
+  Win32Android_RunOnWindowThread(&DraftRestTask, Places(x, y, rest));
 }
 
 /// Box from one corner to the other over deposits, with an extractor picked (DraftBoxTask).

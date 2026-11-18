@@ -198,6 +198,7 @@ final class Game {
     static final int SAID_ORDERED = 6;
     static final int SAID_UNDONE = 7;
     static final int SAID_FORMATION = 8;
+    static final int SAID_DRAFT_REST = 9;
 
     /**
      * {@link #griffHint}: a hint of the activity's, which FAF's UI says where FAF prints its own messages (griffhud.lua Words,
@@ -274,7 +275,8 @@ final class Game {
      * group stored over), the number of its record, which the undo's button takes back from now on (a record told anew after
      * its undo was not done is offered again), or 0: an order no gesture's, or one whose undo would save nothing, ended the
      * record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
-     * SAID_FORMATION: a drag's number that the program made FAF's formation of, which a drag without its lift gives up.
+     * SAID_FORMATION: a drag's number that the program made FAF's formation of, which a drag without its lift gives up;
+     * SAID_DRAFT_REST: a rest's number in the draft ({@link #draftRest}) and 1 where its finger is on FAF's UI, else 0.
      */
     static native int griffSaid(int[] said);
 
@@ -401,6 +403,12 @@ final class Game {
 
     /** A finger that rests here in the draft: the plan its lift places shown, placed (or on FAF's UI its right click), gone. */
     static native void draftAim(int phase, int x, int y);
+
+    /**
+     * A finger rests here in the draft, Griff's rest number `rest` (of 16 bits): the program says whether it is on FAF's UI
+     * ({@link #SAID_DRAFT_REST}), where the rest is the panel's, as outside the draft.
+     */
+    static native void draftRest(int x, int y, int rest);
 
     /** Box from one corner to the other, with an extractor picked: each free deposit in it gets a plan. */
     static native void draftBox(int x0, int y0, int x1, int y1);
