@@ -26,6 +26,7 @@ import android.view.WindowManager;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
+import org.libsdl.app.HIDDeviceManager;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
@@ -64,6 +65,8 @@ public final class GameActivity extends SDLActivity {
     /** The program's command line without its display mode, or null with mFailure saying why there is none. */
     private List<String> mArguments;
     private GameStart.Failure mFailure;
+    /** A launcher's start refused while the program runs, for which SDL set nothing up (refuseBesideProgram). */
+    private boolean mBesideProgram;
     /** The lines the user chose (PictureSize), which the picture has on any screen. */
     private int mLines;
     /** The program can run, or runs, in this activity: no problem stopped it, and SDL's library loaded. */
@@ -90,17 +93,26 @@ public final class GameActivity extends SDLActivity {
 
     @Override
     protected void onCreate(Bundle state) {
-        // Android made the activity anew around the running program (onDestroy kept it): the same game goes on, shown by
-        // this one.
+        // With the program running, Android made the activity anew around it (onDestroy kept it), or another start came: the
+        // same game goes on, shown by this one, unless a launcher's start is refused (GameStart.refusal).
         Thread program = runningProgram();
         mLines = PictureSize.lines(this);
+        mFailure = GameStart.refusal(program != null, state != null, extra(GameStart.EXTRA_GAME_VERSION),
+            extra(GameStart.EXTRA_LAUNCHER_ARGUMENTS));
+        if (mFailure != null && program != null) {
+            refuseBesideProgram(state);
+            return;
+        }
         if (program == null) {
-            // Before SDL's activity loads the library: the program reads its environment when it starts.
+            // Before SDL's activity loads the library: the program reads its environment when it starts. A launcher's game
+            // that Android brings back without its process begins a report too, which ends the one of the game that is gone.
             GameReport.begin(this);
-            try {
-                mArguments = prepare();
-            } catch (GameStart.Failure failure) {
-                mFailure = failure;
+            if (mFailure == null) {
+                try {
+                    mArguments = prepare();
+                } catch (GameStart.Failure failure) {
+                    mFailure = failure;
+                }
             }
         }
         Hashtable<Integer, PointerIcon> cursors = mCursors;
@@ -121,18 +133,10 @@ public final class GameActivity extends SDLActivity {
             }
         }
         if (mFailure != null) {
-            // For a starter that waits for the result, a launcher's activity (GameStart).
-            setResult(RESULT_FIRST_USER, new Intent().putExtra(GameStart.RESULT_FAILURE, mFailure.code.name())
-                .putExtra(GameStart.RESULT_MESSAGE, mFailure.getMessage()));
             for (String line : mFailure.reportLines()) {
                 GameReport.append(this, line);
             }
-            if (getCallingActivity() == null) {
-                // The Game card's start or a test's: a starter that waits for the result says it in its own words.
-                Toast.makeText(this, mFailure.cardLine(), Toast.LENGTH_LONG).show();
-            }
-            // Before it is resumed, so SDL's activity starts no program.
-            finish();
+            endStart();
             return;
         }
         if (mBrokenLibraries) {
@@ -167,6 +171,51 @@ public final class GameActivity extends SDLActivity {
             .build();
         mShowsProgram = true;
         mHandler.post(mPoll);
+    }
+
+    /**
+     * A launcher's start while the program runs (RUNNING): this activity ends at once with the result, and the program goes on
+     * as it is, shown by its own activity. SDL's onCreate would take SDL's statics for this one (the activity, its surface,
+     * which the program draws on, the lifecycle's state) and its onDestroy end the program: the first stops at its first step
+     * for it (loadLibraries), the second lets go of nothing (onDestroy).
+     */
+    private void refuseBesideProgram(Bundle state) {
+        mBesideProgram = true;
+        try {
+            super.onCreate(state);
+        } catch (BesideProgram stopped) {
+            // Activity's onCreate has run, and SDL's stopped before it set anything up. The running program's report has a
+            // line of it, and no end.
+            Game.report(mFailure.reportLine());
+            endStart();
+            return;
+        }
+        throw new IllegalStateException("SDL's onCreate went past loadLibraries beside the running program");
+    }
+
+    /** SDL's onCreate loads the libraries before it sets anything up: an activity beside the running program stops it there. */
+    @Override
+    public void loadLibraries() {
+        if (mBesideProgram) {
+            throw new BesideProgram();
+        }
+        super.loadLibraries();
+    }
+
+    /** What stops SDL's onCreate (loadLibraries): an Error, as SDL's onCreate takes the libraries' exceptions for their failure. */
+    private static final class BesideProgram extends Error {
+    }
+
+    /** A start that runs no program of its own (mFailure) ends with its result: before it is resumed, so SDL starts no program. */
+    private void endStart() {
+        // For a starter that waits for the result, a launcher's activity (GameStart).
+        setResult(RESULT_FIRST_USER, new Intent().putExtra(GameStart.RESULT_FAILURE, mFailure.code.name())
+            .putExtra(GameStart.RESULT_MESSAGE, mFailure.getMessage()));
+        if (getCallingActivity() == null) {
+            // The Game card's start or a test's: a starter that waits for the result says it in its own words.
+            Toast.makeText(this, mFailure.cardLine(), Toast.LENGTH_LONG).show();
+        }
+        finish();
     }
 
     /** The program's command line without its display mode, with its environment set; or why the game cannot start. */
@@ -333,21 +382,27 @@ public final class GameActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         mHandler.removeCallbacks(mPoll);
+        if (mBesideProgram) {
+            // SDL set nothing up for this activity (refuseBesideProgram): the HID manager that its onDestroy lets go of is the
+            // one of the activity that shows the program.
+            HIDDeviceManager hid = mHIDDeviceManager;
+            mHIDDeviceManager = null;
+            try {
+                destroyWithoutQuit();
+            } finally {
+                mHIDDeviceManager = hid;
+            }
+            return;
+        }
         if (runningProgram() != null && !isFinishing()) {
             // Android destroys a stopped activity when it wants the memory, and at once under the developer option "Don't
             // keep activities": the program goes on, as a Windows program does without its window, and the next activity
-            // shows it (onCreate). SDL's onDestroy would end it (nativeSendQuit) and take down the lifecycle's mutexes
-            // under it (nativeQuit); for an activity whose libraries did not load it does only the rest.
+            // shows it (onCreate).
             Game.report("game: the activity is destroyed, the program goes on");
             // SDL's clipboard handler listens on this activity's clipboard, which the system then holds the activity by;
             // the next activity makes a handler of its own.
             getSystemService(ClipboardManager.class).removePrimaryClipChangedListener(mClipboardHandler);
-            mBrokenLibraries = true;
-            try {
-                super.onDestroy();
-            } finally {
-                mBrokenLibraries = false;
-            }
+            destroyWithoutQuit();
             return;
         }
         super.onDestroy();
@@ -355,6 +410,19 @@ public final class GameActivity extends SDLActivity {
         // process for one made anew around a program, and would end it.
         if (mFailure != null) {
             System.exit(0);
+        }
+    }
+
+    /**
+     * SDL's onDestroy for an activity while the program goes on: SDL's would end the program (nativeSendQuit) and take down
+     * the lifecycle's mutexes under it (nativeQuit); for an activity whose libraries did not load it does only the rest.
+     */
+    private void destroyWithoutQuit() {
+        mBrokenLibraries = true;
+        try {
+            super.onDestroy();
+        } finally {
+            mBrokenLibraries = false;
         }
     }
 

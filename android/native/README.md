@@ -89,7 +89,11 @@ activities*. The program goes on then, as a Windows program does without its win
 the cursors the program made, which SDL forgets for each new activity, the program sets
 `SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY`, without which SDL's activity ends the process, and the patched
 `SDL_android.c` keeps the lifecycle's mutex and semaphore that the program's thread waits on (`patches/README.md`).
-Without a network game's service Android freezes the process, now a cached one, until the next activity comes.
+Without a network game's service Android freezes the process, now a cached one, until the next activity comes. A
+launcher's start while the program runs ends at once (`RUNNING`, `../README.md`): SDL's `onCreate` would take SDL's
+statics for its activity, the surface the program draws on among them, so `GameActivity.loadLibraries` stops it at that
+first step, which another SDL release must still have, and its `onDestroy` lets go of nothing of the activity that shows
+the program, its HID manager included.
 
 ### The surface
 

@@ -134,9 +134,15 @@ the game data they imported. Everything lives in the app's external files folder
     them. A start that fails before the program runs gives `RESULT_FIRST_USER` with `failure`, its code (`NO_SCFA`,
     `NO_FONTS`, `NO_GAME_FILES`, also for a version that is not ready, `INIT_FILE`, `ENVIRONMENT`, `STORAGE`, `ARGUMENTS`
     for such a switch or an extra of another type), and `message`, the reason in words that name no card; the report has
-    both, and its end, like the toast of a start that waits for no result, keeps the card's words. The program's end,
-    which ends the process, gives `RESULT_CANCELED`: the report and `ProcessExit` say how it ended. A start while the
-    program runs shows it, as above.
+    both, and its end, like the toast of a start that waits for no result, keeps the card's words. So does a launcher's
+    start, one with either extra, that runs no game: `RUNNING` while a game runs already, which its version and arguments
+    would not reach (the running game goes on, and its report gets the line but no end); `PROCESS_ENDED` when Android
+    brings back (Recents) the activity of a launcher's game whose process ended in the back, ended by Android, by a crash
+    or by the program's end: Android keeps such an activity, which would start the game anew with the launcher's
+    arguments, a GPGNet session the launcher saw end; the report of the game that is gone, `game-previous.txt`, says how
+    its process ended. In front the program's end, which ends the process, gives `RESULT_CANCELED`, as does a process
+    that ends there in any other way, which takes the activity with it: the report and `ProcessExit` say how it ended.
+    Any other start while the program runs shows it, as above.
 
   What follows is the game card of release 0.14, on the earlier host (`LegacyGameActivity`, the
   Win32 message layer and wx-lite): the bar, the touch controls and the pages come back on SDL's activity

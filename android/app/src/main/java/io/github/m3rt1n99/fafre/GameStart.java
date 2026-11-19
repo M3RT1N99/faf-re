@@ -12,9 +12,9 @@ import java.util.regex.Pattern;
  * A start of the game (GameActivity) as its starter asks for it: the Game card's, a test's am start, or a launcher's, the
  * FAF client's activity in the app's main process, which starts it for a result with the extras below and hosts GPGNet
  * itself (upstream's docs/LAUNCHER_NATIVE_NETWORK.md). Here are the game version it plays, the program's command line, and
- * why a start fails before the program runs: a code and a line in English, which the activity's result gives the starter
- * (RESULT_FIRST_USER), and the test app's wording of them. The program's end, which ends the process, leaves the starter
- * RESULT_CANCELED. No Android in here, for the tests.
+ * why a start runs no program of its own: a code and a line in English, which the activity's result gives the starter
+ * (RESULT_FIRST_USER), and the test app's wording of them. The program's end in front, which ends the process, leaves the
+ * starter RESULT_CANCELED; in the back see refusal. No Android in here, for the tests.
  */
 final class GameStart {
     /** The lobby's FAF game version, an int. */
@@ -36,7 +36,7 @@ final class GameStart {
 
     private static final Pattern SPACE = Pattern.compile("\\s");
 
-    /** Why a start failed before the program ran: the result's "failure" is the name. */
+    /** Why a start runs no program of its own: the result's "failure" is the name. */
     enum Code {
         /** No Supreme Commander: Forged Alliance imported. */
         NO_SCFA,
@@ -51,10 +51,14 @@ final class GameStart {
         /** The app's shared storage is not there. */
         STORAGE,
         /** An extra is not what a start takes: one of the activity's switches among the launcher's arguments, or another type. */
-        ARGUMENTS
+        ARGUMENTS,
+        /** A launcher's start while the game runs, whose version and arguments would not reach it (refusal). */
+        RUNNING,
+        /** Android brought back the activity of a launcher's game whose process had ended in the back (refusal). */
+        PROCESS_ENDED
     }
 
-    /** A start that failed before the program ran: its code, and its line as the message, which names none of the test app's cards. */
+    /** A start that runs no program of its own: its code, and its line as the message, which names none of the test app's cards. */
     static final class Failure extends Exception {
         final Code code;
 
@@ -84,6 +88,17 @@ final class GameStart {
             return new Failure(Code.STORAGE, why);
         }
 
+        static Failure running() {
+            return new Failure(Code.RUNNING,
+                "a game runs already, which this start's version and arguments cannot reach: end it first");
+        }
+
+        static Failure processEnded() {
+            return new Failure(Code.PROCESS_ENDED, "the game's process ended while the game was in the back (Android ended it, it "
+                + "crashed, or the program ended): its game is gone, and the activity Android brought back starts none with the "
+                + "launcher's arguments");
+        }
+
         /** The test app's line, which its Game card (the report's end) and its toast show: with the cards that help, as before. */
         String cardLine() {
             switch (code) {
@@ -100,11 +115,38 @@ final class GameStart {
 
         /** The game's report on it: what the result says, and the end, which the test app's Game card shows. */
         List<String> reportLines() {
-            return Arrays.asList("game: the start failed, " + code + ": " + getMessage(), GameReport.END + cardLine());
+            return Arrays.asList(reportLine(), GameReport.END + cardLine());
+        }
+
+        /** What the result says, the line for the running program's report, which the refusal does not end (RUNNING). */
+        String reportLine() {
+            return "game: the start failed, " + code + ": " + getMessage();
         }
     }
 
     private GameStart() {
+    }
+
+    /**
+     * Why a new activity of a launcher's start, one with either extra (null for none), runs no program of its own and ends
+     * at once; null when it starts the program or shows the running one. {@code programRuns}: the process runs the program;
+     * {@code restored}: Android made the activity anew from its saved state. A launcher's start beside the running program
+     * would only show it (RUNNING); a launcher's game whose process ended in the back, which Android brings back, would start
+     * anew with the launcher's arguments, its GPGNet session among them, which the launcher saw end (PROCESS_ENDED). Android's
+     * re-creation of an activity around the running program shows it, the same game going on, and a start without the extras
+     * goes as before.
+     */
+    static Failure refusal(boolean programRuns, boolean restored, Object gameVersion, Object launcherArguments) {
+        if (gameVersion == null && launcherArguments == null) {
+            return null;
+        }
+        if (programRuns && !restored) {
+            return Failure.running();
+        }
+        if (!programRuns && restored) {
+            return Failure.processEnded();
+        }
+        return null;
     }
 
     /**

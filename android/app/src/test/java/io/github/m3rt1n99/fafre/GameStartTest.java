@@ -2,6 +2,7 @@ package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 
 import java.io.File;
@@ -20,7 +21,8 @@ import org.junit.function.ThrowingRunnable;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * A start of the game by a launcher, the Game card or a test: the command line's order, the game version, and each
+ * A start of the game by a launcher, the Game card or a test: the command line's order, the game version, when a launcher's
+ * start runs no program (beside the running one, and in Android's restore of a game whose process ended), and each
  * failure's code and line, which the activity's result gives a launcher (am start reads no result, so these are the
  * result's oracle), and the test app's wording, which its cards keep.
  */
@@ -160,7 +162,8 @@ public class GameStartTest {
             failure(() -> GameStart.version(storage, null)), failure(() -> GameStart.version(storage, 3841)),
             GameStart.Failure.initFile("no room left"), GameStart.Failure.environment("setenv failed: EINVAL (Invalid argument)"),
             GameStart.Failure.storage("shared storage is not available"),
-            failure(() -> arguments(false, null, new String[] {"/init", "x"})));
+            failure(() -> arguments(false, null, new String[] {"/init", "x"})),
+            GameStart.refusal(true, false, 3841, null), GameStart.refusal(false, true, null, new String[0]));
         String[][] expected = {
             {"NO_SCFA", "no Supreme Commander: Forged Alliance imported yet"},
             {"NO_FONTS", "no fonts of Supreme Commander: Forged Alliance yet: import its folder again, which takes fonts/ too"},
@@ -170,6 +173,9 @@ public class GameStartTest {
             {"ENVIRONMENT", "the program's environment: setenv failed: EINVAL (Invalid argument)"},
             {"STORAGE", "shared storage is not available"},
             {"ARGUMENTS", "LAUNCHER_ARGUMENTS has /init, which the activity gives the program itself"},
+            {"RUNNING", "a game runs already, which this start's version and arguments cannot reach: end it first"},
+            {"PROCESS_ENDED", "the game's process ended while the game was in the back (Android ended it, it crashed, or the "
+                + "program ended): its game is gone, and the activity Android brought back starts none with the launcher's arguments"},
         };
         EnumSet<GameStart.Code> codes = EnumSet.noneOf(GameStart.Code.class);
         for (int i = 0; i < expected.length; ++i) {
@@ -192,7 +198,43 @@ public class GameStartTest {
         for (GameStart.Code code : GameStart.Code.values()) {
             names.add(code.name());
         }
-        assertEquals(Arrays.asList("NO_SCFA", "NO_FONTS", "NO_GAME_FILES", "INIT_FILE", "ENVIRONMENT", "STORAGE", "ARGUMENTS"), names);
+        assertEquals(Arrays.asList("NO_SCFA", "NO_FONTS", "NO_GAME_FILES", "INIT_FILE", "ENVIRONMENT", "STORAGE", "ARGUMENTS",
+            "RUNNING", "PROCESS_ENDED"), names);
+    }
+
+    @Test
+    public void aLaunchersStartBesideTheRunningProgramOrInAndroidsRestoreOfItsEndedProcessRunsNoProgram() {
+        // Either extra makes a launcher's start, of whatever type it came (ARGUMENTS checks the type when a program starts).
+        Object[][] launchers = {{3841, null}, {null, new String[] {"/gpgnet", "127.0.0.1:7311"}},
+            {3835, new String[] {"/gpgnet", "127.0.0.1:7312"}}, {"3841", null}};
+        for (Object[] extras : launchers) {
+            // Beside the running program, which its version and arguments would not reach.
+            assertEquals(GameStart.Code.RUNNING, GameStart.refusal(true, false, extras[0], extras[1]).code);
+            // The activity of a launcher's game whose process ended in the back, which Android brings back: it would start
+            // anew with the launcher's arguments, a GPGNet session that the launcher saw end.
+            assertEquals(GameStart.Code.PROCESS_ENDED, GameStart.refusal(false, true, extras[0], extras[1]).code);
+            // A new start, which prepare checks, and Android's re-creation around the running program, the same game going on.
+            assertNull(GameStart.refusal(false, false, extras[0], extras[1]));
+            assertNull(GameStart.refusal(true, true, extras[0], extras[1]));
+        }
+        // A start without them, the Game card's or a test's, goes as before: it starts the program, shows the running one,
+        // or starts anew in Android's restore.
+        for (boolean programRuns : new boolean[] {false, true}) {
+            for (boolean restored : new boolean[] {false, true}) {
+                assertNull(GameStart.refusal(programRuns, restored, null, null));
+            }
+        }
+    }
+
+    @Test
+    public void aRefusalBesideTheRunningProgramGivesItsReportALineAndNoEnd() {
+        GameStart.Failure running = GameStart.refusal(true, false, null, new String[] {"/gpgnet", "127.0.0.1:7312"});
+        assertEquals("game: the start failed, RUNNING: a game runs already, which this start's version and arguments cannot "
+            + "reach: end it first", running.reportLine());
+        assertEquals(running.reportLine(), running.reportLines().get(0));
+        // The running program's report, which the activity's refusal gives the line: the Game card still shows it running.
+        TestState.game("120 ms: game: FAF game version 3841, 7 SCFA archives\n15713 ms: " + running.reportLine() + "\n");
+        assertEquals("Game: running", TestState.gameVerdict());
     }
 
     /** The lines GameActivity gave the report's end and its toast before the codes (fb096228e), with the same details. */
