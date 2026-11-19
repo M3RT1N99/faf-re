@@ -14,8 +14,8 @@ import java.util.List;
 import org.junit.Test;
 
 /**
- * Which apps may start the game from outside and read its status: those signed by a certificate on the allowlist, as the
- * package manager answers for Android 9 and later (hasSigningCertificate with the SHA-256) and before it (each signer's
+ * Which apps may start the game from outside and read its status: those of one signer, whose certificate is on the allowlist,
+ * as the package manager answers for Android 9 and later (hasSigningCertificate with the SHA-256) and before it (each signer's
  * certificate, whose SHA-256 this side takes).
  */
 public class CallersTest {
@@ -47,18 +47,12 @@ public class CallersTest {
             this.certificates = certificates;
         }
 
+        /** As Android's SigningDetails.hasSha256Certificate: a package of more than one signer has none of their certificates. */
         @Override
         public boolean hasSigningCertificate(String name, byte[] sha256) {
             asked.add(name + " " + Callers.hex(sha256));
-            if (!name.equals(packageName)) {
-                return false;
-            }
-            for (byte[] certificate : certificates) {
-                if (Arrays.equals(Callers.sha256(certificate), sha256)) {
-                    return true;
-                }
-            }
-            return false;
+            return name.equals(packageName) && certificates.length == 1
+                && Arrays.equals(Callers.sha256(certificates[0]), sha256);
         }
 
         @Override
@@ -81,10 +75,8 @@ public class CallersTest {
             assertTrue(Callers.allowed("com.faforever.rustclient", sdk, allowed));
             assertEquals("hasSigningCertificate with the SHA-256, not GET_SIGNATURES",
                 Collections.singletonList("com.faforever.rustclient " + DEBUG_SHA256), allowed.asked);
-            // Another key, and one signer among others: the package manager says whether it is the package's.
+            // Another key: the package manager says whether it is the package's.
             assertFalse(Callers.allowed("com.faforever.rustclient", sdk, new Fake("com.faforever.rustclient", OTHER_CERTIFICATE)));
-            assertTrue(Callers.allowed("com.faforever.rustclient", sdk,
-                new Fake("com.faforever.rustclient", OTHER_CERTIFICATE, DEBUG_CERTIFICATE)));
             // A package that is not there, or that the allowed key signs under another name.
             assertFalse(Callers.allowed("com.example.other", sdk, new Fake("com.faforever.rustclient", DEBUG_CERTIFICATE)));
         }
@@ -98,12 +90,21 @@ public class CallersTest {
             assertEquals("GET_SIGNATURES, as hasSigningCertificate is Android 9's",
                 Collections.singletonList("com.faforever.rustclient"), allowed.asked);
             assertFalse(Callers.allowed("com.faforever.rustclient", sdk, new Fake("com.faforever.rustclient", OTHER_CERTIFICATE)));
-            // An APK carries a signer's signature only from the holder of that signer's key: one allowed signer is enough.
-            assertTrue(Callers.allowed("com.faforever.rustclient", sdk,
-                new Fake("com.faforever.rustclient", OTHER_CERTIFICATE, DEBUG_CERTIFICATE)));
             assertFalse(Callers.allowed("com.faforever.rustclient", sdk, new Fake("com.faforever.rustclient")));
             // No such package: the package manager has no signatures of it.
             assertFalse(Callers.allowed("com.example.other", sdk, new Fake("com.faforever.rustclient", DEBUG_CERTIFICATE)));
+        }
+    }
+
+    @Test
+    public void aPackageOfMoreThanOneSignerIsRefusedOnBothSidesOfAndroid9() {
+        // Android 9's hasSigningCertificate answers no for each of its signers, a key's rotation being a single signer's (on
+        // the emulator, API 36, an app signed by this PC's debug key and a throwaway one got CALLER): the same rule before it.
+        for (int sdk : new int[] {26, 27, 28, 35}) {
+            for (Fake twoSigners : new Fake[] {new Fake("com.faforever.rustclient", OTHER_CERTIFICATE, DEBUG_CERTIFICATE),
+                new Fake("com.faforever.rustclient", DEBUG_CERTIFICATE, OTHER_CERTIFICATE)}) {
+                assertFalse("sdk " + sdk, Callers.allowed("com.faforever.rustclient", sdk, twoSigners));
+            }
         }
     }
 

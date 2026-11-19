@@ -30,7 +30,10 @@ final class Callers {
 
     /** What the package manager says of a package's signing certificates. */
     interface Signatures {
-        /** Android 9 and later: whether the package is signed by the certificate of this SHA-256, now or in its key's past. */
+        /**
+         * Android 9 and later: whether the package is signed by the certificate of this SHA-256, now or in its key's past;
+         * never for a package of more than one signer, as a key's rotation is a single signer's (SigningDetails).
+         */
         boolean hasSigningCertificate(String packageName, byte[] sha256);
 
         /** Before Android 9: the encoded certificate of each of the package's signers; null when there is no such package. */
@@ -40,7 +43,11 @@ final class Callers {
     private Callers() {
     }
 
-    /** Whether {@code packageName}, the caller as Android names it (null when it does not), is signed by an allowed certificate. */
+    /**
+     * Whether {@code packageName}, the caller as Android names it (null when it does not), is signed by an allowed
+     * certificate: by one signer, whose certificate is on the allowlist (from Android 9 also one of its key's past), as
+     * Android 9's hasSigningCertificate allows a package of more than one signer none of theirs. Before it the same rule.
+     */
     static boolean allowed(String packageName, int sdk, Signatures signatures) {
         if (packageName == null) {
             return false;
@@ -54,16 +61,7 @@ final class Callers {
             return false;
         }
         byte[][] certificates = signatures.signatures(packageName);
-        if (certificates == null) {
-            return false;
-        }
-        // Any one signer is enough: an APK carries a signer's signature only from the holder of that signer's key.
-        for (byte[] certificate : certificates) {
-            if (ALLOWED.contains(hex(sha256(certificate)))) {
-                return true;
-            }
-        }
-        return false;
+        return certificates != null && certificates.length == 1 && ALLOWED.contains(hex(sha256(certificates[0])));
     }
 
     /** The package manager's answers for {@code packageName}, which an app that started us for a result or asks our provider is visible to. */
