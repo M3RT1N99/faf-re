@@ -1,0 +1,21 @@
+diff --git a/dependencies/libjuice/src/random.c b/dependencies/libjuice/src/random.c
+index 46bd8f8..6978ac6 100644
+--- a/dependencies/libjuice/src/random.c
++++ b/dependencies/libjuice/src/random.c
+@@ -33,6 +33,16 @@ static int random_bytes(void *buf, size_t size) {
+ 	return 0;
+ }
+ 
++#elif defined(__ANDROID__)
++
++#include <stdlib.h>
++
++// Bionic's arc4random_buf, on every API level: a ChaCha20 stream the kernel seeds, which cannot fail.
++static int random_bytes(void *buf, size_t size) {
++	arc4random_buf(buf, size);
++	return 0;
++}
++
+ #elif defined(_WIN32)
+ 
+ #ifndef _WIN32_WINNT

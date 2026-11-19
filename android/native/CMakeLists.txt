@@ -11,7 +11,7 @@
 #   src/          what Android needs beyond the engine's POSIX client: the app's entry (src/app),
 #                 the Vulkan surface's coming and going and BC textures on the CPU for GPUs without
 #                 them (src/gal)
-#   patches/      the engine's files compiled changed, and SDL's (cmake/FafAndroidOverlay.cmake)
+#   patches/      the engine's files compiled changed, and SDL's and libjuice's (cmake/FafAndroidOverlay.cmake)
 #   cmake/        DXC built from source (FafAndroidDxc.cmake); ffmpeg/: FFmpeg built with the NDK.
 #                 The Linux client takes Microsoft's Linux DXC and runs FFmpeg's configure and make,
 #                 neither of which an Android cross build can use.
@@ -117,6 +117,8 @@ add_subdirectory("${FAF_REPO}/cmake/deps/msdfgen" "${CMAKE_BINARY_DIR}/deps/msdf
 # Mbed TLS and plog, by their recipes, as cmake/FafLinuxClient.cmake adds them. netlink's recipe takes the
 # engine's src from PROJECT_SOURCE_DIR, which is the repository's root in the engine's own builds.
 add_subdirectory("${FAF_REPO}/cmake/deps/libjuice" "${CMAKE_BINARY_DIR}/deps/libjuice")
+# Its patched file (patches/dependencies/libjuice, patches/README.md).
+faf_android_overlay_target(faf_juice libjuice)
 add_subdirectory("${FAF_REPO}/cmake/deps/libdatachannel" "${CMAKE_BINARY_DIR}/deps/libdatachannel")
 block()
   set(PROJECT_SOURCE_DIR "${FAF_REPO}")
