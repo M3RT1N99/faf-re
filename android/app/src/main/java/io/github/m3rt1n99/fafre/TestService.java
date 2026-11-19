@@ -24,13 +24,14 @@ import java.util.List;
 
 /**
  * Runs the tests as a foreground service, so downloads and replays go on with the screen off
- * or the app in the background, one job at a time: the sim-math check, an SCFA import, a list
- * of replays, or FAF's newest game version for the game.
+ * or the app in the background, one job at a time: the sim-math check, an SCFA import (from its
+ * folder or a ZIP of it), a list of replays, or FAF's newest game version for the game.
  */
 public final class TestService extends Service {
     static final String ACTION_MATH = "io.github.m3rt1n99.fafre.MATH";
     static final String ACTION_REPLAYS = "io.github.m3rt1n99.fafre.REPLAYS";
     static final String ACTION_IMPORT = "io.github.m3rt1n99.fafre.IMPORT";
+    static final String ACTION_IMPORT_ZIP = "io.github.m3rt1n99.fafre.IMPORT_ZIP";
     static final String ACTION_GAME_FILES = "io.github.m3rt1n99.fafre.GAME_FILES";
     static final String ACTION_CANCEL = "io.github.m3rt1n99.fafre.CANCEL";
     static final String EXTRA_IDS = "ids";
@@ -126,6 +127,8 @@ public final class TestService extends Service {
                 MathCheck.run(this);
             } else if (ACTION_IMPORT.equals(action)) {
                 ScfaImport.run(this, storage, intent.getData());
+            } else if (ACTION_IMPORT_ZIP.equals(action)) {
+                ScfaImport.runZip(this, storage, intent.getData());
             } else if (ACTION_REPLAYS.equals(action)) {
                 playReplays(storage, intent.getLongArrayExtra(EXTRA_IDS), intent.getIntExtra(EXTRA_WORKERS, 1),
                     intent.getBooleanExtra(EXTRA_HINT, true));
@@ -287,6 +290,11 @@ public final class TestService extends Service {
 
     static Intent importScfa(Uri tree) {
         return new Intent(ACTION_IMPORT).setData(tree);
+    }
+
+    /** The SCFA import from a ZIP of its folder, a document the user picked. */
+    static Intent importScfaZip(Uri zip) {
+        return new Intent(ACTION_IMPORT_ZIP).setData(zip);
     }
 
     /** A check of FAF's newest game version, then its download on a network that is not metered, else a question first. */
