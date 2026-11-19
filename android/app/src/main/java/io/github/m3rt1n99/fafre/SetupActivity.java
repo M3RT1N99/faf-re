@@ -99,7 +99,8 @@ public final class SetupActivity extends Screen {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // A start in a task of its own (FLAG_ACTIVITY_NEW_TASK) finds this screen in the task it left: the new start's step.
+        // A start in a task of its own (FLAG_ACTIVITY_NEW_TASK) finds this screen on top of the task it left (singleTop): the
+        // new start's step, or its refusal.
         setIntent(intent);
         recreate();
     }

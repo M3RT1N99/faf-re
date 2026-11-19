@@ -94,11 +94,14 @@
         <!-- The game data's setup for another app, the FAF client (android/README.md, the setup): this app's own screen for
              the SCFA import or FAF's game files. Any app may open it, as it shows only this app's UI and takes nothing of its
              caller's but the step; the player starts each job with a tap and goes back with Back. No affinity: a start in a
-             task of its own (FLAG_ACTIVITY_NEW_TASK) does not join the test app's task, where Back would end on its screen. -->
+             task of its own (FLAG_ACTIVITY_NEW_TASK) does not join the test app's task, where Back would end on its screen.
+             singleTop: a later start of that kind finds the screen on top of its task, which Android would only bring to the
+             front, and hands it the new start (onNewIntent). -->
         <activity
             android:name=".SetupActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
             android:exported="true"
+            android:launchMode="singleTop"
             android:taskAffinity="">
             <intent-filter>
                 <action android:name="io.github.m3rt1n99.fafre.action.SETUP_GAME_DATA" />
