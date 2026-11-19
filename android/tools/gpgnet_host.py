@@ -13,10 +13,22 @@ GameState Idle with CreateLobby, as FAF's ICE adapter and a launcher in native m
 It ends when the game closes the connection, or --hold seconds after the game's lobby, and its status says
 whether the game reached the lobby (GameState Lobby after CreateLobby): 0 yes, 1 no.
 
-With --ice-msg BYTES it sends, before CreateLobby, a peer's ICE message of BYTES bytes as a launcher in native mode
-relays one (IceMsg [sender id, CandidatesMessage JSON]), and the same arguments as Test, whose arguments the game
-logs: the game reaches its lobby only when it has read both whole. It prints the text's length and SHA-256, which the
-Test's line in the game's log has to match.
+With --native it is a launcher in native mode, for a game started with /nativenet as well, which runs its peer
+links itself: before CreateLobby it sends the ICE servers, --ice-servers, as IceServers.
+
+With --port more than once it is also the lobby server, for one native game on each port (each device's own port
+reversed to its own on the PC; it implies --native): the first game hosts (HostGame with --map) and each other joins
+it as FAF's server has them do, JoinGame [host's name, id] to the joining game and ConnectToPeer [its name, id, 1] to
+the host, with ConnectToPeer between the joining games, the newer offering; it relays each game's IceMsg
+[receiver id, text] to the receiver's game as IceMsg [sender id, text], as the server routes them. The players are
+--name with their number, their ids --uid, --uid + 1, ... It ends when a game closes its connection, or --hold
+seconds after the host's lobby seated every other player, and its status is 0 when it did: when the host's game sent
+a PlayerOption for each of the others' ids, which FAF's lobby sends once a player is in a slot.
+
+With --ice-msg BYTES (one game) it sends, before CreateLobby, a peer's ICE message of BYTES bytes as a launcher in
+native mode relays one (IceMsg [sender id, CandidatesMessage JSON]), and the same arguments as Test, whose arguments
+the game logs: the game reaches its lobby only when it has read both whole. It prints the text's length and SHA-256,
+which the Test's line in the game's log has to match.
 
 The wire format is the engine's (src/moho/net/CGpgNetInterface.cpp; tools/gpgnet/codec.go is the Go codec),
 little-endian: a message is its command as a string, the count of its arguments as an int32 and each argument
@@ -29,6 +41,7 @@ import json
 import socket
 import struct
 import sys
+import threading
 import time
 
 TAG_INT, TAG_STRING, TAG_DATA = 0, 1, 2
@@ -83,11 +96,33 @@ def ice_message(size, sender, receiver):
     return text()
 
 
-class Connection:
-    """One game's GPGNet connection."""
+START = time.monotonic()
 
-    def __init__(self, sock):
+
+def shown(arg):
+    if isinstance(arg, Data):
+        return f"<data {len(arg)} bytes>"
+    if isinstance(arg, str) and len(arg) > 200:
+        text = arg.encode()
+        return f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}>"
+    return repr(arg)
+
+
+def say(who, command, args=()):
+    print(f"{time.monotonic() - START:8.2f} {who}: {command} {' '.join(map(shown, args))}".rstrip(), flush=True)
+
+
+def note(text):
+    print(f"{time.monotonic() - START:8.2f} {text}", flush=True)
+
+
+class Connection:
+    """One game's GPGNet connection. Its messages are read on one thread and sent from any."""
+
+    def __init__(self, sock, label):
         self.sock = sock
+        self.label = label
+        self.send_lock = threading.Lock()
 
     def exact(self, count):
         data = bytearray()
@@ -125,43 +160,178 @@ class Connection:
         return command, args
 
     def send(self, command, *args):
-        self.sock.sendall(encode(command, list(args)))
-        say("host", command, args)
+        """Sends a message; a connection that broke is its reader's to report."""
+        try:
+            with self.send_lock:
+                self.sock.sendall(encode(command, list(args)))
+        except OSError as error:
+            note(f"{command} not sent to {self.label}: {error}")
+            return
+        say(f"host>{self.label}" if self.label != "game" else "host", command, args)
 
 
-START = time.monotonic()
+class Seat:
+    """One game: its listener's port, its player, and how far its lobby has come."""
+
+    def __init__(self, label, port, name, uid):
+        self.label = label
+        self.port = port
+        self.name = name
+        self.uid = uid
+        self.server = None
+        self.game = None
+        self.lobby = False
+        self.hosted = False  # the host: HostGame sent
+        self.joined = False  # another game: JoinGame sent, and ConnectToPeer to the games before it
+        self.seated = False  # another game: the host's PlayerOption named it
 
 
-def shown(arg):
-    if isinstance(arg, Data):
-        return f"<data {len(arg)} bytes>"
-    if isinstance(arg, str) and len(arg) > 200:
-        text = arg.encode()
-        return f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}>"
-    return repr(arg)
+class Session:
+    """The launchers of the games and, with more than one, the lobby server between them."""
 
+    def __init__(self, args, seats, ice_text):
+        self.args = args
+        self.seats = seats
+        self.ice_text = ice_text
+        self.lock = threading.Lock()
+        self.finished = threading.Event()
+        self.succeeded_at = None
 
-def say(who, command, args=()):
-    print(f"{time.monotonic() - START:8.2f} {who}: {command} {' '.join(map(shown, args))}".rstrip(), flush=True)
+    def succeeded(self):
+        if not all(seat.lobby for seat in self.seats):
+            return False
+        return all(seat.seated for seat in self.seats[1:])
+
+    def by_uid(self, uid):
+        return next((seat for seat in self.seats if seat.uid == uid), None)
+
+    def on_message(self, seat, command, values):
+        """What the launcher, and the lobby server with more than one game, does with a message of the game's."""
+        with self.lock:
+            if command == "GameState" and values == ["Idle"]:
+                if self.args.native:
+                    seat.game.send("IceServers", self.args.ice_servers)
+                if self.ice_text is not None:
+                    seat.game.send("IceMsg", seat.uid + 1, self.ice_text)
+                    seat.game.send("Test", seat.uid + 1, self.ice_text)
+                seat.game.send("CreateLobby", self.args.mode, self.args.lobby_port, seat.name, seat.uid, 1)
+            elif command == "GameState" and values == ["Lobby"] and not seat.lobby:
+                seat.lobby = True
+                if len(self.seats) > 1:
+                    self.match()
+            elif command == "IceMsg" and len(self.seats) > 1 and len(values) == 2 and isinstance(values[0], int):
+                receiver = self.by_uid(values[0])
+                if receiver is None or receiver.game is None:
+                    note(f"{seat.label}'s IceMsg for player {values[0]} not delivered")
+                else:
+                    receiver.game.send("IceMsg", seat.uid, values[1])
+            elif command == "PlayerOption" and seat is self.seats[0] and values and str(values[0]).isdigit():
+                other = self.by_uid(int(values[0]))
+                if other is not None and other is not seat and not other.seated:
+                    other.seated = True
+                    note(f"the host's lobby seated {other.name} ({other.uid})")
+            if self.succeeded_at is None and self.succeeded():
+                self.succeeded_at = time.monotonic()
+                if len(self.seats) > 1:
+                    note("every game is in the host's lobby")
+                if self.args.hold:
+                    # A daemon, so that a session a game ended first does not wait for it to exit.
+                    hold = threading.Timer(self.args.hold, self.finish, (f"held the lobby {self.args.hold:g} s",))
+                    hold.daemon = True
+                    hold.start()
+
+    def match(self):
+        """The server's part once games are in their lobbies (lock held): the host hosts, the others join it."""
+        host = self.seats[0]
+        if not host.lobby:
+            return
+        if not host.hosted:
+            host.game.send("HostGame", self.args.map)
+            host.hosted = True
+        for seat in self.seats[1:]:
+            if not seat.lobby or seat.joined:
+                continue
+            seat.game.send("JoinGame", host.name, host.uid)
+            host.game.send("ConnectToPeer", seat.name, seat.uid, 1)
+            for other in self.seats[1:]:
+                if other.joined:
+                    seat.game.send("ConnectToPeer", other.name, other.uid, 1)
+                    other.game.send("ConnectToPeer", seat.name, seat.uid, 0)
+            seat.joined = True
+
+    def finish(self, why):
+        if not self.finished.is_set():
+            note(why)
+            self.finished.set()
+
+    def serve(self, seat):
+        """One game's thread: its connection, then its messages until it or the session ends."""
+        try:
+            sock, peer = seat.server.accept()
+        except socket.timeout:
+            self.finish(f"no game connected to port {seat.port} in {self.args.timeout:g} s")
+            return
+        except OSError:
+            return  # the session ended first, and closed the listener
+        finally:
+            seat.server.close()
+        note(f"{seat.label} connected from {peer[0]}:{peer[1]}")
+        with self.lock:
+            seat.game = Connection(sock, seat.label)
+        with sock:
+            try:
+                while not self.finished.is_set():
+                    message = seat.game.receive()
+                    if message is None:
+                        self.finish(f"{seat.label} closed the connection")
+                        break
+                    command, values = message
+                    say(seat.label, command, values)
+                    self.on_message(seat, command, values)
+            except (EOFError, ConnectionError, ValueError) as error:
+                self.finish(f"{seat.label}'s connection broke: {error}")
+            except OSError:
+                self.finish(f"{seat.label}'s connection ended")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--port", type=int, default=7237, help="the port to listen on (default 7237)")
+    parser.add_argument("--port", type=int, action="append",
+                        help="the port to listen on (default 7237); more than once, one game on each")
     parser.add_argument("--timeout", type=float, default=180,
-                        help="seconds to wait for the game's connection (default 180)")
+                        help="seconds to wait for the games' connections (default 180)")
     parser.add_argument("--mode", type=int, choices=(0, 1), default=0,
                         help="CreateLobby's mode: 0 a lobby, 1 an automatch lobby (default 0)")
     parser.add_argument("--lobby-port", type=int, default=0,
                         help="CreateLobby's UDP port for the game's traffic, 0 any (default 0)")
-    parser.add_argument("--name", default="tester", help="CreateLobby's player name (default tester)")
-    parser.add_argument("--uid", type=int, default=1, help="CreateLobby's player id (default 1)")
+    parser.add_argument("--name", default="tester",
+                        help="CreateLobby's player name (default tester), with several games followed by their number")
+    parser.add_argument("--uid", type=int, default=1,
+                        help="CreateLobby's player id (default 1), with several games the first one's")
     parser.add_argument("--hold", type=float, default=0,
-                        help="seconds to hold the connection after the game's lobby, 0 until the game closes it")
+                        help="seconds to hold the connections after the lobby, 0 until a game closes its own")
+    parser.add_argument("--native", action="store_true",
+                        help="a launcher in native mode (/nativenet): IceServers before CreateLobby")
+    parser.add_argument("--ice-servers", default="[]", metavar="JSON",
+                        help="the IceServers text: a JSON list of {urls, username, credential}, or the API's ICE "
+                             "session with it under servers (default [])")
+    parser.add_argument("--map", default="scmp_009", help="the host's HostGame map, a folder's name (default scmp_009)")
     parser.add_argument("--ice-msg", type=int, default=0, metavar="BYTES",
                         help="before CreateLobby, send a peer's ICE message of BYTES bytes as IceMsg and as Test "
-                             "(default 0: none)")
+                             "(default 0: none; one game only)")
     args = parser.parse_args()
+    ports = args.port or [7237]
+    if len(set(ports)) != len(ports):
+        parser.error("--port: each game needs a port of its own")
+    if len(ports) > 1:
+        args.native = True
+        if args.ice_msg:
+            parser.error("--ice-msg: with one game only")
+    try:
+        if not isinstance(json.loads(args.ice_servers), (list, dict)):
+            raise ValueError("neither a list nor an object")
+    except ValueError as error:
+        parser.error(f"--ice-servers: {error}")
     ice_text = None
     if args.ice_msg:
         try:
@@ -170,47 +340,38 @@ def main():
         except ValueError as error:
             parser.error(f"--ice-msg: {error}")
 
-    with socket.create_server(("127.0.0.1", args.port)) as server:
-        server.settimeout(args.timeout)
-        print(f"listening on 127.0.0.1:{args.port}", flush=True)
-        try:
-            sock, peer = server.accept()
-        except socket.timeout:
-            print(f"no game connected in {args.timeout:g} s", flush=True)
-            return 1
-    print(f"{time.monotonic() - START:8.2f} the game connected from {peer[0]}:{peer[1]}", flush=True)
+    if len(ports) == 1:
+        seats = [Seat("game", ports[0], args.name, args.uid)]
+    else:
+        seats = [Seat(f"game{i + 1}", port, f"{args.name}{i + 1}", args.uid + i) for i, port in enumerate(ports)]
+    session = Session(args, seats, ice_text)
+    for seat in seats:
+        seat.server = socket.create_server(("127.0.0.1", seat.port))
+        seat.server.settimeout(args.timeout)
+        note(f"listening on 127.0.0.1:{seat.port}" + ("" if len(seats) == 1 else f" for {seat.name} ({seat.uid})"))
+    threads = [threading.Thread(target=session.serve, args=(seat,), daemon=True) for seat in seats]
+    for thread in threads:
+        thread.start()
+    session.finished.wait()
+    with session.lock:
+        for seat in seats:
+            seat.server.close()
+            if seat.game is not None:
+                try:
+                    seat.game.sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                seat.game.sock.close()
+    for thread in threads:
+        thread.join(5)
 
-    game = Connection(sock)
-    lobby_at = None
-    with sock:
-        while True:
-            if lobby_at is not None and args.hold:
-                left = lobby_at + args.hold - time.monotonic()
-                if left <= 0:
-                    print(f"{time.monotonic() - START:8.2f} held the lobby {args.hold:g} s", flush=True)
-                    break
-                sock.settimeout(left)
-            try:
-                message = game.receive()
-            except socket.timeout:
-                continue
-            except (EOFError, ConnectionError, ValueError) as error:
-                print(f"{time.monotonic() - START:8.2f} the connection broke: {error}", flush=True)
-                break
-            if message is None:
-                print(f"{time.monotonic() - START:8.2f} the game closed the connection", flush=True)
-                break
-            command, values = message
-            say("game", command, values)
-            if command == "GameState" and values == ["Idle"]:
-                if ice_text is not None:
-                    game.send("IceMsg", args.uid + 1, ice_text)
-                    game.send("Test", args.uid + 1, ice_text)
-                game.send("CreateLobby", args.mode, args.lobby_port, args.name, args.uid, 1)
-            elif command == "GameState" and values == ["Lobby"] and lobby_at is None:
-                lobby_at = time.monotonic()
-    print("the game reached its lobby" if lobby_at is not None else "the game did not reach its lobby", flush=True)
-    return 0 if lobby_at is not None else 1
+    if len(seats) == 1:
+        print("the game reached its lobby" if seats[0].lobby else "the game did not reach its lobby", flush=True)
+    else:
+        for seat in seats:
+            print(f"{seat.label} ({seat.name}, {seat.uid}): {'in its lobby' if seat.lobby else 'no lobby'}"
+                  + ("" if seat is seats[0] else ", seated by the host" if seat.seated else ", not seated"), flush=True)
+    return 0 if session.succeeded_at is not None else 1
 
 
 if __name__ == "__main__":
