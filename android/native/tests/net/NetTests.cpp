@@ -2,7 +2,7 @@
 // POSIX src/platform/posix/NetPosix.cpp) on real sockets over the loopback, with bionic, and the engine's own datagram
 // socket and UDP connector on them: the patched files as the game runs them, failure paths included; the count of open
 // connectors the app's NetworkGameService goes by. What the protocol puts on the wire, whose sizes the x86 game fixes.
-// GPGNet's TCP socket, by which the game reaches its launcher.
+// GPGNet's TCP socket, by which the game reaches its launcher, and which a live replay's stream is as well.
 // Linked statically like faf_griff_tests, so it runs on the emulator and on Linux hosts (CI's arm64 runner). Exit code 0
 // when every check passes.
 
@@ -23,11 +23,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <new>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <vector>
@@ -985,12 +987,14 @@ namespace
 
   // --- GPGNet's TCP socket ------------------------------------------------------------------------
 
-  /// A string argument as the launcher writes one: its length and its bytes.
-  void WriteArgument(moho::INetTCPSocket& socket, const std::string& text)
+  /// String arguments as the launcher writes a message's: each its length and its bytes, flushed together.
+  void WriteArguments(moho::INetTCPSocket& socket, const std::initializer_list<std::string_view> texts)
   {
-    const auto length = static_cast<std::uint32_t>(text.size());
-    socket.Write(&length, sizeof(length));
-    socket.Write(text.data(), text.size());
+    for (const std::string_view text : texts) {
+      const auto length = static_cast<std::uint32_t>(text.size());
+      socket.Write(&length, sizeof(length));
+      socket.Write(text.data(), text.size());
+    }
     socket.VirtFlush();
   }
 
@@ -1007,47 +1011,128 @@ namespace
     }
   }
 
+  /// The game's TCP stream to a listener on the loopback, and the listener's end of it: GPGNet's launcher, which the
+  /// game connects to (CGpgNetInterface's ConnectThread), or a live replay's server.
+  struct LoopbackLink
+  {
+    std::unique_ptr<moho::INetTCPServer> listener{moho::NET_CreateTCPServer(kLoopback, 0)};
+    std::unique_ptr<moho::INetTCPSocket> game;
+    std::unique_ptr<moho::INetTCPSocket> accepted;
+
+    LoopbackLink()
+    {
+      CHECK(listener != nullptr);
+      if (listener == nullptr) {
+        return;
+      }
+      CHECK(listener->GetLocalPort() != 0);
+      // The listener's backlog takes the connection before the listener accepts it.
+      game.reset(moho::NET_TCPConnect(kLoopback, listener->GetLocalPort()));
+      if (game != nullptr) {
+        accepted.reset(listener->Accept());
+      }
+      CHECK(game != nullptr && accepted != nullptr);
+    }
+
+    [[nodiscard]] bool Up() const
+    {
+      return game != nullptr && accepted != nullptr;
+    }
+  };
+
   /// GPGNet's socket as the game has it (CGpgNetInterface's ConnectThread, ReadFromSocket and WriteCommand): the game
   /// connects to its launcher's listener on the loopback, what either side writes and flushes the other reads, and the
   /// launcher's close is the stream's end between two messages, which the game takes as ConnectionShutdown.
   void GpgNetSocketReachesItsLauncher()
   {
-    moho::INetTCPServer* const launcher = moho::NET_CreateTCPServer(kLoopback, 0);
-    CHECK(launcher != nullptr);
-    if (launcher == nullptr) {
+    LoopbackLink link;
+    if (!link.Up()) {
       return;
     }
-    const u_short port = launcher->GetLocalPort();
-    CHECK(port != 0);
-    // The listener's backlog takes the connection before the launcher accepts it.
-    moho::INetTCPSocket* const game = moho::NET_TCPConnect(kLoopback, port);
-    moho::INetTCPSocket* const accepted = game != nullptr ? launcher->Accept() : nullptr;
-    CHECK(game != nullptr && accepted != nullptr);
-    if (game != nullptr && accepted != nullptr) {
-      CHECK(game->GetPeerAddr() == kLoopback);
-      CHECK(game->GetPeerPort() == port);
-      CHECK(accepted->GetPeerPort() == game->GetPort());
+    CHECK(link.game->GetPeerAddr() == kLoopback);
+    CHECK(link.game->GetPeerPort() == link.listener->GetLocalPort());
+    CHECK(link.accepted->GetPeerPort() == link.game->GetPort());
 
-      WriteArgument(*game, "Idle");
-      CHECK(ReadArgument(*accepted) == "Idle");
-      // An argument of the launcher's longer than the stream's buffer of 2 KB, as an ICE server list can be: its first
-      // bytes come with the length's read, the rest with one more.
-      const std::string servers = RandomText(moho::kNetIoBufferSize + 1000, 7);
-      WriteArgument(*accepted, servers);
-      CHECK(ReadArgument(*game) == servers);
-      // Upstream's CNetTCPBuf::Read, which says it keeps the binary's way there, leaves out of its count what it reads
-      // from the socket straight into the caller's memory, as it does for 2 KB or more: an argument with that much left
-      // after what the buffer holds of it ends GPGNet's reader, and with it the game's connection (CommunicationError).
-      // An argument of 4 KB is one wherever it starts.
-      WriteArgument(*accepted, RandomText(2 * moho::kNetIoBufferSize, 8));
-      CHECK(ReadArgument(*game) == "PrematureEOF");
+    WriteArguments(*link.game, {"Idle"});
+    CHECK(ReadArgument(*link.accepted) == "Idle");
+    WriteArguments(*link.accepted, {"CreateLobby"});
+    CHECK(ReadArgument(*link.game) == "CreateLobby");
 
-      delete accepted;
-      char next = 0;
-      CHECK(game->Read(&next, 1) == 0);
+    link.accepted.reset();
+    char next = 0;
+    CHECK(link.game->Read(&next, 1) == 0);
+  }
+
+  /// A launcher's argument longer than the stream's buffer of 2 KB, as an ICE server list or a peer's ICE message in
+  /// native mode can be, arrives whole. Upstream's CNetTCPBuf::Read, which keeps the binary's count there, leaves out
+  /// what it receives straight into the caller's memory, as it does once 2 KB or more are left after what its buffer
+  /// holds: GPGNet's reader took the read for the stream's end, and the game's connection ended (CommunicationError).
+  /// The patched one counts it (patches/README.md).
+  void GpgNetSocketReadsLongArgumentsWhole()
+  {
+    LoopbackLink link;
+    if (!link.Up()) {
+      return;
     }
-    delete game;
-    delete launcher;
+    // 3 KB: its first bytes come with the length's read, the rest with one more receive into the buffer.
+    const std::string servers = RandomText(moho::kNetIoBufferSize + 1000, 7);
+    WriteArguments(*link.accepted, {servers});
+    CHECK(ReadArgument(*link.game) == servers);
+    // 2 KB of which the buffer holds nothing: the argument before it, 8 bytes short of 2 KB, and the two lengths fill
+    // the stream's first receive, so that all of the 2 KB come straight from the socket.
+    const std::string filler = RandomText(moho::kNetIoBufferSize - 2 * sizeof(std::uint32_t), 8);
+    const std::string offer = RandomText(moho::kNetIoBufferSize, 9);
+    WriteArguments(*link.accepted, {filler, offer});
+    CHECK(ReadArgument(*link.game) == filler);
+    CHECK(ReadArgument(*link.game) == offer);
+    // 4 KB, which leaves 2 KB or more after the buffer's part wherever it starts.
+    const std::string candidates = RandomText(2 * moho::kNetIoBufferSize, 10);
+    WriteArguments(*link.accepted, {candidates});
+    CHECK(ReadArgument(*link.game) == candidates);
+    // 64 KB, which the launcher writes while the game reads: as many receives straight from the socket as the loopback
+    // hands over, then the rest through the buffer.
+    const std::string many = RandomText(64 * 1024, 11);
+    std::thread launcher([&] { WriteArguments(*link.accepted, {many}); });
+    CHECK(ReadArgument(*link.game) == many);
+    launcher.join();
+    // The stream is still in step after them.
+    WriteArguments(*link.accepted, {"Lobby"});
+    CHECK(ReadArgument(*link.game) == "Lobby");
+  }
+
+  /// A live replay's stream (`/replay gpgnet://...`, ReplaySessionSetup.cpp's OpenGPGNetSocket) is the same socket, from
+  /// which the replay's client takes a message at a time without blocking (CReplayClient::Start, CMessage::Read). A
+  /// message with 2 KB or more left after what the buffer holds of it arrives whole: upstream's count left out what
+  /// came straight from the socket, and the next read wrote the stream's later bytes over it.
+  void ALiveReplayReadsLongMessagesWhole()
+  {
+    LoopbackLink link;
+    if (!link.Up()) {
+      return;
+    }
+    moho::CMessage sent{moho::ECmdStreamOp::CMDST_LuaSimCallback};
+    const std::string payload = RandomText(2 * moho::kNetIoBufferSize, 12);
+    sent.Append(payload.data(), payload.size());
+    moho::CMessage next{moho::ECmdStreamOp::CMDST_Advance};
+    const std::int32_t one = 1;
+    next.Append(reinterpret_cast<const char*>(&one), sizeof(one));
+    link.accepted->Write(sent.mBuff.start_, sent.mBuff.Size());
+    link.accepted->Write(next.mBuff.start_, next.mBuff.Size());
+    link.accepted->VirtFlush();
+
+    const auto bytes = [](const moho::CMessage& message) {
+      return std::string(message.mBuff.start_, message.mBuff.end_);
+    };
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kArrivalMs);
+    for (const moho::CMessage* expected : {&sent, &next}) {
+      moho::CMessage received;
+      bool whole = received.Read(link.game.get());
+      while (!whole && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        whole = received.Read(link.game.get());
+      }
+      CHECK(whole && bytes(received) == bytes(*expected));
+    }
   }
 
   /// Without a listener on its port the game's connect fails at once, which the game takes as ConnectFailed.
@@ -1289,6 +1374,8 @@ namespace
     {"ADestroyInsidePullEndsTheConnector", &ADestroyInsidePullEndsTheConnector},
     {"AThreadThatDoesNotStartEndsTheConstructor", &AThreadThatDoesNotStartEndsTheConstructor},
     {"GpgNetSocketReachesItsLauncher", &GpgNetSocketReachesItsLauncher},
+    {"GpgNetSocketReadsLongArgumentsWhole", &GpgNetSocketReadsLongArgumentsWhole},
+    {"ALiveReplayReadsLongMessagesWhole", &ALiveReplayReadsLongMessagesWhole},
     {"GpgNetSocketWithoutALauncherFails", &GpgNetSocketWithoutALauncherFails},
     {"NewPeerIsTheNamePlusTenBytes", &NewPeerIsTheNamePlusTenBytes},
     {"WhatIsCopiedRawHasItsSize", &WhatIsCopiedRawHasItsSize},
