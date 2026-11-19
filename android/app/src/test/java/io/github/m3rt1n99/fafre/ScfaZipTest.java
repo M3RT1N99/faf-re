@@ -460,12 +460,47 @@ public class ScfaZipTest {
     @Test
     public void whatAnImportWhoseProcessEndedLeftGoesAtTheNext() throws IOException {
         Storage storage = storage();
-        File left = new File(storage.scfa, ScfaZip.STAGING + "/movies/a.sfd.part");
-        Storage.mkdirs(left.getParentFile());
-        Files.write(left.toPath(), new byte[3]);
+        leftover(storage, 3);
         ScfaZip.run(storage, source(scfaInAFolder()), ROOMY);
         assertFalse(new File(storage.scfa, ScfaZip.STAGING).exists());
         assertEquals(7, files(storage.scfa).size());
+        // Also at a ZIP the import refuses, which writes nothing.
+        leftover(storage, 3);
+        assertThrows(ScfaZip.Refused.class,
+            () -> ScfaZip.run(storage, source("not a zip".getBytes(StandardCharsets.UTF_8)), ROOMY));
+        assertFalse(new File(storage.scfa, ScfaZip.STAGING).exists());
+    }
+
+    @Test
+    public void theRoomWhatAnImportWhoseProcessEndedLeftHeldIsTheNextOnes() throws IOException {
+        Storage storage = storage();
+        leftover(storage, 1 << 20);
+        byte[] zip = new Zip().deflated("gamedata/lua.scd", "lua archive").bytes();
+        // The phone's free space as its storage has it, less what the app's files hold: room for the ZIP's file and the
+        // spare, and half of what the leftover holds.
+        long room = NewestGameFiles.SPARE_BYTES + "lua archive".length() + (512 << 10);
+        ScfaZip.run(storage, source(zip), () -> room - held(storage.root));
+        assertEquals("lua archive", read(new File(storage.scfa, "gamedata/lua.scd")));
+        assertFalse(new File(storage.scfa, ScfaZip.STAGING).exists());
+    }
+
+    /** A file of {@code bytes} that an import whose process ended left in its folder. */
+    private static void leftover(Storage storage, int bytes) throws IOException {
+        File left = new File(storage.scfa, ScfaZip.STAGING + "/movies/a.sfd.part");
+        Storage.mkdirs(left.getParentFile());
+        Files.write(left.toPath(), new byte[bytes]);
+    }
+
+    /** The bytes of the files under {@code dir}. */
+    private static long held(File dir) {
+        long bytes = 0;
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                bytes += child.isDirectory() ? held(child) : child.length();
+            }
+        }
+        return bytes;
     }
 
     @Test

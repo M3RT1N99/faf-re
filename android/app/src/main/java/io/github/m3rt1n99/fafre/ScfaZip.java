@@ -31,7 +31,10 @@ import java.util.zip.ZipInputStream;
  * Android in here, for the tests.
  */
 final class ScfaZip {
-    /** In scfa/, the files of the import that runs until it ends; what one left whose process ended goes at the next. */
+    /**
+     * In scfa/, the files of the import that runs until it ends; what one left whose process ended goes as the next import
+     * begins, a ZIP's or the folder's (dropStaging).
+     */
     static final String STAGING = ".zip-import";
     /** Far more entries than an SCFA folder has files (1,826 on Steam): the list stays in memory. */
     static final int MOST_ENTRIES = 100_000;
@@ -129,6 +132,8 @@ final class ScfaZip {
      * when the ZIP is not one it takes, cannot be read or does not fit.
      */
     static void run(Storage storage, Source source, LongSupplier free) throws IOException {
+        // First, as the room it holds counts against this import's own, whatever comes of the ZIP.
+        dropStaging(storage.scfa);
         Plan plan;
         try {
             List<Entry> entries = list(source);
@@ -162,14 +167,18 @@ final class ScfaZip {
         }
     }
 
+    /** What an import of a ZIP whose process ended left in {@code scfa} (STAGING), gone, with the room it held. */
+    static void dropStaging(File scfa) {
+        Storage.deleteTree(new File(scfa, STAGING));
+    }
+
     /**
-     * The files of {@code plan}, from a second read of the ZIP, into the import's own folder in {@code scfa}, which they leave
-     * for their places once all are whole. Its entries must be the list's, and the phone's room must hold what is still to
-     * write.
+     * The files of {@code plan}, from a second read of the ZIP, into the import's own folder in {@code scfa}, empty as run
+     * leaves it, which they leave for their places once all are whole. Its entries must be the list's, and the phone's room
+     * must hold what is still to write.
      */
     private static void write(Source source, List<Entry> entries, Plan plan, File scfa, LongSupplier free) throws IOException {
         File staging = new File(scfa, STAGING);
-        Storage.deleteTree(staging);
         try {
             Room room = new Room(free, plan.bytes);
             byte[] buffer = new byte[1 << 16];

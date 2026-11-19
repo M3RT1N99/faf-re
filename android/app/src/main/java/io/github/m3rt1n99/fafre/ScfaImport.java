@@ -153,27 +153,36 @@ final class ScfaImport {
         }
     }
 
+    /**
+     * The SCFA import from the folder {@code tree}, which the user picked. Its lasting grant goes with the import, as the
+     * ZIP's does: the app keeps no access to the user's folder that it no longer needs.
+     */
     static void run(Context context, Storage storage, Uri tree) throws IOException {
         ContentResolver resolver = context.getContentResolver();
-        String rootId = DocumentsContract.getTreeDocumentId(tree);
-        Child gamedata = find(resolver, tree, rootId, GAMEDATA);
-        if (gamedata == null) {
-            throw new IOException("the picked folder has no gamedata folder: pick the Supreme Commander Forged Alliance folder itself");
-        }
-        int copied = 0;
-        for (Child child : children(resolver, tree, gamedata.id)) {
-            if (archive(child.name)) {
-                copy(resolver, tree, child, new File(storage.scfa, GAMEDATA + "/" + child.name));
-                ++copied;
+        try {
+            ScfaZip.dropStaging(storage.scfa);
+            String rootId = DocumentsContract.getTreeDocumentId(tree);
+            Child gamedata = find(resolver, tree, rootId, GAMEDATA);
+            if (gamedata == null) {
+                throw new IOException("the picked folder has no gamedata folder: pick the Supreme Commander Forged Alliance folder itself");
             }
-        }
-        TestState.line("Imported " + copied + " archives into " + new File(storage.scfa, GAMEDATA));
-        // fonts/: the game draws its text with the folder's TrueType fonts (D3D_InitFonts).
-        for (String folder : FOLDERS) {
-            copyFolder(resolver, tree, rootId, storage, folder);
-        }
-        if (fonts(storage) == 0) {
-            TestState.line("No fonts: the picked folder has no fonts folder with .ttf files, and the game cannot start without them");
+            int copied = 0;
+            for (Child child : children(resolver, tree, gamedata.id)) {
+                if (archive(child.name)) {
+                    copy(resolver, tree, child, new File(storage.scfa, GAMEDATA + "/" + child.name));
+                    ++copied;
+                }
+            }
+            TestState.line("Imported " + copied + " archives into " + new File(storage.scfa, GAMEDATA));
+            // fonts/: the game draws its text with the folder's TrueType fonts (D3D_InitFonts).
+            for (String folder : FOLDERS) {
+                copyFolder(resolver, tree, rootId, storage, folder);
+            }
+            if (fonts(storage) == 0) {
+                TestState.line("No fonts: the picked folder has no fonts folder with .ttf files, and the game cannot start without them");
+            }
+        } finally {
+            release(resolver, tree);
         }
     }
 
@@ -197,11 +206,16 @@ final class ScfaImport {
         } catch (IOException e) {
             TestState.line("The ZIP is not imported: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
         } finally {
-            try {
-                resolver.releasePersistableUriPermission(zip, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (SecurityException e) {
-                // The grant was one for this time only, which goes by itself.
-            }
+            release(resolver, zip);
+        }
+    }
+
+    /** The lasting grant on {@code picked} that the screen took for its import (Screen.onActivityResult), given back. */
+    private static void release(ContentResolver resolver, Uri picked) {
+        try {
+            resolver.releasePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException e) {
+            // The grant was one for this time only, which goes by itself.
         }
     }
 
