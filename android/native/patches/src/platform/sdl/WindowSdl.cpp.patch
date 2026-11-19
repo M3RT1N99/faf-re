@@ -1,19 +1,21 @@
 diff --git a/src/platform/sdl/WindowSdl.cpp b/src/platform/sdl/WindowSdl.cpp
-index 97a6abe..7c833e5 100644
+index 97a6abe..190f4e0 100644
 --- a/src/platform/sdl/WindowSdl.cpp
 +++ b/src/platform/sdl/WindowSdl.cpp
-@@ -517,6 +517,14 @@ namespace
+@@ -517,6 +517,16 @@ namespace
      SDL_Event source{};
      while (SDL_PollEvent(&source)) {
        if (gToolEventHook != nullptr && gToolEventHook(&source)) {
++#if FAFRE_PLATFORM_ANDROID
 +        // Android client build: what the hook queued while it took the event comes next, ahead of SDL's later events, as
-+        // the typed text below does. The app's tasks give the engine their input so (android/native/src/host/HostSdl.cpp),
-+        // in the order the fingers gave them.
++        // the typed text below does. The app's touch input comes so, from the tasks of its host
++        // (android/native/src/host/HostSdl.cpp), in the order the fingers gave it. Desktop builds keep SDL's next event first.
 +        if (!gQueued.empty()) {
 +          event = gQueued.front();
 +          gQueued.pop_front();
 +          return true;
 +        }
++#endif
          continue;
        }
        if (source.type == SDL_EVENT_TEXT_INPUT) {
