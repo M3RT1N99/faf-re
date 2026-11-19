@@ -462,7 +462,7 @@ name or a path.
 
 **The logs.** For the client's problem report:
 `getContentResolver().call(Uri.parse("content://io.github.m3rt1n99.fafre.status"), "game_logs", null, null)`, off the main
-thread, as the provider writes the zip before it answers (on the emulator 0.1 s for its games' logs of 30 to 60 KB, 8 s for
+thread, as the provider writes the zip before it answers (on the emulator 0.1 s for its games' logs of 30 to 60 KB, 5 s for
 an engine log of 10 MB), and for allowed callers only (`Callers`, as `play_token`): a refused one gets a null answer. The
 answer has the zip's `content://` URI as the Parcelable `uri`,
 `content://io.github.m3rt1n99.fafre.results/game_logs/faf-re-game-logs-<time>.zip` (`application/zip`, its name and size by
@@ -483,21 +483,28 @@ The zip goes into public issues, so its texts are scrubbed (`LogScrubber`) as on
 or the network becomes a stand-in, the same one throughout the zip.
 
 - **Where these are**, on the emulator's games and by the engine's and FAF's sources: the command line in `game.txt` has the
-  app's paths and a launcher's switches, the player's name and game in `/savereplay gpgnet://.../<game id>/<name>.SCFAreplay`
-  and the account in `/mean`, `/deviation`, `/numgames`, `/clan`, `/country`, `/division` and `/subdivision`; a replay that
-  could not be copied can quote the launcher's `content://` URI. The engine's log has the app's folders (the engine writes
-  them with backslashes in lower case too), the profile's folder of the game's replays, each army's nickname as the sim
-  begins, the lobby's peers with name, address and uid (the engine's `LOBBY:` lines; FAF's lobby and autolobby:
-  `CreateLobby`, `JoinGame`, `ConnectToPeer` and more), FAF's `REPLAY ID`, each message to the launcher (`GpgNetSend`, which
-  FAF's Lua logs: players' ids, a team kill's names, chat, the stats' names), the LAN games the screen found (host, title,
-  address), a peer's ICE message (ids, credentials, the candidates' addresses) and chat that the lobby could not show. The
-  crash report has the app's install folder and Lua's strings, a tombstone's summary its abort message.
+  app's paths and a launcher's switches, the player's name and game in `/savereplay gpgnet://.../<game id>/<name>.SCFAreplay`,
+  the account in `/mean`, `/deviation`, `/numgames`, `/clan`, `/country`, `/division` and `/subdivision`, and a rejoin's
+  seats by player id in `/rejoin <player id>=<source>,...`; a replay that could not be copied can quote the launcher's
+  `content://` URI. The engine's log has the app's folders (the engine writes them with backslashes in lower case too), the
+  profile's folder of the game's replays, each army's nickname as the sim begins, the lobby's peers with name, address and
+  uid (the engine's `LOBBY:` and `PEERS:` lines, a game server's `SERVER LOBBY:` lines; FAF's lobby and autolobby:
+  `CreateLobby`, `JoinGame`, `ConnectToPeer` and more), a rejoin's seats (the engine's `REJOIN:` lines), FAF's `REPLAY ID`,
+  each message to the launcher (`GpgNetSend`, which FAF's Lua logs: players' ids, a team kill's names, chat, the stats'
+  names, the title the host gives the game) and each one of a game once more on every player's sim (`Moderator event for
+  <name>: GpgNetSend with command '<command>' and data '<arguments>,'`), the LAN games the screen found (host, title,
+  address), a peer's ICE message (ids, credentials, the candidates' addresses) and chat that the lobby could not show; FAF's
+  `repr` puts a text with `"` and no `'` in single quotes. The crash report has the app's install folder, Lua's strings and
+  the log's last lines, a tombstone's summary its abort message.
 - **Players' names** are learned from those lines, in all of the zip's files, and replaced wherever they stand, in any case,
   as a word of their own: `player1`, `player2`, ... in the order the files name them, so that the player is mostly `player1`.
   AIs (`<name> (AI: <type>)`), the civilians' armies (`Civilian`, `civilian`) and names without a letter stay.
-- **Players' ids** (the lobby's uid, in a game of FAF's the player's id there) where those lines give them: `id1`, `id2`, ...;
-  **a FAF game's id**: `<game>`; **a game's title**: `<title>`; **chat**: `<chat>`; **the account's values**: `<account>`;
-  **ICE credentials**: `<secret>`.
+- **Players' ids** (the lobby's uid, in a game of FAF's the player's id there, whose page names the player) are learned
+  from those lines as well, and are `id1`, `id2`, ... where those lines give them; one of three digits or more, as FAF's
+  are but for its first 99 accounts, is replaced wherever else it stands as a number of its own too (no part of a word, a
+  decimal, a version or a mod's uid), and a number that happens to be the same goes with it. **A FAF game's id**:
+  `<game>`; **a game's title**: `<title>`; **chat**: `<chat>`; **the account's values**: `<account>`; **ICE credentials**:
+  `<secret>`.
 - **Addresses**: every IPv4 and IPv6 address of a host, private or public, is `<ip>`; the loopback, `0.0.0.0`, `::`, the
   broadcast and multicast addresses stay, as does what is no address (`1.3.275.0`, a time, a MAC). A version of four
   numbers up to 255 looks like an address and goes too.
@@ -507,8 +514,8 @@ or the network becomes a stand-in, the same one throughout the zip.
   own, is `<storage>`, and a `content://` URI keeps its authority alone. Android's own paths stay.
 
 What no line of that list names stays: a name that only a mod's own log line gives, or only a crash report of an earlier
-game. The JVM tests (`LogScrubberTest`, `TombstoneTest`, `GameLogsTest`) pin the lines' shapes, with invented names and
-documentation addresses.
+game, and an id of one or two digits where those lines do not give it. The JVM tests (`LogScrubberTest`, `TombstoneTest`,
+`GameLogsTest`) pin the lines' shapes, with invented names and documentation addresses.
 
 **The setup.** `startActivity(new Intent("io.github.m3rt1n99.fafre.action.SETUP_GAME_DATA").setPackage("io.github.m3rt1n99.fafre").putExtra("io.github.m3rt1n99.fafre.extra.STEP", "scfa"))`,
 or the same for a result: `SetupActivity`, this app's own screen for the game's data, in the look of its cards. Any app

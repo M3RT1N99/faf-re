@@ -189,6 +189,87 @@ public class LogScrubberTest {
     }
 
     @Test
+    public void aTitleTheHostSetsAndTheTextsReprPutsInSingleQuotesGo() {
+        assertScrubbed(
+            // The title the host sets in FAF's lobby (SetGameOption), as GpgNetSend logs it: a name only it gives goes with it.
+            "debug: GpgNetSend\tGameOption\tTitle\tKestrel and Osprey 2v2 no noobs", "debug: GpgNetSend\tGameOption\tTitle\t<title>",
+            "debug: GpgNetSend\tGameOption\tSlots\t8", "debug: GpgNetSend\tGameOption\tSlots\t8",
+            // repr puts a text with " and no ' in single quotes, as it is: a LAN game's config, the chat lobby.lua logs.
+            "info:   GameName='Plover \"pro\" game',", "info:   GameName='<title>',",
+            "info:   HostedBy='Plover \"P\" Smith',", "info:   HostedBy='player1',",
+            "info:   PlayerName='Plover \"P\" Smith',", "info:   PlayerName='player1',",
+            "info: text='Plover: he said \"gg\"'", "info: text=<chat>");
+    }
+
+    @Test
+    public void aRejoinsSeatsTheLobbysPlayersAndAGameServersLobbyHaveStandInsForTheirIdsAndNames() {
+        assertScrubbed(
+            // A rejoin after a crash: the seats the launcher gives back on the command line, the game's offer and its return.
+            "game: command line " + EXTERNAL + "/files/parity/game/3841/bin/ForgedAlliance.exe /gpgnet 127.0.0.1:7237 /rejoinoffer "
+                + "/rejoinkeyfile /data/user/0/" + APP + "/no_backup/faf_rejoin_seat.key /con net_PeerFeatures=1;net_RejoinAccept=1 "
+                + "/rejoin 104857=0,2=1,31415=12 1 0 /fullscreen 1707 768",
+            "game: command line <external>/files/parity/game/3841/bin/ForgedAlliance.exe /gpgnet 127.0.0.1:7237 /rejoinoffer "
+                + "/rejoinkeyfile <internal>/no_backup/faf_rejoin_seat.key /con net_PeerFeatures=1;net_RejoinAccept=1 "
+                + "/rejoin id1=0,id2=1,id3=12 1 0 /fullscreen 1707 768",
+            "info: REJOIN: told the launcher this client could come back: source 0, 104857=0,2=1,31415=12",
+            "info: REJOIN: told the launcher this client could come back: source 0, id1=0,id2=1,id3=12",
+            "info: REJOIN: taking source 1 back from peers 104857=0,2=1,31415=12",
+            "info: REJOIN: taking source 1 back from peers id1=0,id2=1,id3=12",
+            "game: the start failed, ARGUMENTS: REJOIN_PEERS is \"104857=0,2=1,\", not the RejoinOffer's <player id>=<source>,...",
+            "game: the start failed, ARGUMENTS: REJOIN_PEERS is \"id1=0,id2=1,\", not the RejoinOffer's <player id>=<source>,...",
+            // The engine's lobby: each player's build and style, a join it ignored, a peer it deleted.
+            "info: PEERS: lobby player 104857:Kestrel runs our engine, features 000000000000003f, build 550e330",
+            "info: PEERS: lobby player id1:player1 runs our engine, features 000000000000003f, build 550e330",
+            "info: PEERS: lobby player 2:Marlin has style ff8800", "info: PEERS: lobby player id2:player2 has style ff8800",
+            "info: LOBBY: assigning uid 77", "info: LOBBY: assigning uid id4",
+            "info: LOBBY: ignoring unexpected join (name=\"Heron\", uid=77) from \"Marlin\" [198.51.100.7:6112, uid=2]",
+            "info: LOBBY: ignoring unexpected join (name=\"player3\", uid=id4) from \"player2\" [<ip>:6112, uid=id2]",
+            "info: LOBBY: deleting unknown peer uid 77.", "info: LOBBY: deleting unknown peer uid id4.",
+            // A game on a game server, whose peers' addresses are 240.x.y.z.
+            "info: Server session requested: 203.0.113.9:7001 as player 104857", "info: Server session requested: <ip>:7001 as player id1",
+            "info: SERVER LOBBY: lobby made for \"Kestrel\" (uid 104857).", "info: SERVER LOBBY: lobby made for \"player1\" (uid id1).",
+            "info: SERVER LOBBY: joining \"Osprey\" (uid 7) at 240.0.0.7:1000.",
+            "info: SERVER LOBBY: joining \"player4\" (uid id5) at <ip>:1000.",
+            "info: SERVER LOBBY: peer \"Marlin\" (uid 2) at 240.0.0.2:1000.", "info: SERVER LOBBY: peer \"player2\" (uid id2) at <ip>:1000.",
+            "info: server driver: on, as client 0 (uid 104857, source 0), 2 armies",
+            "info: server driver: on, as client 0 (uid id1, source 0), 2 armies",
+            "info: SERVER LOBBY: uid 2 left.", "info: SERVER LOBBY: uid id2 left.",
+            // A uid is a word of its own.
+            "warning: a mod's words: fluid 100, guid=7", "warning: a mod's words: fluid 100, guid=7");
+    }
+
+    @Test
+    public void aTeamKillsModeratorEventOnEveryPlayersSimHasStandInsForItsIdsAndNames() {
+        // FAF's GpgNetSend sends each message of a game to the sims as well (ModeratorEvent), and each sim logs it: here
+        // alone, as the log's last lines in an earlier game's crash report can have them.
+        assertScrubbed(
+            "debug: Moderator event for Kestrel: GpgNetSend with command 'TeamkillHappened' and data '312.5,2,Marlin,104857,Kestrel,'",
+            "debug: Moderator event for player2: GpgNetSend with command 'TeamkillHappened' and data '312.5,id1,player1,id2,player2,'",
+            "debug: Moderator event for Marlin: GpgNetSend with command 'TeamkillReport' and data '312.5,2,Marlin,104857,Kestrel,'",
+            "debug: Moderator event for player1: GpgNetSend with command 'TeamkillReport' and data '312.5,id1,player1,id2,player2,'",
+            "debug: Moderator event for Kestrel: GpgNetSend with command 'JsonStats' and data '{\"stats\":[{\"type\":\"Human\",\"name\":"
+                + "\"Heron\",\"faction\":2},{\"type\":\"AI\",\"name\":\"Sleepy (AI: Easy)\"}]},'",
+            "debug: Moderator event for player2: GpgNetSend with command 'JsonStats' and data '{\"stats\":[{\"type\":\"Human\",\"name\":"
+                + "\"player3\",\"faction\":2},{\"type\":\"AI\",\"name\":\"Sleepy (AI: Easy)\"}]},'",
+            "debug: Moderator event for Observer (source 3): GpgNetSend with command 'GameResult' and data '1,defeat -10,'",
+            "debug: Moderator event for Observer (source 3): GpgNetSend with command 'GameResult' and data '1,defeat -10,'");
+    }
+
+    @Test
+    public void anIdOfFafsSizeIsAStandInWhereverItStandsAsANumberOfItsOwnAndAShorterOneWhereTheLinesGiveIt() {
+        assertScrubbed(
+            "info: CreateLobby\tUDP\t0\tKestrel\t104857", "info: CreateLobby\tUDP\t0\tplayer1\tid1",
+            "info: ConnectToPeer\t198.51.100.4:6112\tMarlin\t2", "info: ConnectToPeer\t<ip>:6112\tplayer2\tid2",
+            // Lines that no shape knows, the in-engine links' of the desktop build (NetlinkPeers).
+            "info: NETLINK: peer Kestrel(104857) closed", "info: NETLINK: peer player1(id1) closed",
+            "info: NETLINK: ICE message for unknown peer 2", "info: NETLINK: ICE message for unknown peer 2",
+            "info: 104857, (104857) 104857. 104857:6112 x=104857 '104857'", "info: id1, (id1) id1. id1:6112 x=id1 'id1'",
+            // No part of a word, a decimal, a version or a mod's uid.
+            "info: 1048570 1104857 104857.5 0.104857 2.104857.1 v104857 104857a 0x104857 mod-104857 104857-b",
+            "info: 1048570 1104857 104857.5 0.104857 2.104857.1 v104857 104857a 0x104857 mod-104857 104857-b");
+    }
+
+    @Test
     public void theAddressesOfHostsGoAndTheLoopbackTheBroadcastVersionsAndTimesStay() {
         assertScrubbed(
             // A GPGNet Test of a peer's ICE message (gpgnet_host.py --ice-msg), which the engine logs: its ids, credentials and

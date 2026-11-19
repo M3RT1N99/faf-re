@@ -618,3 +618,35 @@ the setup. The contract's changes are in the [README](README.md) (The launcher's
   `/aeon`, `/cybran`, `/seraphim`), `/map`, `/gameoptions` with `key:value` arguments and `/replayid`. A name that only a
   mod's own log line gives, or only a crash report of an earlier game, stays in the zip. `tools/tombstone.py`'s fault
   address.
+
+*2026-11-19, the game's logs, the review's fixes (E2c):* a review of `game_logs` found two gaps in the scrubber, both real
+by the engine's and FAF's sources. The contract's changes are in the [README](README.md) (The logs):
+- **Players' ids**: an id went only where a shape the scrubber knew gave it, and real lines give ids elsewhere, beside
+  their names' stand-ins: a rejoin's seats (`/rejoin <player id>=<source>,...` in `game.txt`, the engine's `REJOIN:` lines
+  of the offer and the return), FAF's moderator event, which every player's sim logs for each `GpgNetSend` of a game (a
+  team kill's `data '<time>,<id>,<name>,<id>,<name>,'`), a game server's `SERVER LOBBY:` lines and session, and the
+  engine's `PEERS: lobby player <id>:<name>`. Ids are learned now as names are, from those shapes and the earlier ones, and
+  replaced where the shapes give them; one of three digits or more, as FAF's are but for its first 99 accounts, also
+  wherever it stands as a number of its own. Found on the way: the engine's line of a join it ignored
+  (`ignoring unexpected join (name="...", uid=...)`) named a player that no shape learned.
+- **A title and repr's quotes**: the title the host sets in FAF's lobby, which `GpgNetSend` logs (`GameOption Title`),
+  stayed, as did the chat and a LAN game's title or host that FAF's `repr` puts in single quotes (a text with `"` and no
+  `'`). The scrubber takes both now, and the names in the stats' moderator event.
+- **The provider's time**: on Android a matcher (ICU's) costs twice its find on a line of the logs, and with the shapes on
+  the learn pass an engine log of 10 MB took 14 s. The scrubber keeps one matcher a pattern now: 5.3 s, where the earlier
+  scrubber took 8 s (on ART, scrubbing alone: 4.4 s against 6.4 s, the same text out).
+- **Checked on the emulator** (fafre_api36, x86_64, read-only): the allowed throwaway caller started a rejoin with
+  `REJOIN_PEERS` `104857=0,2=1`, which the game refused in its box for want of the seat's key and went on to FAF's menu;
+  its `game_logs` zip had `/rejoin id1=0,id2=1 1 0` in `game.txt`. With the review's lines and those above appended to the
+  engine's log (invented names, documentation addresses), the zip had none of the names, ids, title, chat or addresses,
+  the stand-ins the JVM tests expect, and no stand-in elsewhere.
+- **Tests**: the app's unit tests (498, 3 skipped): `LogScrubberTest` pins the rejoin's seats, the `PEERS:`,
+  `SERVER LOBBY:` and server session lines, the ignored join, the moderator events, the title, repr's single quotes, and
+  an id of FAF's size wherever it stands as a number of its own and a shorter one only where the lines give it; its four
+  new tests fail on the earlier scrubber. `faf_griff_tests` (140), `faf_net_tests` (25) and `faf_shell_tests` (5) on the
+  emulator; both native presets build (nothing native changed).
+- **Not shown**: a rejoin that takes its seat back, a game server's lobby, a team kill or a title set in the lobby on the
+  game itself: their lines are the sources'.
+- **Open**: an id of one or two digits stays where no shape gives it, as in native mode's `NETLINK:` lines, which the
+  Android build does not have yet (an id of FAF's size there goes). The refused caller was not tried again: the
+  provider's checks did not change.
