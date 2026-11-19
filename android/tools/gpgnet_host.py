@@ -31,8 +31,10 @@ game has closed its connection, and its status is 0 when the host's lobby seated
 and when its player leaves the game, or GameEnded), a game reported the game's end (GameEnded) and none a desync
 (Desync); a game that crashed or was killed sends neither. Each miss has a line, a game's naming the game. As FAF's
 server does, a game whose connection closes before the host launched leaves the others' lobbies (DisconnectFromPeer
-[its id] to each); after the launch the games handle a lost peer themselves, and an IceMsg for a gone game is dropped. A
-long IceMsg's line names its CandidatesMessage's candidates by type, and its SHA-256 is the same where it goes on.
+[its id] to each); after the launch the games handle a lost peer themselves, and an IceMsg for a gone game is dropped.
+The relay passes a game's text on as the bytes it read, and each IceMsg's line has their length and SHA-256 and its
+CandidatesMessage's candidates by type: the line of what it read and the line of what it wrote have the same unless it
+changed them.
 
 With --ice-msg BYTES (one game) it sends, before CreateLobby, a peer's ICE message of BYTES bytes as a launcher in
 native mode relays one (IceMsg [sender id, CandidatesMessage JSON]), and the same arguments as Test, whose arguments
@@ -59,7 +61,7 @@ CANDIDATE_TYPES = ("HOST_CANDIDATE", "SERVER_REFLEXIVE_CANDIDATE", "RELAYED_CAND
 
 
 class Data(bytes):
-    """A data argument (tag 2), as against a string."""
+    """A data argument (tag 2). A string argument (tag 1) is bytes as a game sent them, or a str of the script's."""
 
 
 def encode(command, args):
@@ -68,14 +70,14 @@ def encode(command, args):
 
     out = [string(command.encode()), struct.pack("<I", len(args))]
     for arg in args:
-        if isinstance(arg, bool) or not isinstance(arg, (int, str, Data)):
+        if isinstance(arg, bool) or not isinstance(arg, (int, str, bytes)):
             raise TypeError(f"{command}: GPGNet has no argument of type {type(arg).__name__}")
         if isinstance(arg, int):
             out.append(struct.pack("<Bi", TAG_INT, arg))
         elif isinstance(arg, Data):
             out.append(struct.pack("<B", TAG_DATA) + string(arg))
         else:
-            out.append(struct.pack("<B", TAG_STRING) + string(arg.encode()))
+            out.append(struct.pack("<B", TAG_STRING) + string(arg.encode() if isinstance(arg, str) else arg))
     return b"".join(out)
 
 
@@ -119,20 +121,30 @@ def candidates(text):
     if not isinstance(found, list):
         return ""
     kinds = collections.Counter(str(c.get("type")) if isinstance(c, dict) else "?" for c in found)
-    return f", {len(found)} candidates: " + ", ".join(f"{count} {kind}" for kind, count in kinds.items())
+    counts = ", ".join(f"{count} {kind}" for kind, count in kinds.items())
+    return f", {len(found)} candidates" + (f": {counts}" if counts else "")
 
 
-def shown(arg):
+def shown(arg, summed=False):
+    """An argument as its line has it: a string as its text, or summed up, as one of more than 200 bytes always is, as
+    the length and SHA-256 of its bytes and a CandidatesMessage's candidates."""
     if isinstance(arg, Data):
         return f"<data {len(arg)} bytes>"
-    if isinstance(arg, str) and len(arg) > 200:
-        text = arg.encode()
-        return f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}{candidates(arg)}>"
+    if isinstance(arg, (str, bytes)):
+        raw = arg.encode() if isinstance(arg, str) else arg
+        if summed or len(raw) > 200:
+            return f"<string {len(raw)} bytes, SHA-256 {hashlib.sha256(raw).hexdigest()}{candidates(raw)}>"
+        try:
+            return repr(raw.decode())
+        except UnicodeDecodeError:
+            return repr(raw)  # no UTF-8: the bytes themselves
     return repr(arg)
 
 
 def say(who, command, args=()):
-    print(f"{time.monotonic() - START:8.2f} {who}: {command} {' '.join(map(shown, args))}".rstrip(), flush=True)
+    # An IceMsg's text is summed up at any length, so that the lines of what the relay read and wrote compare.
+    shown_args = " ".join(shown(arg, command == "IceMsg") for arg in args)
+    print(f"{time.monotonic() - START:8.2f} {who}: {command} {shown_args}".rstrip(), flush=True)
 
 
 def note(text):
@@ -163,7 +175,8 @@ class Connection:
         return self.exact(self.uint32())
 
     def receive(self):
-        """The next message as (command, args), or None when the game closed the connection between two."""
+        """The next message as (command, args), or None when the game closed the connection between two. A string
+        argument is the bytes the game sent, which go on unchanged where the script passes it on."""
         first = self.sock.recv(1)
         if not first:
             return None
@@ -175,7 +188,7 @@ class Connection:
             if tag == TAG_INT:
                 args.append(struct.unpack("<i", self.exact(4))[0])
             elif tag == TAG_STRING:
-                args.append(self.string().decode(errors="replace"))
+                args.append(self.string())
             elif tag == TAG_DATA:
                 args.append(Data(self.string()))
             else:
@@ -253,18 +266,18 @@ class Session:
     def on_message(self, seat, command, values):
         """What the launcher, and the lobby server with more than one game, does with a message of the game's."""
         with self.lock:
-            if command == "GameState" and values == ["Idle"]:
+            if command == "GameState" and values == [b"Idle"]:
                 if self.args.native:
                     seat.game.send("IceServers", self.args.ice_servers)
                 if self.ice_text is not None:
                     seat.game.send("IceMsg", seat.uid + 1, self.ice_text)
                     seat.game.send("Test", seat.uid + 1, self.ice_text)
                 seat.game.send("CreateLobby", self.args.mode, self.args.lobby_port, seat.name, seat.uid, 1)
-            elif command == "GameState" and values == ["Lobby"] and not seat.lobby:
+            elif command == "GameState" and values == [b"Lobby"] and not seat.lobby:
                 seat.lobby = True
                 if len(self.seats) > 1:
                     self.match()
-            elif command == "GameState" and values == ["Launching"] and not seat.launched:
+            elif command == "GameState" and values == [b"Launching"] and not seat.launched:
                 seat.launched = True
                 if seat is self.seats[0]:
                     self.launched = True
@@ -280,7 +293,8 @@ class Session:
                     note(f"{seat.label}'s IceMsg for player {values[0]} not delivered: no game of that player's")
                 else:
                     receiver.game.send("IceMsg", seat.uid, values[1])
-            elif command == "PlayerOption" and seat is self.seats[0] and values and str(values[0]).isdigit():
+            elif (command == "PlayerOption" and seat is self.seats[0] and values and isinstance(values[0], bytes)
+                  and values[0].isdigit()):
                 other = self.by_uid(int(values[0]))
                 if other is not None and other is not seat and not other.seated:
                     other.seated = True
@@ -371,6 +385,9 @@ class Session:
 
 
 def main():
+    # A game's text may have what the output's encoding has not, as Windows' code page for a log file, and a line that
+    # cannot be written would end that game's connection.
+    sys.stdout.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, action="append",
                         help="the port to listen on (default 7237); more than once, one game on each")

@@ -3,6 +3,7 @@
 --play's status says of a game. The fake games have a codec of their own, so that a fault of the script's codec on
 both sides cannot hide. Run: python -I android/tools/test_gpgnet_host.py"""
 
+import hashlib
 import os
 import socket
 import struct
@@ -182,6 +183,46 @@ class Play(unittest.TestCase):
                                                "not played to its end: game2 did not launch",
                                                "not played to its end: no game reported the game's end (GameEnded)"],
                          script.out)
+
+
+class Relay(unittest.TestCase):
+    def test_an_ice_message_goes_on_byte_for_byte_and_both_its_lines_sum_up_its_bytes(self):
+        short = b'{"srcId":1,"destId":2,"candidates":[]}'
+        # Not UTF-8, which a relay that decodes the text and encodes it again changes.
+        odd = b'{"srcId":1,"destId":2,"password":"\xff' + b"p" * 300 + b'","candidates":[]}'
+        script = Script(self, "--play")
+        host, joiner = script.game()
+        host.send("GameOption", "Title", b"caf\xe9")  # a short text that is no UTF-8 shows as its bytes
+        host.send("GameOption", "Title", "日本")  # beyond Windows' code page: the line escapes it
+        for text in short, odd:
+            host.send("IceMsg", 2, text)
+            self.assertEqual(joiner.expect("IceMsg"), [1, text])
+        joiner.send("JsonStats", STATS)
+        joiner.close()
+        win(host)
+        self.assertEqual(script.status(), 0, script.out)
+        for text in short, odd:
+            summed = f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}"
+            self.assertIn(f" game1: IceMsg 2 {summed}", script.out)
+            self.assertIn(f" host>game2: IceMsg 1 {summed}", script.out)
+        self.assertIn(", 0 candidates>", script.out)
+        self.assertIn(" game1: GameOption 'Title' b'caf\\xe9'", script.out)
+
+
+class OneGame(unittest.TestCase):
+    def test_a_long_ice_message_and_its_test_reach_the_game_whole_before_its_lobby(self):
+        script = Script(self, "--ice-msg", "2500", games=1)
+        game = FakeGame(script.ports[0])
+        game.send("GameState", "Idle")
+        sender, text = game.expect("IceMsg")
+        self.assertEqual((sender, len(text)), (2, 2500))
+        self.assertEqual(game.expect("Test"), [2, text])
+        game.expect("CreateLobby")
+        game.send("GameState", "Lobby")
+        game.close()
+        self.assertEqual(script.status(), 0, script.out)
+        self.assertIn(f" host: IceMsg 2 <string 2500 bytes, SHA-256 {hashlib.sha256(text).hexdigest()}", script.out)
+        self.assertIn("the game reached its lobby", script.out.splitlines())
 
 
 if __name__ == "__main__":
