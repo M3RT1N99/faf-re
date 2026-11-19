@@ -10,6 +10,8 @@ import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,6 +33,24 @@ final class GameReport {
     static final String PROCESS = ":game";
     /** The report's last line begins with this: how the game ended. */
     static final String END = "END: ";
+    /** The report's first line: when the game began, as an ISO-8601 instant. */
+    static final String STARTED = "game: started ";
+
+    /** How the end's lines begin, by how the game ended; a start that failed has GameStart's (FAIL). */
+    private static final String FAILED = "FAILED: ";
+    private static final String RETURNED = "the program returned ";
+    private static final String CRASHED = "CRASHED: ";
+    private static final String EXITED = "the engine ended its process, exit code ";
+    private static final String PROCESS_ENDED = "the process ended: ";
+    private static final String START_FAILED = "FAIL: ";
+    /** What the end adds of the engine's words (its log's) and Android's after its own, which can name a path or a player. */
+    private static final String MORE = "; ";
+    private static final Pattern RETURNED_CODE = Pattern.compile("^" + RETURNED + "(-?\\d+) after ");
+    private static final Pattern EXITED_CODE = Pattern.compile("^" + EXITED + "(-?\\d+)");
+    /** ProcessExit.End.describe's reason and status, without Android's description after them. */
+    private static final Pattern REASON = Pattern.compile("^(" + CRASHED + "|" + PROCESS_ENDED + ")(.+?, status -?\\d+)");
+    /** The line of a start that failed (GameStart.Failure.reportLine), with its code. */
+    private static final Pattern START_FAILURE = Pattern.compile("^game: the start failed, ([A-Z_]+): ", Pattern.MULTILINE);
 
     /** The host's line when the program returned: "<ms> ms: exit <code>". */
     private static final Pattern EXIT = Pattern.compile("^(\\d+) ms: exit (-?\\d+)$", Pattern.MULTILINE);
@@ -90,19 +110,19 @@ final class GameReport {
         new File(context.getFilesDir(), "renderer.txt").delete();
         new File(context.getFilesDir(), "renderer-tombstone.pb").delete();
         File file = file(context);
-        if (!file.isFile()) {
-            return;
-        }
-        try {
-            String report = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-            if (!hasEnd(report)) {
-                append(context, end(context, report, file.lastModified()));
+        if (file.isFile()) {
+            try {
+                String report = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+                if (!hasEnd(report)) {
+                    append(context, end(context, report, file.lastModified()));
+                }
+            } catch (IOException e) {
+                // It stays as it is.
             }
-        } catch (IOException e) {
-            // It stays as it is.
+            replace(file, previous(context));
+            replace(tombstone(context), previousTombstone(context));
         }
-        replace(file, previous(context));
-        replace(tombstone(context), previousTombstone(context));
+        append(context, STARTED + Instant.now());
     }
 
     /** `from` becomes `to`; without a `from`, `to` holds nothing of an earlier game either. */
@@ -163,14 +183,111 @@ final class GameReport {
                 }
                 return;
             }
-            String end = end(context, report, file.lastModified());
-            append(context, end);
-            report += end + "\n";
+            report = withEnd(context, file, report);
             stamp = file.lastModified() * 31 + file.length();
         }
         sLoaded = stamp;
         TestState.game(report);
         TestState.line(TestState.gameVerdict());
+    }
+
+    /**
+     * The last game's report as it is now, for the status a launcher reads (StatusProvider): with how the game ended once its
+     * process is gone, as refresh adds it; "" before the first game.
+     */
+    static synchronized String current(Context context) {
+        File file = file(context);
+        String report;
+        try {
+            report = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
+        }
+        if (!report.isEmpty() && !hasEnd(report) && !ProcessExit.running(context, PROCESS)) {
+            report = withEnd(context, file, report);
+        }
+        return report;
+    }
+
+    /** {@code report}, whose game's process is gone, with how it ended, which the file gets too. */
+    private static String withEnd(Context context, File file, String report) {
+        String end = end(context, report, file.lastModified());
+        append(context, end);
+        StatusProvider.changed(context);
+        return report + end + "\n";
+    }
+
+    /** The report's END line without its "END: ", or null while the game has not ended. */
+    static String endLine(String report) {
+        for (String line : report.split("\n")) {
+            if (line.startsWith(END)) {
+                return line.substring(END.length());
+            }
+        }
+        return null;
+    }
+
+    /** When the report's game began, in ms since 1970; null for a report without the line, an earlier release's. */
+    static Long startedAt(String report) {
+        for (String line : report.split("\n")) {
+            if (line.startsWith(STARTED)) {
+                try {
+                    return Instant.parse(line.substring(STARTED.length()).trim()).toEpochMilli();
+                } catch (DateTimeParseException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The program's exit code, when it returned or the engine ended its process; null for any other end, and before it. */
+    static Integer exitCode(String report) {
+        String end = endLine(report);
+        if (end == null) {
+            return null;
+        }
+        for (Pattern pattern : new Pattern[] {RETURNED_CODE, EXITED_CODE}) {
+            Matcher code = pattern.matcher(end);
+            if (code.find()) {
+                return Integer.valueOf(code.group(1));
+            }
+        }
+        return null;
+    }
+
+    /** Whether the game crashed or stopped on a fatal error. */
+    static boolean crashed(String report) {
+        String end = endLine(report);
+        return end != null && (end.startsWith(CRASHED) || end.startsWith(FAILED));
+    }
+
+    /**
+     * How the game ended in this app's words alone: the END line without what it quotes of the engine's log, a fatal error,
+     * Android's description and a failed start's message, which can name a path or a player. Null while it has not ended.
+     */
+    static String plainEnd(String report) {
+        String end = endLine(report);
+        if (end == null) {
+            return null;
+        }
+        if (end.startsWith(START_FAILED)) {
+            String code = null;
+            Matcher failure = START_FAILURE.matcher(report);
+            while (failure.find()) {
+                code = failure.group(1);
+            }
+            return code != null ? "the start failed: " + code : "the start failed";
+        }
+        if (end.startsWith(FAILED)) {
+            return FAILED + "the engine stopped on a fatal error";
+        }
+        Matcher reason = REASON.matcher(end);
+        if (reason.find()) {
+            return reason.group(1) + reason.group(2);
+        }
+        int more = end.indexOf(MORE);
+        return more >= 0 ? end.substring(0, more) : end;
     }
 
     /** How the game ended, for a report whose process is gone; `since` is the report's last write. */
@@ -181,10 +298,10 @@ final class GameReport {
         String saved = end != null && end.tombstone ? " (tombstone in the results)" : "";
         Matcher fatal = FATAL.matcher(report);
         if (fatal.find()) {
-            return END + "FAILED: " + fatal.group(1).trim().replaceAll("\\s*\\n\\s*", " ") + saved;
+            return END + FAILED + fatal.group(1).trim().replaceAll("\\s*\\n\\s*", " ") + saved;
         }
         String engine = engineSummary(context);
-        String tail = engine.isEmpty() ? "" : "; " + engine;
+        String tail = engine.isEmpty() ? "" : MORE + engine;
         Matcher exit = EXIT.matcher(report);
         String code = null;
         String after = null;
@@ -193,7 +310,7 @@ final class GameReport {
             code = exit.group(2);
         }
         if (code != null) {
-            return END + "the program returned " + code + " after " + seconds(after) + tail;
+            return END + RETURNED + code + " after " + seconds(after) + tail;
         }
         if (Build.VERSION.SDK_INT < 30) {
             return END + "the game's process ended" + tail;
@@ -202,12 +319,12 @@ final class GameReport {
             return END + "the game's process ended, and Android gives no reason" + tail;
         }
         if (end.crashed()) {
-            return END + "CRASHED: " + end.describe() + saved + tail;
+            return END + CRASHED + end.describe() + saved + tail;
         }
         if (end.exitedItself()) {
-            return END + "the engine ended its process, exit code " + end.status + tail;
+            return END + EXITED + end.status + tail;
         }
-        return END + "the process ended: " + end.describe() + tail;
+        return END + PROCESS_ENDED + end.describe() + tail;
     }
 
     private static String seconds(String milliseconds) {

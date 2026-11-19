@@ -114,5 +114,12 @@
             android:authorities="io.github.m3rt1n99.fafre.results"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <!-- The game's status for the FAF client, read-only: exported, and it answers only the apps whose signing key the
+             game allows (Callers), as a permission with knownSigner would from Android 12 on only. -->
+        <provider
+            android:name=".StatusProvider"
+            android:authorities="io.github.m3rt1n99.fafre.status"
+            android:exported="true" />
     </application>
 </manifest>
