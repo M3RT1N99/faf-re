@@ -36,7 +36,6 @@
 #include <vector>
 
 #include <Windows.h>
-#include <Win32AndroidHost.h>
 
 #include <CameraClear.h>
 #include <GriffDraft.h>
@@ -48,6 +47,7 @@
 
 #include "GriffShown.h"
 #include "HostClicks.h"
+#include "HostSdl.h"
 #include "MenuFingers.h"
 #include "TaskPlaces.h"
 #include "gpg/core/utils/Logging.h"
@@ -79,9 +79,22 @@ namespace
   using griffplace::Box;
   using grifftap::kRailBox;
   using grifftap::kRailQueue;
+  using hosttask::Argument;
   using hosttask::Coordinate;
   using hosttask::Places;
   using hosttask::SignedCoordinate;
+
+  /// The session's selected units: the user units of its selection (CWldSession::GetSelection), as the PC's commands take it.
+  [[nodiscard]] std::vector<moho::UserUnit*> SelectedUnits(const moho::CWldSession& session)
+  {
+    std::vector<moho::UserUnit*> units;
+    for (moho::UserEntity* const entity : session.GetSelection()) {
+      if (moho::UserUnit* const unit = entity != nullptr ? entity->IsUserUnit() : nullptr; unit != nullptr) {
+        units.push_back(unit);
+      }
+    }
+    return units;
+  }
 
   // TouchInput's STEP_: a tap's step on its ladder.
   constexpr int kStepTap = 0;
@@ -852,12 +865,12 @@ namespace
   {
     std::vector<griffdraft::Candidate> candidates;
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
-    if (session == nullptr || session->mSimResources.px == nullptr || kind == griffdraft::Deposit::kNone) {
+    if (session == nullptr || session->mSimResources.get() == nullptr || kind == griffdraft::Deposit::kNone) {
       return candidates;
     }
     const moho::EDepositType type = kind == griffdraft::Deposit::kMass ? moho::kMass : moho::kHydrocarbon;
     // As USERUNIT_CanBeBuiltAt reaches them.
-    const auto* const resources = reinterpret_cast<const moho::ISimResources*>(session->mSimResources.px);
+    const auto* const resources = reinterpret_cast<const moho::ISimResources*>(session->mSimResources.get());
     for (const moho::ResourceDeposit& deposit : resources->GetDeposits()) {
       if (deposit.depositType != type) {
         continue;
@@ -1098,9 +1111,9 @@ namespace
   moho::CScrLuaBinder
     gWaypointBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWaypoint", &Waypoint, nullptr, "<global>", kWaypointHelp);
 
-  void ClickStepTask(WPARAM);
+  void ClickStepTask(Argument);
   void TryUndo();
-  void DraftCommitTask(WPARAM plus);
+  void DraftCommitTask(Argument plus);
   void ForgetRest();
   void ForgetGroups();
   [[nodiscard]] bool ClicksRun();
@@ -1111,7 +1124,7 @@ namespace
 
   /// A tick that waits until no clicks run and no finger's drag holds FAF's dragger (DraftCommitTask): whether Plus counted
   /// for it, plus one; 0: none.
-  WPARAM gCommitAsked = 0;
+  Argument gCommitAsked = 0;
 
   /// FAF's Distribute orders that waits for a frame drawn with the cursor at the group's middle (DistributeTask): where the
   /// cursor is, the frame it waits after, and since when (0: none waits). Meanwhile Griff holds the cursor, and the pointer's
@@ -1189,8 +1202,7 @@ namespace
     if (session == nullptr) {
       return false;
     }
-    msvc8::vector<moho::UserUnit*> units;
-    session->GetSelectionUnits(units);
+    const std::vector<moho::UserUnit*> units = SelectedUnits(*session);
     return !units.empty();
   }
 
@@ -1213,14 +1225,14 @@ namespace
   /// drew them. What the sim holds of the queues a gesture's orders replaced is read until their replacement landed. An undo
   /// the button asked for and a tick that wait for the sim, clicks or a finger's drag come now, the undo first, which was asked
   /// for the gesture before the tick.
-  void PlaceTask(const WPARAM)
+  void PlaceTask(const Argument)
   {
     // The clicks' next step once a frame after the one it waits after is drawn: this task comes after each frame's paint, and
     // one of the frame the step began in may still wait.
     if (gClicking && gClicksWait && gFrame != gClicksAfterFrame) {
       gClicksWait = false;
       gClicksWaitSince = 0;
-      Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+      host::RunOnGameThread(&ClickStepTask, 0);
     }
     const Selection selection = gSelection;
     try {
@@ -1299,7 +1311,7 @@ namespace
       gClicksWaitSince = 0;
     }
     // The frame's Lua runs before its paint, in which the program draws it (CScApp::Main asks for the paint).
-    Win32Android_RunWhenIdle(&PlaceTask, 0);
+    host::RunWhenIdle(&PlaceTask, 0);
     return 0;
   }
 
@@ -1383,7 +1395,7 @@ namespace
     if (gClicking) {
       gClicksWait = false;
       gClicksWaitSince = 0;
-      Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+      host::RunOnGameThread(&ClickStepTask, 0);
     }
     return 0;
   }
@@ -1444,7 +1456,7 @@ namespace
         break;
     }
     const moho::EntityCategorySet* const dragged = session->mRules->GetEntityCategory("DRAGBUILD");
-    building.drags = dragged != nullptr && dragged->ContainsBit(blueprint->mCategoryBitIndex);
+    building.drags = dragged != nullptr && dragged->ContainsBit(blueprint->mBlueprintOrdinal);
     return blueprint;
   }
 
@@ -1797,8 +1809,7 @@ namespace
     if (session == nullptr) {
       return stored;
     }
-    msvc8::vector<moho::UserUnit*> units;
-    session->GetSelectionUnits(units);
+    const std::vector<moho::UserUnit*> units = SelectedUnits(*session);
     for (moho::UserUnit* const unit : units) {
       Stored& kept = stored[IdOf(*unit)];
       for (const bool route : {false, true}) {
@@ -1864,8 +1875,7 @@ namespace
     std::vector<int> ids;
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
     if (session != nullptr) {
-      msvc8::vector<moho::UserUnit*> units;
-      session->GetSelectionUnits(units);
+      const std::vector<moho::UserUnit*> units = SelectedUnits(*session);
       for (moho::UserUnit* const unit : units) {
         ids.push_back(IdOf(*unit));
       }
@@ -2172,7 +2182,7 @@ namespace
     }
     const auto in = [&](const char* const category) {
       const moho::EntityCategorySet* const set = session->mRules->GetEntityCategory(category);
-      return set == nullptr || set->ContainsBit(blueprint->mCategoryBitIndex);
+      return set == nullptr || set->ContainsBit(blueprint->mBlueprintOrdinal);
     };
     return in("STRUCTURE") && (in("MASSEXTRACTION") || in("RADAR") || in("OMNI") || in("ARTILLERY"));
   }
@@ -2393,10 +2403,10 @@ namespace
     return gWatch.number;
   }
 
-  void EndWatchTask(const WPARAM watch)
+  void EndWatchTask(const Argument watch)
   {
     try {
-      if (gWatch.number != 0 && static_cast<WPARAM>(gWatch.number) == watch && moho::UI_GamePlaying()) {
+      if (gWatch.number != 0 && static_cast<Argument>(gWatch.number) == watch && moho::UI_GamePlaying()) {
         EndWatch();
       }
     } catch (const std::exception& exception) {
@@ -2408,7 +2418,7 @@ namespace
   void EndWatchAfterInput(const int watch)
   {
     if (watch != 0) {
-      Win32Android_RunOnWindowThread(&EndWatchTask, static_cast<WPARAM>(watch));
+      host::RunOnGameThread(&EndWatchTask, static_cast<Argument>(watch));
     }
   }
 
@@ -2417,7 +2427,7 @@ namespace
   /// Box, which picks units, as without troops). Not while a command mode is armed, which picks as FAF sets it: its reclaim
   /// mode reaches further for wrecks. Nothing while the program's clicks run, which pick as they began; the down still comes,
   /// as the task that ends clicks that wait past their patience.
-  void DownTask(const WPARAM places)
+  void DownTask(const Argument places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
@@ -2448,14 +2458,14 @@ namespace
   void HoldShift()
   {
     if (gShiftHolders++ == 0) {
-      Win32Android_Key(VK_SHIFT, kShiftScanCode, TRUE, FALSE, 0);
+      host::Key(VK_SHIFT, TRUE);
     }
   }
 
   /// After Shift went up, in the task after its key: a command mode that orders with Shift used ends, as FAF ends it at its
   /// next beat once Shift is up (griff.lua ShiftLetGo), which a paused game does not have. So a lit Plus appends one order in
   /// a mode and the mode ends with it, and a held Plus keeps it until it goes up.
-  void ShiftLetGoTask(const WPARAM)
+  void ShiftLetGoTask(const Argument)
   {
     try {
       if (moho::UI_GamePlaying()) {
@@ -2469,18 +2479,18 @@ namespace
   void ReleaseShift()
   {
     if (gShiftHolders > 0 && --gShiftHolders == 0) {
-      Win32Android_Key(VK_SHIFT, kShiftScanCode, FALSE, FALSE, 0);
-      // From a task its input and tasks come next, in order (Win32Android_RunOnWindowThread): FAF has taken the clicks and
+      host::Key(VK_SHIFT, FALSE);
+      // From a task its input and tasks come next, in order (host::RunOnGameThread): FAF has taken the clicks and
       // the key by then.
-      Win32Android_RunOnWindowThread(&ShiftLetGoTask, 0);
+      host::RunOnGameThread(&ShiftLetGoTask, 0);
     }
   }
 
   /// A mouse's click there, press and release.
   void Click(const int button, const int x, const int y)
   {
-    Win32Android_TouchButton(button, TRUE, x, y);
-    Win32Android_TouchButton(button, FALSE, x, y);
+    host::TouchButton(button, TRUE, x, y);
+    host::TouchButton(button, FALSE, x, y);
   }
 
   /// A click as a mouse's with Shift held, if `shift`, for the next action of a lit or held Plus.
@@ -2591,12 +2601,12 @@ namespace
     const bool box = (tap.rail & kRailBox) != 0;
     // With Box counting, the UI's tap and an armed mode's are none of Box's: it stays lit, Plus goes out.
     if (UiTap(x, y)) {
-      ClickUi(queue, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_LEFT);
+      ClickUi(queue, static_cast<float>(x), static_cast<float>(y), host::kButtonLeft);
       AnswerTap(tap, kTapUi);
       return;
     }
     if (CommandModeArmed()) {
-      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
+      ClickWith(queue, host::kButtonLeft, x, y);
       AnswerTap(tap, kTapOther);
       return;
     }
@@ -2617,17 +2627,17 @@ namespace
     const bool selection = (kind & kSelection) != 0;
     if (box) {
       if (own) {
-        ClickWith(true, WIN32ANDROID_BUTTON_LEFT, x, y);
+        ClickWith(true, host::kButtonLeft, x, y);
       }
       AnswerTap(tap, kTapOther, own ? grifftap::Outcome::kBoxToggled : grifftap::Outcome::kBoxFoundNothing);
       return;
     }
     if (own && !(queue && troops)) {
-      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
+      ClickWith(queue, host::kButtonLeft, x, y);
       AnswerTap(tap, queue ? kTapOther : kTapOwn);
       return;
     }
-    ClickWith(queue, selection ? WIN32ANDROID_BUTTON_RIGHT : WIN32ANDROID_BUTTON_LEFT, x, y);
+    ClickWith(queue, selection ? host::kButtonRight : host::kButtonLeft, x, y);
     int answer = kTapOther;
     if (!selection) {
       answer = (kind & kUnitUnder) != 0 ? kTapOther : kTapEmpty;
@@ -2638,7 +2648,7 @@ namespace
   }
 
   /// A tap of the ladder above its first rung, by what its first tap was, whatever lies under this one: the UI's click again
-  /// where the first went, which the message layer makes the game's double click; all of the selected unit's type in view (as
+  /// where the first went, which the host makes the game's double click; all of the selected unit's type in view (as
   /// the game's double click on the unit, which could not reach it where the panels its selection brought up cover it), then on
   /// the map; an attack-move at the first tap's place in place of its move (where FAF offers none, as for factories alone, a
   /// right click again: the rally point); all one's own mobile units in view; the group the first tap's icon selected, again,
@@ -2651,9 +2661,9 @@ namespace
         break;
       case kStepAgain:
         if (UiTap(tap.baseX, tap.baseY)) {
-          ClickUi(false, static_cast<float>(tap.baseX), static_cast<float>(tap.baseY), WIN32ANDROID_BUTTON_LEFT);
+          ClickUi(false, static_cast<float>(tap.baseX), static_cast<float>(tap.baseY), host::kButtonLeft);
         } else {
-          Click(WIN32ANDROID_BUTTON_LEFT, tap.baseX, tap.baseY);
+          Click(host::kButtonLeft, tap.baseX, tap.baseY);
         }
         break;
       case kStepAllOfType:
@@ -2664,7 +2674,7 @@ namespace
         if (CommandModeArmed()) {
           moho::CON_Execute(kEndCommandMode);
         }
-        Click(ArmAttackMove() ? WIN32ANDROID_BUTTON_LEFT : WIN32ANDROID_BUTTON_RIGHT, tap.baseX, tap.baseY);
+        Click(ArmAttackMove() ? host::kButtonLeft : host::kButtonRight, tap.baseX, tap.baseY);
         break;
       case kStepAllMobile:
         moho::CON_Execute(kAllMobile);
@@ -2679,7 +2689,7 @@ namespace
     }
   }
 
-  void SmartTapTask(const WPARAM)
+  void SmartTapTask(const Argument)
   {
     Tap tap;
     {
@@ -2715,7 +2725,7 @@ namespace
         // No game behind the UI any more, such as at its end under FAF's last dialogs: a tap is the UI's, as the mouse's.
         const bool again = tap.step == kStepAgain;
         ClickUi(false, static_cast<float>(again ? tap.baseX : tap.x), static_cast<float>(again ? tap.baseY : tap.y),
-                WIN32ANDROID_BUTTON_LEFT);
+                host::kButtonLeft);
         if (!again) {
           AnswerTap(tap, kTapUi);
         }
@@ -2727,7 +2737,7 @@ namespace
 
   /// Two fingers' tap: an armed command mode goes, as a right click puts it away; with none, the selection goes. Not between
   /// the program's clicks, whose mode and selection it is.
-  void DeselectTask(const WPARAM)
+  void DeselectTask(const Argument)
   {
     try {
       if (moho::UI_GamePlaying() && !ClicksRun()) {
@@ -2739,7 +2749,7 @@ namespace
   }
 
   /// A hint of the activity's (Game.griffHint): its kind and number.
-  void HintTask(const WPARAM places)
+  void HintTask(const Argument places)
   {
     try {
       Hint(Coordinate(places, 0), Coordinate(places, 1));
@@ -2749,7 +2759,7 @@ namespace
   }
 
   /// The camera to the selection; argument 1: a flight, else at once. Not while the program's clicks run, which aim by it.
-  void ToGroupTask(const WPARAM fly)
+  void ToGroupTask(const Argument fly)
   {
     try {
       if (moho::UI_GamePlaying() && !ClicksRun()) {
@@ -2778,7 +2788,7 @@ namespace
   /// ping's look, as a drag from the rest is the handle's route. The activity hears it (SAID_DISTRIBUTES). No, where the
   /// group's middle is not on the map (its units out of view or under a panel), where the cursor could not point at them, and
   /// between the program's clicks.
-  void HandleRestTask(const WPARAM rest)
+  void HandleRestTask(const Argument rest)
   {
     bool distributes = false;
     try {
@@ -2803,7 +2813,7 @@ namespace
   /// a drawn frame, as FAF reads the world place under the cursor with the frame's (DistributeAfterFrame, from PlaceTask). The
   /// pointer's leave that the lift asked for waits for it: on a slow frame it came first and took the cursor off the group.
   /// Where the group's middle left the map since the rest, nothing, which says Cancelled. Not between the program's clicks.
-  void DistributeTask(const WPARAM)
+  void DistributeTask(const Argument)
   {
     StopDistributing();
     try {
@@ -2816,7 +2826,7 @@ namespace
         Hint(kHintCancelled);
         return;
       }
-      Win32Android_MouseMove(x, y);
+      host::MouseMove(x, y);
       Distributing waits;
       // Where the cursor went, within the game's clip of it: a later move would take it elsewhere.
       (void)::GetCursorPos(&waits.cursor);
@@ -2882,23 +2892,23 @@ namespace
   {
     switch (gDrag) {
       case Drag::kPan:
-        Win32Android_TouchButton(WIN32ANDROID_BUTTON_MIDDLE, FALSE, x, y);
+        host::TouchButton(host::kButtonMiddle, FALSE, x, y);
         if ((velocityX != 0 || velocityY != 0) && !ClicksRun()) {
           Glide(velocityX, velocityY);
         }
         break;
       case Drag::kBox:
       case Drag::kPanel:
-        Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, x, y);
+        host::TouchButton(host::kButtonLeft, FALSE, x, y);
         break;
       case Drag::kAddingBox:
-        Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, x, y);
+        host::TouchButton(host::kButtonLeft, FALSE, x, y);
         ReleaseShift();
         break;
       case Drag::kFormation:
       case Drag::kQueuedFormation:
         // FAF orders the formation as the right button goes up, facing the way the drag went.
-        Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, x, y);
+        host::TouchButton(host::kButtonRight, FALSE, x, y);
         if (gDrag == Drag::kQueuedFormation) {
           ReleaseShift();
         }
@@ -2914,7 +2924,7 @@ namespace
   /// GiveUpDrag's formation, at its place and 1 where it was queued: the world views forget the order a release would give
   /// (their command data, which only the one that took the right button's press holds: by now a panel or one of the app's
   /// pieces may lie over where it took it) and the formation FAF shows, then the button goes up.
-  void GiveUpFormationTask(const WPARAM places)
+  void GiveUpFormationTask(const Argument places)
   {
     try {
       if (moho::CMauiControl* const root = UiRoot(); root != nullptr) {
@@ -2929,7 +2939,7 @@ namespace
         session->mCurFormation->mReady = false;
         session->mCurFormation->Reset();
       }
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, Coordinate(places, 0), Coordinate(places, 1));
+      host::TouchButton(host::kButtonRight, FALSE, Coordinate(places, 0), Coordinate(places, 1));
       if (Coordinate(places, 2) != 0) {
         ReleaseShift();
       }
@@ -2942,7 +2952,7 @@ namespace
   /// fingers, a new first finger): FAF's formation is given up, not ordered, as a PC player's right button let go over a
   /// panel orders nothing (GiveUpFormationTask). That runs as a task of its own: this one may have been queued before
   /// DragTask ran, and so come ahead of the right button's press DragTask queued, which would give the view its command data
-  /// back; a task queued from here comes after that press (Win32Android_RunOnWindowThread). Any other drag ends here as at a
+  /// back; a task queued from here comes after that press (host::RunOnGameThread). Any other drag ends here as at a
   /// lift, without a pan's glide.
   void GiveUpDrag(const int x, const int y)
   {
@@ -2950,7 +2960,7 @@ namespace
       EndDrag(x, y, 0, 0);
       return;
     }
-    Win32Android_RunOnWindowThread(&GiveUpFormationTask, Places(x, y, gDrag == Drag::kQueuedFormation ? 1 : 0));
+    host::RunOnGameThread(&GiveUpFormationTask, Places(x, y, gDrag == Drag::kQueuedFormation ? 1 : 0));
     // Nothing was ordered: the watch ends with no record.
     EndWatchAfterInput(gFormationWatch);
     gFormationWatch = 0;
@@ -3020,8 +3030,7 @@ namespace
     const float reach = gTapReach.load();
     float nearest = reach * reach;
     Resting found;
-    msvc8::vector<moho::UserUnit*> units;
-    session->GetSelectionUnits(units);
+    const std::vector<moho::UserUnit*> units = SelectedUnits(*session);
     for (moho::UserUnit* const unit : units) {
       for (const bool route : {false, true}) {
         moho::UserCommandQueue* const commands = CommandsOf(*unit, route);
@@ -3055,7 +3064,7 @@ namespace
     }
     gRest = found;
     HoldShift();
-    Win32Android_MouseMove(gRest.aimX, gRest.aimY);
+    host::MouseMove(gRest.aimX, gRest.aimY);
     return true;
   }
 
@@ -3074,7 +3083,7 @@ namespace
   /// minimap, nor between the program's clicks. Whatever it found, the ring about the finger shows what its drag gives
   /// (ShowRest, Game.REST_), also where it looked for nothing: there the left button's drag, the armed mode's, the minimap's or
   /// the panel's, but from a Checkbox of FAF's nothing.
-  void RestTask(const WPARAM places)
+  void RestTask(const Argument places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
@@ -3097,25 +3106,25 @@ namespace
   }
 
   /// The rest's gesture went without its lift or a drag: a second finger came, or the system took the fingers.
-  void RestGoneTask(const WPARAM)
+  void RestGoneTask(const Argument)
   {
     ForgetRest();
   }
 
   /// FAF's Shift+Ctrl right release on the marked waypoint, where FAF's cursor hovers its very command: FAF takes it out of
   /// every unit it went to (CUIWorldView::HandleEvent's right release), as the undo does; whether it went. Not where the
-  /// press would pair with the press before it as the message layer's double click, which FAF's world view takes otherwise.
+  /// press would pair with the press before it as the host's double click, which FAF's world view takes otherwise.
   [[nodiscard]] bool DeleteMarked()
   {
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
     if (session == nullptr || session->CursorInfo().mIsDragger != gRest.command
-        || Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_RIGHT, gRest.aimX, gRest.aimY) != 0) {
+        || host::DoubleClickWait(host::kButtonRight, gRest.aimX, gRest.aimY) != 0) {
       return false;
     }
-    Win32Android_Key(VK_CONTROL, kCtrlScanCode, TRUE, FALSE, 0);
-    Win32Android_MouseButton(WIN32ANDROID_BUTTON_RIGHT, TRUE, gRest.aimX, gRest.aimY);
-    Win32Android_MouseButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, gRest.aimX, gRest.aimY);
-    Win32Android_Key(VK_CONTROL, kCtrlScanCode, FALSE, FALSE, 0);
+    host::Key(VK_CONTROL, TRUE);
+    host::MouseButton(host::kButtonRight, TRUE, gRest.aimX, gRest.aimY);
+    host::MouseButton(host::kButtonRight, FALSE, gRest.aimX, gRest.aimY);
+    host::Key(VK_CONTROL, FALSE);
     return true;
   }
 
@@ -3156,7 +3165,7 @@ namespace
   /// slid off the waypoint it marked; on a panel or the minimap the left button's from there, as a mouse drags there, but
   /// from a Checkbox of FAF's nothing, also after a rest on it, as its press would act (PressComesToCheckbox). The activity
   /// hears which drag is a pan, which a second finger makes two of.
-  void DragTask(const WPARAM)
+  void DragTask(const Argument)
   {
     DragStart drag;
     {
@@ -3190,7 +3199,7 @@ namespace
       // A slide from the button presses nothing, as a mouse's: the pointer only goes with the finger.
     } else if (!map) {
       gDrag = Drag::kPanel;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, drag.x, drag.y);
+      host::TouchButton(host::kButtonLeft, TRUE, drag.x, drag.y);
     } else if (rest == Rest::kWaypoint) {
       // The finger slid off the waypoint it marked: the mark went with Shift, and nothing is deleted.
     } else if (rest == Rest::kGround && formation && (drag.rail & kRailBox) == 0) {
@@ -3200,7 +3209,7 @@ namespace
       }
       gFormationWatch = WatchOrders(false);
       gDrag = queued ? Drag::kQueuedFormation : Drag::kFormation;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, TRUE, drag.x, drag.y);
+      host::TouchButton(host::kButtonRight, TRUE, drag.x, drag.y);
       // The activity gives a formation up where its fingers go without a lift (Game.griffDragGiveUp).
       Say(kSaidFormation, drag.number, 0);
     } else if (drag.rested || (drag.rail & kRailBox) != 0) {
@@ -3209,16 +3218,16 @@ namespace
         HoldShift();
       }
       gDrag = adding ? Drag::kAddingBox : Drag::kBox;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, drag.x, drag.y);
+      host::TouchButton(host::kButtonLeft, TRUE, drag.x, drag.y);
     } else {
       gDrag = Drag::kPan;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_MIDDLE, TRUE, drag.nowX, drag.nowY);
+      host::TouchButton(host::kButtonMiddle, TRUE, drag.nowX, drag.nowY);
       Say(kSaidPan, drag.number, 0);
     }
   }
 
   /// The drag ends at a place, with the velocity a pan glides on at (SignedCoordinate).
-  void DragEndTask(const WPARAM places)
+  void DragEndTask(const Argument places)
   {
     try {
       EndDrag(Coordinate(places, 0), Coordinate(places, 1), SignedCoordinate(places, 2), SignedCoordinate(places, 3));
@@ -3228,7 +3237,7 @@ namespace
   }
 
   /// The drag goes without its lift, at a place (GiveUpDrag).
-  void DragGiveUpTask(const WPARAM places)
+  void DragGiveUpTask(const Argument places)
   {
     try {
       GiveUpDrag(Coordinate(places, 0), Coordinate(places, 1));
@@ -3240,7 +3249,7 @@ namespace
   /// The camera keeps what lies at a place under the fingers (griff.lua): from here on, at the pinch's start or when one of two
   /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them. Not while the
   /// program's clicks run, which aim by the camera.
-  void Pinch(const char* const format, const WPARAM places)
+  void Pinch(const char* const format, const Argument places)
   {
     try {
       if (moho::UI_GamePlaying() && !ClicksRun()) {
@@ -3251,17 +3260,17 @@ namespace
     }
   }
 
-  void PinchStartTask(const WPARAM places)
+  void PinchStartTask(const Argument places)
   {
     Pinch("PinchStart(%d, %d, %d)", places);
   }
 
-  void PinchTask(const WPARAM places)
+  void PinchTask(const Argument places)
   {
     Pinch("Pinch(%d, %d, %d)", places);
   }
 
-  void PinchEndTask(const WPARAM places)
+  void PinchEndTask(const Argument places)
   {
     try {
       if (moho::UI_GamePlaying()) {
@@ -3281,7 +3290,7 @@ namespace
   /// map the rest was for a box that did not come, but with Box it was none (TouchInput) and is Box's tap; on a panel FAF's
   /// right click, with the tap help, as the mouse scheme's hold gives it. With no game behind the UI any more, the UI's right
   /// click wherever it is.
-  void RestTapTask(const WPARAM places)
+  void RestTapTask(const Argument places)
   {
     Tap tap;
     tap.x = Coordinate(places, 0);
@@ -3308,7 +3317,7 @@ namespace
       if (playing && OnMap(static_cast<float>(tap.x), static_cast<float>(tap.y))) {
         if (rest == Rest::kGround && (tap.rail & kRailBox) == 0) {
           const int watch = WatchOrders(false);
-          ClickWith((tap.rail & kRailQueue) != 0, WIN32ANDROID_BUTTON_RIGHT, tap.x, tap.y);
+          ClickWith((tap.rail & kRailQueue) != 0, host::kButtonRight, tap.x, tap.y);
           EndWatchAfterInput(watch);
         } else if ((tap.rail & kRailBox) != 0) {
           TapByPlace(tap);
@@ -3317,7 +3326,7 @@ namespace
       }
       // A right click on a panel may order, as on the minimap: watched.
       const int watch = playing ? WatchOrders(false) : 0;
-      ClickUi((tap.rail & kRailQueue) != 0, static_cast<float>(tap.x), static_cast<float>(tap.y), WIN32ANDROID_BUTTON_RIGHT);
+      ClickUi((tap.rail & kRailQueue) != 0, static_cast<float>(tap.x), static_cast<float>(tap.y), host::kButtonRight);
       EndWatchAfterInput(watch);
       if ((tap.rail & kRailBox) != 0) {
         // Box, which the activity left to the answer, was none of this: it stays lit, and Plus goes out.
@@ -3328,7 +3337,7 @@ namespace
     }
   }
 
-  void ShiftTask(const WPARAM down)
+  void ShiftTask(const Argument down)
   {
     if (down != 0) {
       HoldShift();
@@ -3345,7 +3354,7 @@ namespace
 
   /// What FAF would order by a click at the stroke's end, once the hover's move has come to the world view, which picks what
   /// is under the cursor at each event: a panel, the minimap, or what griff.lua says of FAF's right click there.
-  void StrokeAnswerTask(const WPARAM places)
+  void StrokeAnswerTask(const Argument places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
@@ -3366,14 +3375,14 @@ namespace
 
   /// The cursor hovers at the stroke's end, without a button: FAF shows its order cursor there and what is under it. The
   /// answer comes in the task after the move's events. Not while the program's clicks run, whose cursor it is.
-  void StrokeHoverTask(const WPARAM places)
+  void StrokeHoverTask(const Argument places)
   {
     try {
       if (ClicksRun()) {
         return;
       }
-      Win32Android_MouseMove(Coordinate(places, 0), Coordinate(places, 1));
-      Win32Android_RunOnWindowThread(&StrokeAnswerTask, places);
+      host::MouseMove(Coordinate(places, 0), Coordinate(places, 1));
+      host::RunOnGameThread(&StrokeAnswerTask, places);
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
@@ -3409,7 +3418,7 @@ namespace
   /// alone: their loop is their rally route, as any stroke. With FAF's attack-move armed (its orders panel's button) each
   /// waypoint is an attack-move, as a PC player's clicks with Shift in that mode give; any other mode armed goes first. None
   /// while the undo's or the tick's clicks run, which its clicks would come between.
-  void BeginRouteTask(const WPARAM)
+  void BeginRouteTask(const Argument)
   {
     gRoute = Route{};
     gNextPoint = 0;
@@ -3457,7 +3466,7 @@ namespace
   /// The next waypoint: FAF's right click there, the first one replacing what the units were doing unless Plus counts, the
   /// others appended (Shift, held to the route's end). With FAF's attack-move armed, an attack-move's left click; a patrol's,
   /// a patrol's.
-  void RouteStepTask(const WPARAM)
+  void RouteStepTask(const Argument)
   {
     if (gNextPoint >= gRoute.points.size()) {
       return;
@@ -3472,11 +3481,11 @@ namespace
       }
       // A mode that FAF ended after a replacing order is armed again; where FAF offers no attack-move, a right click.
       if (gRoute.patrol) {
-        Click(CommandModeArmed() || ArmPatrol() ? WIN32ANDROID_BUTTON_LEFT : WIN32ANDROID_BUTTON_RIGHT, point.x, point.y);
+        Click(CommandModeArmed() || ArmPatrol() ? host::kButtonLeft : host::kButtonRight, point.x, point.y);
       } else if (gRoute.attackMove && (CommandModeArmed() || ArmAttackMove())) {
-        Click(WIN32ANDROID_BUTTON_LEFT, point.x, point.y);
+        Click(host::kButtonLeft, point.x, point.y);
       } else {
-        Click(WIN32ANDROID_BUTTON_RIGHT, point.x, point.y);
+        Click(host::kButtonRight, point.x, point.y);
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3485,7 +3494,7 @@ namespace
   }
 
   /// After the last waypoint's input: Shift as it was, and the route's orders are one undo.
-  void EndRouteTask(const WPARAM)
+  void EndRouteTask(const Argument)
   {
     if (gRouteHoldsShift) {
       ReleaseShift();
@@ -3495,7 +3504,7 @@ namespace
     gNextPoint = 0;
     const int watch = gRouteWatch;
     gRouteWatch = 0;
-    EndWatchTask(static_cast<WPARAM>(watch));
+    EndWatchTask(static_cast<Argument>(watch));
   }
 
   // --- The draft's gestures ------------------------------------------------------------------------
@@ -3566,7 +3575,7 @@ namespace
   /// (a held Plus is Shift as ever). On the map it removes the plan the finger was on (its number in the argument's last two
   /// words; 0: none) or places one, also where that plan is gone by now, as the mockup's tap then finds none. Nothing while the
   /// program's clicks run, between which its click would come.
-  void DraftTapTask(const WPARAM places)
+  void DraftTapTask(const Argument places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
@@ -3579,7 +3588,7 @@ namespace
       if (!playing || UiTap(x, y)) {
         // The UI's click, which may order, as the orders panel's Stop does: watched.
         const int watch = playing ? WatchOrders(false) : 0;
-        ClickUi(false, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_LEFT);
+        ClickUi(false, static_cast<float>(x), static_cast<float>(y), host::kButtonLeft);
         EndWatchAfterInput(watch);
         return;
       }
@@ -3605,7 +3614,7 @@ namespace
   }
 
   /// A drag from the newest plan: the line to the finger shown (the moves coalesce), added where it lifted, or given up.
-  void DraftLineTask(const WPARAM places)
+  void DraftLineTask(const Argument places)
   {
     try {
       gDraftLine.clear();
@@ -3618,7 +3627,7 @@ namespace
     }
   }
 
-  void DraftLineEndTask(const WPARAM places)
+  void DraftLineEndTask(const Argument places)
   {
     try {
       gDraftLine.clear();
@@ -3631,14 +3640,14 @@ namespace
     }
   }
 
-  void DraftLineAbortTask(const WPARAM)
+  void DraftLineAbortTask(const Argument)
   {
     gDraftLine.clear();
   }
 
   /// A drag from another plan: the whole draft follows the finger from where it came down (the first two words), by whole world
   /// units; the moves coalesce, the end keeps it, a second finger puts it back.
-  void DraftMoveTask(const WPARAM places)
+  void DraftMoveTask(const Argument places)
   {
     try {
       if (!gDraft.Moving()) {
@@ -3656,13 +3665,13 @@ namespace
     }
   }
 
-  void DraftMoveEndTask(const WPARAM places)
+  void DraftMoveEndTask(const Argument places)
   {
     DraftMoveTask(places);
     gDraft.MoveEnd();
   }
 
-  void DraftMoveAbortTask(const WPARAM)
+  void DraftMoveAbortTask(const Argument)
   {
     gDraft.MoveAbort();
   }
@@ -3670,7 +3679,7 @@ namespace
   /// A finger that rests in the draft on no plan: the plan its lift would place shown under it, as it moves (the moves
   /// coalesce), also where its ground is taken (WouldPlace); at the lift that plan, or on the UI the rest's right click there,
   /// as Griff's rest on a panel gives.
-  void DraftAimTask(const WPARAM places)
+  void DraftAimTask(const Argument places)
   {
     try {
       MapView map;
@@ -3686,7 +3695,7 @@ namespace
     }
   }
 
-  void DraftAimEndTask(const WPARAM places)
+  void DraftAimEndTask(const Argument places)
   {
     gAimShown = false;
     gAimOnMap = false;
@@ -3700,7 +3709,7 @@ namespace
       }
       if (!playing || !OnMap(static_cast<float>(x), static_cast<float>(y))) {
         const int watch = playing ? WatchOrders(false) : 0;
-        ClickUi(false, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_RIGHT);
+        ClickUi(false, static_cast<float>(x), static_cast<float>(y), host::kButtonRight);
         EndWatchAfterInput(watch);
         return;
       }
@@ -3713,7 +3722,7 @@ namespace
     }
   }
 
-  void DraftAimGoneTask(const WPARAM)
+  void DraftAimGoneTask(const Argument)
   {
     gAimShown = false;
     gAimOnMap = false;
@@ -3722,7 +3731,7 @@ namespace
   /// A finger rests in the draft, Griff's rest (Game.draftRest: its place and number): whether it is on FAF's UI, where the
   /// rest is the panel's as outside the draft, its lift FAF's right click there (RestTapTask) as the aim's on FAF's UI gave it;
   /// the activity hears it (SAID_DRAFT_REST). With no game behind the UI any more all of it is the UI's.
-  void DraftRestTask(const WPARAM places)
+  void DraftRestTask(const Argument places)
   {
     const float x = static_cast<float>(Coordinate(places, 0));
     const float y = static_cast<float>(Coordinate(places, 1));
@@ -3737,7 +3746,7 @@ namespace
 
   /// Box over deposits with an extractor picked: every free deposit of its kind whose middle is in the box on the picture gets
   /// a plan (FAF's own box is not pressed).
-  void DraftBoxTask(const WPARAM places)
+  void DraftBoxTask(const Argument places)
   {
     try {
       MapView map;
@@ -3835,13 +3844,13 @@ namespace
   }
 
   /// Whether a press of the program's (`button`) at this pixel waits: it would make a double click with the press before it,
-  /// whoever gave that (a finger, the program), as the message layer's rule says (Win32Android_DoubleClickWait), and FAF's
+  /// whoever gave that (a finger, the program), as the host's rule says (host::DoubleClickWait), and FAF's
   /// world view takes a double click as its own (its left one gives the first press's order again: CUIWorldView::HandleEvent's
   /// double-click arm). A PC player who wants two single clicks there waits until the double-click time has passed; so does
   /// the step, which comes again after the next frame. None of those frames counts against its frames (kClickFrames).
   [[nodiscard]] bool PressWaits(const int button, const int x, const int y)
   {
-    if (Win32Android_DoubleClickWait(button, x, y) == 0) {
+    if (host::DoubleClickWait(button, x, y) == 0) {
       return false;
     }
     WaitForFrame();
@@ -3871,7 +3880,7 @@ namespace
     gClicksWait = false;
     gClicksWaitSince = 0;
     if (gClicks.lifted) {
-      Win32Android_Key(VK_SHIFT, kShiftScanCode, TRUE, FALSE, 0);
+      host::Key(VK_SHIFT, TRUE);
     }
     if (gClicks.holdsShift) {
       ReleaseShift();
@@ -3916,7 +3925,7 @@ namespace
   {
     ++count;
     NextStep();
-    Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+    host::RunOnGameThread(&ClickStepTask, 0);
   }
 
   /// A run's units selected at its first step (griff.lua UndoSelect). FAF selects a unit a transport carries as that
@@ -4008,10 +4017,10 @@ namespace
   /// held for the removals' run); the next task checks it.
   void Release(const int command, std::vector<int> units)
   {
-    Win32Android_Key(VK_CONTROL, kCtrlScanCode, TRUE, FALSE, 0);
-    Win32Android_MouseButton(WIN32ANDROID_BUTTON_RIGHT, TRUE, gClicks.aimX, gClicks.aimY);
-    Win32Android_MouseButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, gClicks.aimX, gClicks.aimY);
-    Win32Android_Key(VK_CONTROL, kCtrlScanCode, FALSE, FALSE, 0);
+    host::Key(VK_CONTROL, TRUE);
+    host::MouseButton(host::kButtonRight, TRUE, gClicks.aimX, gClicks.aimY);
+    host::MouseButton(host::kButtonRight, FALSE, gClicks.aimX, gClicks.aimY);
+    host::Key(VK_CONTROL, FALSE);
     gClicks.removing = true;
     gClicks.removedCommand = command;
     gClicks.removedUnits = std::move(units);
@@ -4038,9 +4047,9 @@ namespace
     }
     for (std::size_t at = gClicks.next + 1; at < gClicks.steps.size(); ++at) {
       if (gClicks.steps[at].removal && gClicks.steps[at].command == hovered) {
-        if (!PressWaits(WIN32ANDROID_BUTTON_RIGHT, gClicks.aimX, gClicks.aimY)) {
+        if (!PressWaits(host::kButtonRight, gClicks.aimX, gClicks.aimY)) {
           Release(hovered, gClicks.steps[at].units);
-          Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+          host::RunOnGameThread(&ClickStepTask, 0);
         }
         return true;
       }
@@ -4067,7 +4076,7 @@ namespace
     if (units.empty()) {
       return false;
     }
-    if (PressWaits(WIN32ANDROID_BUTTON_RIGHT, gClicks.aimX, gClicks.aimY)) {
+    if (PressWaits(host::kButtonRight, gClicks.aimX, gClicks.aimY)) {
       return true;
     }
     const griffundo::Entry kept = EntryOf(*helper);
@@ -4081,7 +4090,7 @@ namespace
     back.way = way;
     Release(hovered, std::move(units));
     gClicks.steps.push_back(std::move(back));
-    Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+    host::RunOnGameThread(&ClickStepTask, 0);
     return true;
   }
 
@@ -4090,7 +4099,7 @@ namespace
   /// or without it, whatever holds Shift (a held Plus): a click that replaces lifts it for itself.
   void Act(const ClickStep& step, const int x, const int y)
   {
-    if (PressWaits(step.removal ? WIN32ANDROID_BUTTON_RIGHT : WIN32ANDROID_BUTTON_LEFT, x, y)) {
+    if (PressWaits(step.removal ? host::kButtonRight : host::kButtonLeft, x, y)) {
       return;
     }
     if (step.removal) {
@@ -4102,12 +4111,12 @@ namespace
       }
       const bool lift = !step.shift && gShiftHolders > 0;
       if (lift) {
-        Win32Android_Key(VK_SHIFT, kShiftScanCode, FALSE, FALSE, 0);
+        host::Key(VK_SHIFT, FALSE);
       }
-      Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, TRUE, x, y);
-      Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, FALSE, x, y);
+      host::MouseButton(host::kButtonLeft, TRUE, x, y);
+      host::MouseButton(host::kButtonLeft, FALSE, x, y);
       if (lift) {
-        Win32Android_Key(VK_SHIFT, kShiftScanCode, TRUE, FALSE, 0);
+        host::Key(VK_SHIFT, TRUE);
       }
       gClicks.counting = true;
       gClicks.ordered = 0;
@@ -4115,7 +4124,7 @@ namespace
       ++gClicks.acted;
     }
     NextStep();
-    Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+    host::RunOnGameThread(&ClickStepTask, 0);
   }
 
   /// The next step. First what the last one's input did: what FAF ordered for a click (until FAF orders by one, the tick's next
@@ -4127,7 +4136,7 @@ namespace
   /// place and comes after the next frame, in which FAF's cursor takes the mode and picks what lies there, and again until the
   /// cursor is where the step wants it (CursorAt): its command or target where it is now, read again each time. With no game
   /// behind the UI any more, or after a throw, the steps not come to are not made.
-  void ClickStepTask(const WPARAM)
+  void ClickStepTask(const Argument)
   {
     if (!gClicking) {
       return;
@@ -4160,7 +4169,7 @@ namespace
       // counts on it.
       if (gClicks.lifted) {
         gClicks.lifted = false;
-        Win32Android_Key(VK_SHIFT, kShiftScanCode, TRUE, FALSE, 0);
+        host::Key(VK_SHIFT, TRUE);
         WaitForFrame();
         return;
       }
@@ -4177,7 +4186,7 @@ namespace
             while (gClicks.next < gClicks.steps.size() && gClicks.steps[gClicks.next].run == step.run) {
               NextStep();
             }
-            Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+            host::RunOnGameThread(&ClickStepTask, 0);
             return;
           }
           // The undo's runs hold Shift through all of their clicks, from a frame before the first: FAF draws the command
@@ -4205,7 +4214,7 @@ namespace
         if (!held) {
           // Done by its units meanwhile, or released already in another's place: there is nothing to take out.
           NextStep();
-          Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+          host::RunOnGameThread(&ClickStepTask, 0);
           return;
         }
         const Wm3::Vector3f at = moho::ResolveCommandGraphAnchorWorldPosition(*helper);
@@ -4277,7 +4286,7 @@ namespace
           const bool alive = released && moho::FindCommandIssueHelperInSession(session, hovered) != nullptr;
           const bool waits = step.removal && alive && Now() - gClicks.releasedAt < kSimPatience;
           if (step.removal && released && !alive && !gClicks.redrawn && gClicks.holdsShift) {
-            Win32Android_Key(VK_SHIFT, kShiftScanCode, FALSE, FALSE, 0);
+            host::Key(VK_SHIFT, FALSE);
             gClicks.lifted = true;
             gClicks.redrawn = true;
             WaitForFrame();
@@ -4290,7 +4299,7 @@ namespace
           if (gClicks.aims == 0 && !step.removal) {
             CallGriffLine(step.arm);
           }
-          Win32Android_MouseMove(clickX, clickY);
+          host::MouseMove(clickX, clickY);
           gClicks.aimX = clickX;
           gClicks.aimY = clickY;
           if (!waits || gClicks.aims == 0) {
@@ -4303,19 +4312,19 @@ namespace
           HoldShift();
           gClicks.holdsShift = true;
         }
-        if (PressWaits(WIN32ANDROID_BUTTON_LEFT, clickX, clickY)) {
+        if (PressWaits(host::kButtonLeft, clickX, clickY)) {
           return;
         }
         CallGriffLine(step.arm);
-        // A mouse's click: a finger's press would only take FAF's ghost along (Win32Android_TouchButton).
-        Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, TRUE, clickX, clickY);
-        Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, FALSE, clickX, clickY);
+        // A mouse's click: a finger's press would only take FAF's ghost along (host::TouchButton).
+        host::MouseButton(host::kButtonLeft, TRUE, clickX, clickY);
+        host::MouseButton(host::kButtonLeft, FALSE, clickX, clickY);
         gClicks.counting = true;
         gClicks.ordered = 0;
         gClicks.orderedTarget = griffundo::kNoTarget;
         ++gClicks.acted;
         NextStep();
-        Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+        host::RunOnGameThread(&ClickStepTask, 0);
         return;
       }
       if (gClicks.waited == 0) {
@@ -4344,7 +4353,7 @@ namespace
   void FinishCommit()
   {
     if (moho::UI_GamePlaying()) {
-      EndWatchTask(static_cast<WPARAM>(gCommitWatch));
+      EndWatchTask(static_cast<Argument>(gCommitWatch));
       moho::CON_Execute(kCommitEnd);
       moho::CON_Execute(kDraftEnded);
     }
@@ -4366,7 +4375,7 @@ namespace
   /// does; and while an undo the button asked for waits for the sim, as its record is a gesture's from before the tick, whose
   /// orders would replace it. Clicks that ran past their patience are over first, as their own end has them: the tick's own
   /// closes its draft, and its 'not ordered' stays the last word.
-  void DraftCommitTask(const WPARAM plus)
+  void DraftCommitTask(const Argument plus)
   {
     gCommitAsked = 0;
     try {
@@ -4692,10 +4701,10 @@ namespace
   /// The undo's button was tapped for record `number`: a gesture's orders taken back, now or once the tick's or another undo's
   /// clicks are over; what a gesture of Griff's own threw away put back at once. A record replaced or ended meanwhile is not
   /// taken back (one level).
-  void UndoTask(const WPARAM number)
+  void UndoTask(const Argument number)
   {
     try {
-      if (gRecord.number == 0 || static_cast<WPARAM>(gRecord.number) != number) {
+      if (gRecord.number == 0 || static_cast<Argument>(gRecord.number) != number) {
         return;
       }
       switch (gRecord.kept) {
@@ -4718,7 +4727,7 @@ namespace
   /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered, and one of plans enough is a record of Griff's
   /// own (griffundo::DropSavesWork), which the undo's button brings back as it was, at rest where its plans stood. Not while
   /// the program's clicks run, which end the tick's draft themselves; a tick that waits goes all the same.
-  void DraftDropTask(const WPARAM)
+  void DraftDropTask(const Argument)
   {
     gCommitAsked = 0;
     try {
@@ -4748,7 +4757,7 @@ namespace
   /// A tap on the cross, Griff's Esc (EscapeNow): the draft goes as the cross dropped it, else FAF's armed command mode ends,
   /// else the selection goes, as FAF's HandleEsc puts them away. The mode and the selection not between the program's clicks,
   /// whose they are, as for two fingers' tap.
-  void EscapeTask(const WPARAM)
+  void EscapeTask(const Argument)
   {
     try {
       const grifftap::Escape escape = EscapeNow();
@@ -4763,14 +4772,14 @@ namespace
   }
 
   /// A draft gesture's task by its phase (Game.DRAFT_): shown as the finger moves, which coalesces, its end, or given up.
-  void RunDraft(const int phase, void (*show)(WPARAM), void (*end)(WPARAM), void (*abort)(WPARAM), const WPARAM places)
+  void RunDraft(const int phase, void (*show)(Argument), void (*end)(Argument), void (*abort)(Argument), const Argument places)
   {
     if (phase == kDraftShow) {
-      Win32Android_RunNewestOnWindowThread(show, places);
+      host::RunNewestOnGameThread(show, places);
     } else if (phase == kDraftEnd) {
-      Win32Android_RunOnWindowThread(end, places);
+      host::RunOnGameThread(end, places);
     } else if (phase == kDraftAbort) {
-      Win32Android_RunOnWindowThread(abort, places);
+      host::RunOnGameThread(abort, places);
     }
   }
 
@@ -4865,7 +4874,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffSaid(J
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_griffDown(JNIEnv*, jclass, const jint x, const jint y, const jboolean box)
 {
-  Win32Android_RunOnWindowThread(&DownTask, Places(x, y, box != JNI_FALSE ? 1 : 0));
+  host::RunOnGameThread(&DownTask, Places(x, y, box != JNI_FALSE ? 1 : 0));
 }
 
 /// A tap's click by what it lands on, or a step of its ladder (SmartTapTask).
@@ -4877,30 +4886,30 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_smartTap(
     const std::lock_guard<std::mutex> lock(gTapsMutex);
     gTaps.push_back(Tap{x, y, rail, step, baseX, baseY, tap});
   }
-  Win32Android_RunOnWindowThread(&SmartTapTask, 0);
+  host::RunOnGameThread(&SmartTapTask, 0);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deselect(JNIEnv*, jclass)
 {
-  Win32Android_RunOnWindowThread(&DeselectTask, 0);
+  host::RunOnGameThread(&DeselectTask, 0);
 }
 
 /// The camera goes to the selection, by a flight or at once.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_toGroup(JNIEnv*, jclass, const jboolean fly)
 {
-  Win32Android_RunOnWindowThread(&ToGroupTask, fly != JNI_FALSE ? 1 : 0);
+  host::RunOnGameThread(&ToGroupTask, fly != JNI_FALSE ? 1 : 0);
 }
 
 /// A finger rests on the handle, rest number `rest` (HandleRestTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_handleRest(JNIEnv*, jclass, const jint rest)
 {
-  Win32Android_RunOnWindowThread(&HandleRestTask, static_cast<WPARAM>(rest & 0xFFFF));
+  host::RunOnGameThread(&HandleRestTask, static_cast<Argument>(rest & 0xFFFF));
 }
 
 /// The lift of the handle's rest that distributes (DistributeTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_distribute(JNIEnv*, jclass)
 {
-  Win32Android_RunOnWindowThread(&DistributeTask, 0);
+  host::RunOnGameThread(&DistributeTask, 0);
 }
 
 /// A route's waypoints, `count` places as x, y pairs in the picture's pixels; `rail`: the RAIL_ bits that count for it; `patrol`:
@@ -4924,18 +4933,18 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_route(
     const std::lock_guard<std::mutex> lock(gRoutesMutex);
     gRoutes.push_back(std::move(route));
   }
-  Win32Android_RunOnWindowThread(&BeginRouteTask, 0);
+  host::RunOnGameThread(&BeginRouteTask, 0);
   for (jint at = 0; at < count; ++at) {
-    Win32Android_RunOnWindowThread(&RouteStepTask, 0);
+    host::RunOnGameThread(&RouteStepTask, 0);
   }
-  Win32Android_RunOnWindowThread(&EndRouteTask, 0);
+  host::RunOnGameThread(&EndRouteTask, 0);
 }
 
 /// The cursor hovers at a stroke's end (StrokeHoverTask), for stroke number `stroke`.
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_strokeHover(JNIEnv*, jclass, const jint x, const jint y, const jint stroke)
 {
-  Win32Android_RunOnWindowThread(&StrokeHoverTask, Places(x, y, stroke & 0xFFFF));
+  host::RunOnGameThread(&StrokeHoverTask, Places(x, y, stroke & 0xFFFF));
 }
 
 /// A finger's drag from here, the finger now at `nowX`, `nowY` (DragTask); `rail`: the RAIL_ bits that count for it; `drag`: its
@@ -4949,7 +4958,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDrag(
     const std::lock_guard<std::mutex> lock(gDragsMutex);
     gDrags.push_back(DragStart{x, y, nowX, nowY, rested != JNI_FALSE, rail, drag});
   }
-  Win32Android_RunOnWindowThread(&DragTask, 0);
+  host::RunOnGameThread(&DragTask, 0);
 }
 
 /// The drag ends here; a pan's camera glides on at this velocity in the picture's pixels a second.
@@ -4957,31 +4966,31 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragEn
   JNIEnv*, jclass, const jint x, const jint y, const jfloat velocityX, const jfloat velocityY
 )
 {
-  Win32Android_RunOnWindowThread(&DragEndTask, Places(x, y, Velocity(velocityX), Velocity(velocityY)));
+  host::RunOnGameThread(&DragEndTask, Places(x, y, Velocity(velocityX), Velocity(velocityY)));
 }
 
 /// The drag goes without its lift, here: FAF's formation given up, any other drag ended without a glide (DragGiveUpTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragGiveUp(JNIEnv*, jclass, const jint x, const jint y)
 {
-  Win32Android_RunOnWindowThread(&DragGiveUpTask, Places(x, y));
+  host::RunOnGameThread(&DragGiveUpTask, Places(x, y));
 }
 
 /// A finger rested here and lifted (RestTapTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_restTap(JNIEnv*, jclass, const jint x, const jint y, const jint rail)
 {
-  Win32Android_RunOnWindowThread(&RestTapTask, Places(x, y, rail));
+  host::RunOnGameThread(&RestTapTask, Places(x, y, rail));
 }
 
 /// A finger rests here on the map, without Box (RestTask): a waypoint marked, or the ground for a formation's right button.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffRest(JNIEnv*, jclass, const jint x, const jint y)
 {
-  Win32Android_RunOnWindowThread(&RestTask, Places(x, y));
+  host::RunOnGameThread(&RestTask, Places(x, y));
 }
 
 /// The resting finger's gesture went without its lift or a drag (RestGoneTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffRestGone(JNIEnv*, jclass)
 {
-  Win32Android_RunOnWindowThread(&RestGoneTask, 0);
+  host::RunOnGameThread(&RestGoneTask, 0);
 }
 
 /// The camera follows fingers: `start` keeps what lies at x, y under them, then fingers `distance` apart zoom it (0: one).
@@ -4989,22 +4998,22 @@ extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_pinch(JNIEnv*, jclass, const jboolean start, const jint x, const jint y, const jint distance)
 {
   if (start != JNI_FALSE) {
-    Win32Android_RunOnWindowThread(&PinchStartTask, Places(x, y, distance));
+    host::RunOnGameThread(&PinchStartTask, Places(x, y, distance));
   } else {
-    Win32Android_RunNewestOnWindowThread(&PinchTask, Places(x, y, distance));
+    host::RunNewestOnGameThread(&PinchTask, Places(x, y, distance));
   }
 }
 
 /// The fingers left the camera, which glides on at this velocity in the picture's pixels a second.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pinchEnd(JNIEnv*, jclass, const jfloat velocityX, const jfloat velocityY)
 {
-  Win32Android_RunOnWindowThread(&PinchEndTask, Places(Velocity(velocityX), Velocity(velocityY)));
+  host::RunOnGameThread(&PinchEndTask, Places(Velocity(velocityX), Velocity(velocityY)));
 }
 
 /// Plus held, or let go: Shift's key, in the order of the clicks.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_holdShift(JNIEnv*, jclass, const jboolean down)
 {
-  Win32Android_RunOnWindowThread(&ShiftTask, down != JNI_FALSE ? 1 : 0);
+  host::RunOnGameThread(&ShiftTask, down != JNI_FALSE ? 1 : 0);
 }
 
 /// The draft as the last frame drew it into `values` (Game.DRAFT_ layout), as much as fits; how many numbers.
@@ -5023,7 +5032,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDraft(
 /// A tap in the draft, on the plan numbered `plan` (0: none) as the activity saw it (DraftTapTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftTap(JNIEnv*, jclass, const jint x, const jint y, const jint plan)
 {
-  Win32Android_RunOnWindowThread(&DraftTapTask, Places(x, y, plan & 0xFFFF, (plan >> 16) & 0xFFFF));
+  host::RunOnGameThread(&DraftTapTask, Places(x, y, plan & 0xFFFF, (plan >> 16) & 0xFFFF));
 }
 
 /// The line from the newest plan to a finger here, by its phase (Game.DRAFT_).
@@ -5050,32 +5059,32 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftAim(JN
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_draftRest(JNIEnv*, jclass, const jint x, const jint y, const jint rest)
 {
-  Win32Android_RunOnWindowThread(&DraftRestTask, Places(x, y, rest));
+  host::RunOnGameThread(&DraftRestTask, Places(x, y, rest));
 }
 
 /// Box from one corner to the other over deposits, with an extractor picked (DraftBoxTask).
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_draftBox(JNIEnv*, jclass, const jint x0, const jint y0, const jint x1, const jint y1)
 {
-  Win32Android_RunOnWindowThread(&DraftBoxTask, Places(x0, y0, x1, y1));
+  host::RunOnGameThread(&DraftBoxTask, Places(x0, y0, x1, y1));
 }
 
 /// The tick, with Plus counting or not (DraftCommitTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftCommit(JNIEnv*, jclass, const jboolean plus)
 {
-  Win32Android_RunOnWindowThread(&DraftCommitTask, plus != JNI_FALSE ? 1 : 0);
+  host::RunOnGameThread(&DraftCommitTask, plus != JNI_FALSE ? 1 : 0);
 }
 
 /// Two fingers' tap in the draft (DraftDropTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftDrop(JNIEnv*, jclass)
 {
-  Win32Android_RunOnWindowThread(&DraftDropTask, 0);
+  host::RunOnGameThread(&DraftDropTask, 0);
 }
 
 /// A tap on the cross, Griff's Esc (EscapeTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscape(JNIEnv*, jclass)
 {
-  Win32Android_RunOnWindowThread(&EscapeTask, 0);
+  host::RunOnGameThread(&EscapeTask, 0);
 }
 
 /// Whether the cross shows, as the last frame found Esc.
@@ -5101,7 +5110,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOpened
 /// A hint of the activity's (Game.HINT_, as a stroke given up), where FAF prints its own messages (griff.lua Hint).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHint(JNIEnv*, jclass, const jint kind, const jint number)
 {
-  Win32Android_RunOnWindowThread(&HintTask, Places(kind, number));
+  host::RunOnGameThread(&HintTask, Places(kind, number));
 }
 
 /// How the rail's Box and Plus look (Rail.look, two bits each, Box's first) with a finger on the draft's tick, its cross and the
@@ -5133,7 +5142,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHudPla
 /// The undo's button was tapped for record `number` (UndoTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffUndo(JNIEnv*, jclass, const jint number)
 {
-  Win32Android_RunOnWindowThread(&UndoTask, static_cast<WPARAM>(number));
+  host::RunOnGameThread(&UndoTask, static_cast<Argument>(number));
 }
 
 /// Whether the program's clicks run, the draft's tick's or the undo's: the fingers rest meanwhile. Clicks that have waited for a

@@ -386,6 +386,16 @@ public final class GameActivity extends SDLActivity {
         return new GameSurface(context);
     }
 
+    /** The program's word that there is something new to read (Game.FROM_PROGRAM), on the activity's thread. */
+    @Override
+    protected boolean onUnhandledMessage(int command, Object param) {
+        if (command == Game.FROM_PROGRAM) {
+            Game.fromProgram();
+            return true;
+        }
+        return super.onUnhandledMessage(command, param);
+    }
+
     /** On SDL's thread, once the surface is there: the program draws in the screen's mode, the picture's size. */
     @Override
     protected String[] getArguments() {

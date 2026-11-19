@@ -58,7 +58,7 @@ final class Game {
     /** Whether the program runs in this process: Android can make the activity anew around it. */
     static native boolean running();
 
-    /** `listener` hears, on the program's thread, that there is something new to read: a page, a list's answer, a text field. */
+    /** `listener` hears, on the activity's thread, that there is something new to read: a page, a list's answer, a text field. */
     static void listen(Runnable listener) {
         sListener = listener;
     }
@@ -70,9 +70,14 @@ final class Game {
         }
     }
 
-    /** The program, on its thread (src/host/MenuFingers.cpp). */
-    @SuppressWarnings("unused")
-    private static void fromProgram() {
+    /**
+     * The command of SDL's message by which the program says that there is something new (src/host/MenuFingers.cpp,
+     * SDL_SendAndroidMessage): the first that SDL leaves to the app.
+     */
+    static final int FROM_PROGRAM = 0x8000;
+
+    /** The program's word that there is something new, on the activity's thread (GameActivity.onUnhandledMessage). */
+    static void fromProgram() {
         Runnable listener = sListener;
         if (listener != null) {
             listener.run();
@@ -102,9 +107,6 @@ final class Game {
 
     /** The keyboard is coming: if a text field has the focus, {@link #takeToShow} says where. */
     static native void askForField();
-
-    /** Whether FAF's Menu tab asked for the keyboard since the last call (its Keyboard button, FafreKeyboard). */
-    static native boolean keyboardAsked();
 
     /**
      * Lines of the picture to bring into view, top and bottom, which the activity has not heard of yet: 0 when there are none, or
@@ -177,11 +179,11 @@ final class Game {
     /** `delta` in WHEEL_DELTA units, positive away from the user. */
     static native void mouseWheel(int delta, int x, int y);
 
-    /** A key went down or up: Android's key code, the event's scan code, and what it types (0: nothing). */
-    static native void key(int keyCode, int scanCode, boolean down, int character);
-
-    /** Text without a key, as an input method commits it. */
-    static native void text(String text);
+    /**
+     * A key the bar holds went down or up, Android's key code of Shift, Ctrl or Alt, in its place among the fingers' input
+     * (src/host/InputAndroid.cpp). A keyboard's keys and its text take SDL's own way.
+     */
+    static native void key(int keyCode, boolean down);
 
     // --- The touch scheme Griff (src/host/GriffAndroid.cpp) ---------------------------------------------------------
 

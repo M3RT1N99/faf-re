@@ -1,7 +1,8 @@
 // What FAF's UI and the app tell each other about the fingers in the menus (android/TOUCH_UI.md). FAF's Lua declares a
-// screen's page, whose the fingers are, the HUD's factor and what to bring into view, and asks for the phone's keyboard, by
-// five functions added to its UI's globals, and the activity follows on its own thread (Game.fromProgram wakes it, and it
-// reads what is new). A finger that scrolls asks what list is under it, and a list takes its drag on the program's thread,
+// screen's page, whose the fingers are, the HUD's factor and what to bring into view, by four functions added to its UI's
+// globals, and the activity follows on its own thread (SDL's message wakes it, GameActivity.onUnhandledMessage, and it
+// reads what is new). The phone's keyboard is SDL's (src/app/ScreenKeyboardAndroid.cpp), which a finger's tap on a text
+// field brings. A finger that scrolls asks what list is under it, and a list takes its drag on the program's thread,
 // where FAF's lists live, in the order of the rest of the input; what a list cannot take goes back to the activity for the
 // page.
 
@@ -16,31 +17,30 @@
 #include <mutex>
 
 #include <ListDrag.h>
-#include <Win32AndroidHost.h>
+#include <SDL3/SDL_system.h>
 
+#include "../app/ScreenKeyboardAndroid.h"
+#include "HostSdl.h"
 #include "TaskPlaces.h"
+#include "gpg/core/utils/Logging.h"
 #include "moho/lua/CScrLuaBinder.h"
 #include "moho/ui/UiPrivate.h"
 
 namespace
 {
+  using hosttask::Argument;
+
   // --- The activity -----------------------------------------------------------------------------
 
-  JavaVM* gVm = nullptr;
-  jclass gGameClass = nullptr;
-  jmethodID gFromProgram = nullptr;
+  /// The command of SDL's message to the activity by which the program wakes it (GameActivity.onUnhandledMessage): the
+  /// first that SDL leaves to the app.
+  constexpr Uint32 kFromProgram = 0x8000;
 
   /// The activity reads what is new when it can.
   void WakeActivity()
   {
-    JNIEnv* env = nullptr;
-    if (gVm == nullptr || gVm->AttachCurrentThreadAsDaemon(&env, nullptr) != JNI_OK) {
-      return;
-    }
-    env->CallStaticVoidMethod(gGameClass, gFromProgram);
-    if (env->ExceptionCheck() == JNI_TRUE) {
-      env->ExceptionDescribe();
-      env->ExceptionClear();
+    if (!SDL_SendAndroidMessage(kFromProgram, 0)) {
+      gpg::Warnf("MenuFingers: no word to the activity: %s", SDL_GetError());
     }
   }
 
@@ -140,18 +140,15 @@ namespace
 
   moho::CScrLuaBinder gShowLinesBinder(moho::SCR_UserLuaInitSet(), "FafreShowLines", &ShowLines, nullptr, "<global>", kShowLinesHelp);
 
+
   // --- The keyboard -----------------------------------------------------------------------------
 
-  /// FAF's Menu tab asked for the phone's keyboard (its Keyboard button, the hook of ui/game/tabs.lua), which the activity
-  /// takes as a tap on the bar's Keys when it reads what is new.
-  std::atomic<bool> gKeyboardAsked{false};
+  constexpr char kKeyboardHelp[] = "FafreKeyboard() - the phone's keyboard comes, or goes where it is up";
 
-  constexpr char kKeyboardHelp[] = "FafreKeyboard() - the phone's keyboard comes, or goes where it is up, as the app's Keys does";
-
+  /// FAF's Menu tab's Keyboard (the hook of ui/game/tabs.lua): SDL's keyboard comes, or goes where it is up.
   int Keyboard(lua_State*)
   {
-    gKeyboardAsked.store(true);
-    WakeActivity();
+    screenkeyboard::Toggle();
     return 0;
   }
 
@@ -228,7 +225,7 @@ namespace
   }
 
   /// On the program's thread: what list a finger that has come down here would scroll.
-  void LookForList(const WPARAM place)
+  void LookForList(const Argument place)
   {
     gListDrag = listdrag::ListDrag{};
     moho::CMauiControl* list = nullptr;
@@ -244,7 +241,7 @@ namespace
   }
 
   /// On the program's thread: this much of a finger's drag, as a float's bits; the list takes what it can.
-  void ScrollList(const WPARAM dragBits)
+  void ScrollList(const Argument dragBits)
   {
     float drag = 0;
     std::memcpy(&drag, &dragBits, sizeof(drag));
@@ -283,7 +280,7 @@ namespace
   }
 
   /// On the program's thread: the keyboard is coming, and typing goes to the field with the focus.
-  void LookForField(const WPARAM)
+  void LookForField(const Argument)
   {
     PublishField(moho::Maui_CurrentFocusControl.GetObjectPtr(), kFieldAskedFor);
   }
@@ -307,6 +304,7 @@ void menufingers::NoteTapOnField(const float x, const float y)
       if (dynamic_cast<moho::CMauiEdit*>(control) != nullptr && !control->IsHidden() && !control->IsHitTestDisabled()
           && control->HitTest(x, y) && control->mDepth >= top->mDepth) {
         PublishField(control, kFieldTapped);
+        screenkeyboard::FingerPressed(x, y);
         return;
       }
     }
@@ -323,26 +321,6 @@ bool menufingers::OnScrollBar(const float x, const float y)
     gpg::Warnf("MenuFingers: %s", exception.what());
     return false;
   }
-}
-
-JNIEXPORT jint JNI_OnLoad(JavaVM* const vm, void*)
-{
-  JNIEnv* env = nullptr;
-  if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
-    return JNI_ERR;
-  }
-  const jclass game = env->FindClass("io/github/m3rt1n99/fafre/Game");
-  if (game == nullptr) {
-    return JNI_ERR;
-  }
-  gGameClass = static_cast<jclass>(env->NewGlobalRef(game));
-  gFromProgram = env->GetStaticMethodID(game, "fromProgram", "()V");
-  env->DeleteLocalRef(game);
-  if (gFromProgram == nullptr) {
-    return JNI_ERR;
-  }
-  gVm = vm;
-  return JNI_VERSION_1_6;
 }
 
 /// The page FAF's Lua has declared, into left, top, right, bottom; false when there is none.
@@ -372,7 +350,7 @@ extern "C" JNIEXPORT jfloat JNICALL Java_io_github_m3rt1n99_fafre_Game_hudFactor
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_lookForList(JNIEnv*, jclass, const jint x, const jint y)
 {
   const std::uint32_t serial = gListSerial.fetch_add(1) + 1;
-  Win32Android_RunOnWindowThread(&LookForList, hosttask::Places(x, y) | static_cast<WPARAM>(serial) << 32);
+  host::RunOnGameThread(&LookForList, hosttask::Places(x, y) | static_cast<Argument>(serial) << 32);
 }
 
 /// 0: not known yet; 1: no list is under the last finger; 2: one is.
@@ -385,9 +363,9 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_listAnswer(
 /// `drag`: in the picture's pixels, positive downwards, for the list of the last finger.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_scrollList(JNIEnv*, jclass, const jfloat drag)
 {
-  WPARAM bits = 0;
+  Argument bits = 0;
   std::memcpy(&bits, &drag, sizeof(drag));
-  Win32Android_RunOnWindowThread(&ScrollList, bits);
+  host::RunOnGameThread(&ScrollList, bits);
 }
 
 /// What no list took since the last call, in the picture's pixels.
@@ -402,13 +380,7 @@ extern "C" JNIEXPORT jfloat JNICALL Java_io_github_m3rt1n99_fafre_Game_takePageD
 /// The keyboard is coming: the answer comes as `takeToShow`, if a text field has the focus.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_askForField(JNIEnv*, jclass)
 {
-  Win32Android_RunOnWindowThread(&LookForField, 0);
-}
-
-/// Whether FAF's Menu tab asked for the keyboard since the last call.
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_keyboardAsked(JNIEnv*, jclass)
-{
-  return gKeyboardAsked.exchange(false) ? JNI_TRUE : JNI_FALSE;
+  host::RunOnGameThread(&LookForField, 0);
 }
 
 /// The lines the activity has yet to bring into view, into top, bottom; 0: none, 1: a finger tapped a text field, 2:

@@ -339,10 +339,13 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/app/GameMainAndroid.cpp
   src/app/ScreenKeyboardAndroid.cpp
   src/app/SoundAndroid.cpp
-  src/app/UiPackageAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
+  src/gal/VulkanSurfaceAndroid.cpp
+  src/host/GriffAndroid.cpp
+  src/host/GriffShown.cpp
   src/host/HostSdl.cpp
-  src/gal/VulkanSurfaceAndroid.cpp)
+  src/host/InputAndroid.cpp
+  src/host/MenuFingers.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings FAudio-static SDL3::SDL3-static faf_imgui_sdl faf_freetype
   faf_msdfgen faf_netlink)
 # Device.cpp includes the patched DeviceVulkan.h by its path; the header finds the neighbours it
@@ -350,6 +353,8 @@ target_link_libraries(faf_client PUBLIC faf_android_settings FAudio-static SDL3:
 # include/ (TapTarget.h).
 target_include_directories(faf_client PRIVATE "${FAF_REPO}/src/gpg/gal/backends/vulkan" "${FAF_ANDROID_DIR}/include")
 add_dependencies(faf_client faf_build_info)
+# Griff's and the menus' fingers take the engine's UI by its private header, whose helpers they mostly do not use.
+set_source_files_properties(src/host/GriffAndroid.cpp src/host/MenuFingers.cpp PROPERTIES COMPILE_OPTIONS -Wno-unused-function)
 
 # --- libfafgame.so ---------------------------------------------------------------------------------
 # The whole engine: the simulation's objects first, as the Linux client links them (their static
