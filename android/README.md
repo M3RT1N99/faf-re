@@ -428,7 +428,9 @@ The game connects to the `/gpgnet` port; when nothing listens there, or the laun
 `CreateLobby`, the game says so in a box and ends after its OK (`RESULT_CANCELED`), unless it was started with `/rejoin`
 or has joined a game server (`/connectserver`, the launcher's `JoinServer`): those go on without the launcher, with no
 box, and their results reach nobody ([native README](native/README.md), The network). A `/rejoin` start whose seat the
-device holds no key for is refused in a box of the rejoin's own and goes on to FAF's menu without GPGNet.
+device holds no key for is refused in a box of the rejoin's own and goes on to FAF's menu without GPGNet. A GPGNet
+argument may be as long as the launcher needs: the game reads an ICE server list or a peer's ICE message of 2 KB or
+more whole (checked up to 64 KB), where upstream's engine ended the connection.
 
 **The status.** `content://io.github.m3rt1n99.fafre.status/game_data` and `/last_game` (`StatusProvider`), read-only and
 for allowed callers only: a refused one gets the table's columns and no row; another table gives a null cursor. All

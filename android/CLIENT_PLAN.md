@@ -548,3 +548,25 @@ each fix holds. Two gaps in the vault's were left, both fixed now (`Vault.place`
   when the same map or mod is fetched again, which takes room but nothing of the game's; an import the service drops
   because a job runs keeps its lasting grant, which a release there would take from a running import of the same folder.
   Back during a stalled connection still acts only at its read's timeout (60 s).
+
+*2026-11-19, C5's GPGNet reads long arguments whole (E2c):* native mode's messages from the launcher (`IceServers`,
+`IceMsg`) can be 2 KB or more, and upstream's `CNetTCPBuf::Read` left out of its count the bytes it received straight
+from the socket, as it does with what is left of a read after its buffer's bytes once that is 2 KB or more. The patched
+one counts them ([patches README](native/patches/README.md), `CNetTCPBuf.cpp`):
+- **What reads through it**: GPGNet's link to the launcher (`CGpgNetInterface`: the `/gpgnet` connect, and the listener
+  for a GPGNet the game launches) and a live replay's stream (`/replay gpgnet://`, which `CReplayClient` reads a message
+  at a time without blocking); `/savereplay gpgnet://` only writes through it. Peers' games use the UDP connector, or
+  the TCP connector (`NET_MakeTCPConnector`), whose connections read with buffers of their own: neither a played game's
+  commands nor anything a peer receives passes it. Every read the binary counted right returns the same, and the buffer
+  is left as before; only a live replay's viewer now gets whole the long messages the old count corrupted.
+- **Shown on the emulator** (fafre_api36, x86_64, read-only) with `gpgnet_host.py --ice-msg`, which sends a
+  `CandidatesMessage` of that length as `IceMsg` and as `Test` before `CreateLobby`: the build before the fix ended its
+  GPGNet on 4,096 bytes before the lobby (the box with `Premature EOF`, `exit 0` after its OK; the script saw no lobby).
+  With the fix, 4,096 and 65,536 bytes: the game answered `GameState Lobby` within 30 ms, and its log ignores the
+  `IceMsg` (this build has no native mode) and has the `Test`'s text whole, its length and SHA-256 those sent.
+- **Tests**: `faf_net_tests` (25) reads arguments of 2 KB that the buffer holds nothing of, 4 KB, 64 KB written while
+  the game reads, a short one after them, and a live replay's message of 4 KB without blocking; relinked with
+  upstream's object it fails exactly those. `faf_griff_tests` (140) and `faf_shell_tests` (5) on the emulator; the app's
+  unit tests (472, 3 skipped, inputs unchanged); both native presets build.
+- **Open**: a report for upstream with the patch is drafted, and whether it goes out is the user's decision: native mode
+  on the desktop reads the same messages through the same function. `faf_movie_tests` not run (no movie code changed).

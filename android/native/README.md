@@ -164,9 +164,11 @@ Linux. A launcher in the app (`../README.md`, Game) listens on the loopback and 
 as an app starts no programs (`patches/`). A game started with `/gpgnet` alone whose launcher cannot be reached, or
 closes the connection before its `CreateLobby`, says so in a box and ends, where it stayed on a black screen before
 (`patches/README.md`, `CGpgNetInterface.cpp` and `PlatformPosix.cpp`). Upstream's stream counts too few bytes for a
-read of 2 KB or more that it takes from the socket itself, so an argument from the launcher with 2 KB or more left
-after what the stream's buffer holds of it ends the connection (`CommunicationError`, `tests/net`): FAF's messages to
-the game are shorter, an ICE server list or a peer's ICE message for the game's own links (`/nativenet`) need not be.
+read of 2 KB or more that it takes from the socket itself, so that an argument from the launcher with 2 KB or more
+left after what the stream's buffer holds of it ended the connection (`CommunicationError`): FAF's messages to the game
+are shorter, an ICE server list or a peer's ICE message for the game's own links (`/nativenet`) need not be. The
+patched stream counts them (`patches/README.md`, `CNetTCPBuf.cpp`), and an argument of any length arrives whole
+(`tests/net` up to 64 KB, the game with `gpgnet_host.py --ice-msg` below), a live replay's long message too.
 
 ## Tests
 
@@ -193,7 +195,8 @@ real sockets over the loopback, with bionic, and the engine's datagram socket an
 transport's end, its count of open connectors (what the app's `NetworkGameService` goes by), a network that goes and
 comes back, what the protocol puts on the wire and what ending a game or a replay leaves. GPGNet's TCP socket too: the
 game's connect to its launcher's listener, what goes either way, the launcher's close, a connect with no listener, and
-the read that upstream's stream counts short (The network). It links the simulation's objects as the game does,
+arguments of 2 KB, 4 KB and 64 KB, which upstream's stream counted short (The network), as it did a live replay's
+message of 4 KB, which the replay's client reads without blocking. It links the simulation's objects as the game does,
 statically, and the app's workflow runs the arm64 build on an arm64 runner. Where
 `platform::net` keeps Winsock's behaviour less strictly than the earlier host's layer did, the test says so: it does not
 refuse to select a descriptor that is no socket, and a closed socket's port is free once the poll thread has let go of
@@ -208,7 +211,10 @@ adb shell "chmod 755 /data/local/tmp/faf_net_tests && /data/local/tmp/faf_net_te
 127.0.0.1, prints what the game sends, answers its `GameState Idle` with `CreateLobby`, and its exit code says whether
 the game reached its lobby. `adb reverse` takes the game's loopback port to it. With the port reversed and the script
 not running, adb takes the game's connection and closes it, the case of a launcher that goes before its lobby; without
-the reverse nobody listens, and the connect is refused.
+the reverse nobody listens, and the connect is refused. With `--ice-msg <bytes>` it sends, before `CreateLobby`, a
+peer's ICE message of that length as `IceMsg` and as `Test`, whose arguments the game logs (`game/engine.sclog`): the
+game reaches its lobby only when it has read both whole, and the `Test`'s text in the log has the length and SHA-256
+the script prints.
 
 ```sh
 adb reverse tcp:7237 tcp:7237
