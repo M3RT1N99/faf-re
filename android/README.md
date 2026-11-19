@@ -381,9 +381,9 @@ with the same result.
 Another extra of the prefix, and an extra of another type, give `ARGUMENTS`. Map and mods come as the replay test's do,
 one request a second, a download tried again for about ten minutes when the network drops; the game's activity shows
 the step and Back cancels it, also while a zip unpacks. A zip unpacks beside its download, out of the vault, which its
-folder joins whole: a process that ends meanwhile leaves no half of a map or mod there. `MODS` names uids, as FAF's lobby
-does, and FAF's content server has no file by uid, nor its API without a login: so the client, which has both, names
-the files.
+folder joins whole, and an older folder of its name (a mod's older version) leaves whole, to be deleted beside the
+download: a process that ends meanwhile leaves no half of a map or mod there. `MODS` names uids, as FAF's lobby does, and
+FAF's content server has no file by uid, nor its API without a login: so the client, which has both, names the files.
 
 The whitelist of `LAUNCHER_ARGUMENTS`: each switch spelled so, once, followed by its value. Anything else gives
 `ARGUMENTS`: any other switch, among them `/init`, `/log`, `/prefs`, `/fullscreen`, `/nomovie`, `/notelemetry`,

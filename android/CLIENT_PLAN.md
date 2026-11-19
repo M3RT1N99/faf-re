@@ -520,3 +520,31 @@ The contract's changes are in the [README](README.md) (The launcher's contract):
   read's timeout (60 s), as before. A replay whose map the phone has not, started without `MAP`, ends in a native crash
   (SIGSEGV after the engine's `Error in background task: No such file or directory`): the client names the map.
 - **Next**: the token on the client's side; the client's release certificate on the allowlist.
+
+*2026-11-19, the review's fixes checked again (E2b):* each of the seven faults is real by the code before its fix, and
+each fix holds. Two gaps in the vault's were left, both fixed now (`Vault.place`):
+- **The replay test's M28AI**: the unpack's new Cancel check stops it too, and it unpacked into the test's cache, which
+  takes any folder with a `mod_info.lua` for whole: a Cancel there would have left half of M28AI for every later run.
+  It unpacks beside its zip now, as the vaults' do (`VaultTest` pins it, and fails with the old unpack).
+- **A mod's older version**: the new folder took the place of one of its name that was deleted in place, in the vault.
+  With the earlier build a kill -9 of the game during that deletion left 20,108 of the older version's 20,110 files
+  there, its `mod_info.lua` with the older uid among them, which a start of that uid would have taken for whole. The
+  older folder now leaves the vault in one rename and is deleted beside the download: the same kill left the new M28AI
+  whole in the vault (110 files) and the older one's files beside the zip.
+- **Checked again** on the emulator (read-only, x86_64), with the throwaway callers: the allowed caller's token and rows;
+  no token and no rows for the refused one and the one of two signers; `CALLER` without a token, for a start that waits
+  for no result, for the refused caller, for the two signers and for PLAY forwarded by the refused caller under the
+  allowed one's name; `NO_GAME_FILES` for version 1, with the refused caller's observer on the provider hearing nothing;
+  `REPLAY` for a replay without the start's grant, also when the game held a grant on it from the setup screen, and the
+  allowed caller's own `SecurityException` for a grant on another app's URI; the replay with its grant played on Open
+  Palms, whose map came into the vault; FAF's menu with `/numgames 3`, `RUNNING` beside it, and `RESULT_CANCELED` with
+  `the program returned 0` after Exit; Back while scmp_029 (28 MB) unpacked gave `CANCELLED` within 20 ms, with nothing
+  of it left; a kill as M28AI's unpack began left the vault empty, and the next start brought it whole (110 files); a
+  ZIP of 60 MB came in beside a staging leftover of 1.2 GB that left 120 MB free, which the import dropped first; the
+  folder import dropped such a leftover too and gave back its folder's lasting grant (`persisted=0x0`).
+- **Tests**: the app's unit tests (472, 3 skipped); `faf_griff_tests` (140), `faf_net_tests` (23), `faf_shell_tests` (5)
+  and `faf_movie_tests` (three movies) on the emulator; both native presets build.
+- **Open**: what a process that ended left beside the downloads (a zip, its unpacked files, an older folder) goes only
+  when the same map or mod is fetched again, which takes room but nothing of the game's; an import the service drops
+  because a job runs keeps its lasting grant, which a release there would take from a running import of the same folder.
+  Back during a stalled connection still acts only at its read's timeout (60 s).
