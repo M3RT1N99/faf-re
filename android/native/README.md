@@ -271,11 +271,16 @@ adb -s emulator-5556 shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity
 
 With `--play` in place of `--hold` the games go on into a game, and the script stays FAF's server for it: it ends when
 every game has closed its connection, and its exit code is 0 when the host's lobby seated every other player, every game
-launched (`GameState Launching`), a game reported the game's end (`GameEnded`) and none a desync (`Desync`). A game
-whose connection closes in the lobby leaves the others' lobbies (`DisconnectFromPeer`), as FAF's server has it; after
-the host's launch the server sends nothing more, and an `IceMsg` for a game that is gone is dropped. Each `IceMsg` line
-has the text's length and SHA-256, the same on both sides of the relay, and its candidates by type (`HOST_CANDIDATE`,
-`SERVER_REFLEXIVE_CANDIDATE`, `RELAYED_CANDIDATE`). `--map` names a map that both devices have; a small one loads
+launched (`GameState Launching`) and ended its session before its connection did (`JsonStats`, which FAF's Lua sends at
+the game's end and when the player leaves the game through the menu, or `GameEnded`), a game reported the game's end
+(`GameEnded`) and none a desync (`Desync`). A game that crashed or was killed sends neither, and the script names it
+(`not played to its end: game2 left the game without JsonStats or GameEnded, ...`). A game whose connection closes in
+the lobby leaves the others' lobbies (`DisconnectFromPeer`), as FAF's server has it; after the host's launch the server
+sends nothing more, and an `IceMsg` for a game that is gone is dropped. The relay passes a game's text on as the bytes it
+read: each `IceMsg` line has the length and SHA-256 of the bytes as the script read them and as it wrote them, and the
+CandidatesMessage's candidates by type (`HOST_CANDIDATE`, `SERVER_REFLEXIVE_CANDIDATE`, `RELAYED_CANDIDATE`). That the
+receiving game read a message whole shows in its own log, whose selected pair names the peer's candidate
+(`NETLINK: peer ...: connected, selected pair`). `--map` names a map that both devices have; a small one loads
 quickly (`desert_arena_-_faf_version.v0002` from FAF's vault). The game is played by taps on each device
 (`adb shell input tap`): each player's *Ready* box, then the host's *Launch Game*; a move is the orders panel's *Move*
 and, about a second later, the ground (a tap right after *Move* gave no order). Ctrl+Shift+F11
@@ -290,6 +295,16 @@ whole (The network) and connects with:
 
 ```sh
 adb -s emulator-5554 shell 'for i in $(seq 1 11); do ip addr add 198.51.100.$i/32 dev dummy0; done'
+```
+
+`../tools/test_gpgnet_host.py` runs the script on the PC against fake games on the loopback, which have a GPGNet codec of
+their own: with `--play` a game whose player left it and one that won pass, and a game killed in the game, a desync and
+a game gone in the lobby fail, each named in the miss's line; an `IceMsg` that is not UTF-8 reaches the other game byte
+for byte, and both its lines have its bytes' length and SHA-256, a short one's too; one game with `--ice-msg` reads the
+`IceMsg` and the `Test` whole before its lobby.
+
+```sh
+python -I android/tools/test_gpgnet_host.py
 ```
 
 `faf_shell_tests` (`tests/shell`) pins the patched shell's rule for a key-down a handler took (`patches/README.md`,

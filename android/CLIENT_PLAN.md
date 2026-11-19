@@ -709,8 +709,9 @@ the joiner `JoinGame [host's login, id]` and the host `ConnectToPeer [joiner's l
   candidates, `direct (host/host)` on both network panels, a round trip of 5.5 ms on the host (the offerer's echo) and
   9.6 ms on the joiner (the lane's), none lost, the encrypted lane.
 - **A long IceMsg**: with eleven documentation addresses more on the host's emulator (its dummy interface) the host's
-  CandidatesMessage had 14 host candidates in 2502 bytes. It went through the script unchanged (the same SHA-256), and
-  the joiner connected to the last of them, the IPv6 one. The games' own `JsonStats` at the end were 2349 and 2400 bytes.
+  CandidatesMessage had 14 host candidates in 2502 bytes, and the joiner connected to the last of them, the IPv6 one,
+  which only the whole message gave it (its log's selected pair). The games' own `JsonStats` at the end were 2349 and
+  2400 bytes.
 - **A game killed in a game** (the joiner, `kill -9`, at 1:50 of the game): its GPGNet connection closed at once, and
   the host's simulation stopped where it was. The host's link lost the peer after 10 s without the echo and offered a new
   link about every 11 s, 17 times, each a CandidatesMessage of 2.5 KB that the script dropped (no game of that
@@ -726,3 +727,36 @@ the joiner `JoinGame [host's login, id]` and the host `ConnectToPeer [joiner's l
 - **Open**: for a rejoin the script would have to keep a game's port open after its connection closed, as a launcher
   does (`docs/LAUNCHER_NATIVE_NETWORK.md`); it takes one connection on each port. A tap within about 0.2 s of *Move* gave
   no order on this client's input, one a second later did (the touch schemes' stage).
+
+*2026-11-19, C5's own peer links in a game, the review's fixes (E3, part 2):* a review of `gpgnet_host.py --play` found
+two faults, both real by the script's code, and both showed against it on fake games before the fix. The launcher's
+contract did not change:
+- **A game killed in the game passed**: the status asked that every game launched, that one sent `GameEnded` and none a
+  `Desync`, and the host's game, which ejects a lost player and wins, sends that `GameEnded`: the run above with the
+  joiner killed ended with 0, as the game played to its end did. FAF's Lua ends a game's session with `JsonStats`, at the
+  game's end (its game-over listeners, then `GameEnded`) and when the player leaves through the menu (`SafeQuit`'s
+  `SessionEndGame`); a game that crashed or was killed sends neither. The status now asks every game that launched for
+  one of the two before its connection closed, and each miss has a line, a game's naming the game
+  (`not played to its end: game2 left the game without JsonStats or GameEnded, ...`).
+- **A SHA-256 that could not differ**: the relay decoded a game's text (`errors="replace"`) and encoded it again, and
+  both its lines hashed the decoded text, so that a byte that is no UTF-8 went on as three and both lines still agreed.
+  Only texts of more than 200 characters had a length and a hash. The relay passes the bytes it read now, and every
+  `IceMsg` line has the length and SHA-256 of the bytes as the script read them and as it wrote them; that the receiving
+  game read the message whole is its log's selected pair. Found on the way: a short text that is no UTF-8 ended that
+  game's connection when the script wrote to a file or a pipe on Windows, as its line's U+FFFD is not in the code page.
+  Such a text shows as its bytes now, and a line escapes what the output's encoding lacks.
+- **Shown on the emulator** (fafre_api36, x86_64, two read-only instances in netsim's Wi-Fi, the host with eleven
+  documentation addresses more): the joiner left through *Exit to Windows* at about 1:28 of the game, its `JsonStats`
+  30 ms before its connection closed, and the host won, sent `JsonStats` and `GameEnded` and ended from its score
+  screen: `played to its end`, status 0. With the joiner's game killed (`kill -9`) at 0:47 of the game its connection
+  closed with nothing more, and the host ejected the player and won 190 s later: `not played to its end: game2 left the
+  game ...`, status 1. In both runs the host's CandidatesMessage, 14 host candidates in 2502 bytes, had the same length
+  and SHA-256 on the line of what the script read and of what it wrote, and the joiner connected to the 14th.
+- **Tests**: `android/tools/test_gpgnet_host.py` (7) runs the script against fake games with a GPGNet codec of their
+  own: a game its player left and one that won, a game killed in the game, `GameEnded` alone, a desync, a game gone in
+  the lobby, the relay's bytes and lines, and one game's `--ice-msg`. Five fail on the earlier script, and each part of
+  the fix, broken in a copy, fails one. Both native presets build; `faf_net_tests` (25), `faf_netlink_tests` (13),
+  `faf_griff_tests` (140) and `faf_shell_tests` (5) pass on the emulator; the app's unit tests (498, 3 skipped).
+- **Not shown**: a game's native crash in a game, as against its kill; the rest as part 2 has it.
+- **Open**: `test_gpgnet_host.py` runs by hand; `.github/workflows/android-app.yml` could run it (outside `android/`,
+  not changed).
