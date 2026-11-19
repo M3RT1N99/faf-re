@@ -3,6 +3,7 @@ package io.github.m3rt1n99.fafre;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
@@ -15,17 +16,25 @@ import java.util.List;
 
 /**
  * The game's status for a launcher in another app, read-only: content://io.github.m3rt1n99.fafre.status/game_data and
- * /last_game (Status: their columns), and the token a launcher's start carries (call "play_token", PlayTokens). Exported, as
- * the FAF client is another app, and it answers allowed callers only (Callers): a refused one gets the table's columns and no
- * row, and no token. No change notifications: Android lets any app that sees the provider observe its URIs, whatever a query
- * would answer it, and each would tell it when the player plays; the launcher queries when it needs to know. In the app's
- * main process, where the jobs run and LaunchGameActivity spends the tokens.
+ * /last_game (Status: their columns), the token a launcher's start carries (call "play_token", PlayTokens), and the game's
+ * logs for its problem report (call "game_logs", GameLogs). Exported, as the FAF client is another app, and it answers
+ * allowed callers only (Callers): a refused one gets the table's columns and no row, and no answer to a call. No change
+ * notifications: Android lets any app that sees the provider observe its URIs, whatever a query would answer it, and each
+ * would tell it when the player plays; the launcher queries when it needs to know. In the app's main process, where the jobs
+ * run and LaunchGameActivity spends the tokens.
  */
 public final class StatusProvider extends ContentProvider {
     static final String AUTHORITY = "io.github.m3rt1n99.fafre.status";
     /** The call that gives an allowed launcher a token for its next start, in the answer's TOKEN. */
     static final String PLAY_TOKEN = "play_token";
     static final String TOKEN = "token";
+    /**
+     * The call that zips the game's logs for an allowed launcher (GameLogs) and grants it reading the zip, whose content URI
+     * the answer has as URI, or else MESSAGE, why there is none.
+     */
+    static final String GAME_LOGS = "game_logs";
+    static final String URI = "uri";
+    static final String MESSAGE = "message";
 
     @Override
     public boolean onCreate() {
@@ -52,14 +61,33 @@ public final class StatusProvider extends ContentProvider {
         return cursor;
     }
 
-    /** A token for the caller's next start, when it is allowed: the provider, unlike the start, sees the app that asks. */
+    /**
+     * For an allowed caller: a token for its next start, as the provider, unlike the start, sees the app that asks; or the
+     * game's logs, zipped now, which it may read.
+     */
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
-        if (!PLAY_TOKEN.equals(method) || !Callers.allowed(getContext(), getCallingPackage())) {
+        boolean token = PLAY_TOKEN.equals(method);
+        if (!token && !GAME_LOGS.equals(method)) {
+            return null;
+        }
+        Context context = getContext();
+        String caller = getCallingPackage();
+        if (!Callers.allowed(context, caller)) {
             return null;
         }
         Bundle answer = new Bundle();
-        answer.putString(TOKEN, PlayTokens.APP.issue(SystemClock.elapsedRealtime()));
+        if (token) {
+            answer.putString(TOKEN, PlayTokens.APP.issue(SystemClock.elapsedRealtime()));
+            return answer;
+        }
+        try {
+            Uri zip = ResultsProvider.gameLogs(GameLogs.write(context));
+            context.grantUriPermission(caller, zip, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            answer.putParcelable(URI, zip);
+        } catch (IOException e) {
+            answer.putString(MESSAGE, "the game's logs could not be zipped: " + e.getMessage());
+        }
         return answer;
     }
 

@@ -11,10 +11,12 @@ import android.provider.OpenableColumns;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.List;
 
 /**
- * Serves the results zips (parity/results/*.zip), read-only, to the app the user shares one
- * with: content://io.github.m3rt1n99.fafre.results/&lt;name&gt;. Not exported; access is by URI grant.
+ * Serves the zips the app hands out, read-only: the results zips (parity/results/*.zip) to the app the user shares one with,
+ * content://io.github.m3rt1n99.fafre.results/&lt;name&gt;, and the game's logs (GameLogs) to the launcher that asked for them,
+ * .../game_logs/&lt;name&gt;. Not exported; access is by URI grant.
  */
 public final class ResultsProvider extends ContentProvider {
     static final String AUTHORITY = "io.github.m3rt1n99.fafre.results";
@@ -23,20 +25,29 @@ public final class ResultsProvider extends ContentProvider {
         return Uri.parse("content://" + AUTHORITY + "/" + zip.getName());
     }
 
+    /** The game's logs zip {@code zip} of GameLogs' folder. */
+    static Uri gameLogs(File zip) {
+        return Uri.parse("content://" + AUTHORITY + "/" + GameLogs.FOLDER + "/" + zip.getName());
+    }
+
     private File file(Uri uri) throws FileNotFoundException {
-        String name = uri.getLastPathSegment();
-        if (name == null || !name.matches("faf-re-results-[0-9-]+\\.zip")) {
+        List<String> path = uri.getPathSegments();
+        File file;
+        if (path.size() == 2 && GameLogs.FOLDER.equals(path.get(0)) && GameLogs.NAME.matcher(path.get(1)).matches()) {
+            file = new File(GameLogs.folder(getContext()), path.get(1));
+        } else if (path.size() == 1 && path.get(0).matches("faf-re-results-[0-9-]+\\.zip")) {
+            try {
+                file = new File(new Storage(getContext()).results(), path.get(0));
+            } catch (IOException e) {
+                throw new FileNotFoundException(e.getMessage());
+            }
+        } else {
             throw new FileNotFoundException(String.valueOf(uri));
         }
-        try {
-            File file = new File(new Storage(getContext()).results(), name);
-            if (!file.isFile()) {
-                throw new FileNotFoundException(name);
-            }
-            return file;
-        } catch (IOException e) {
-            throw new FileNotFoundException(e.getMessage());
+        if (!file.isFile()) {
+            throw new FileNotFoundException(file.getName());
         }
+        return file;
     }
 
     @Override

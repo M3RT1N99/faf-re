@@ -570,3 +570,51 @@ one counts them ([patches README](native/patches/README.md), `CNetTCPBuf.cpp`):
   unit tests (472, 3 skipped, inputs unchanged); both native presets build.
 - **Open**: a report for upstream with the patch is drafted, and whether it goes out is the user's decision: native mode
   on the desktop reads the same messages through the same function. `faf_movie_tests` not run (no movie code changed).
+
+*2026-11-19, the client contract's three additions (E2c):* what the FAF client's app needs of this one beside the start and
+the setup. The contract's changes are in the [README](README.md) (The launcher's contract, The logs):
+- **The whitelist** takes `/division` and `/subdivision`, which FAF's Java client passes for a matchmaker game: the league
+  service's names of the player's division (`bronze`, `silver`, `gold`, `diamond`, `master`, `grandmaster`, or `unlisted`
+  for none) and its step (`I` to `V`; none for `grandmaster` and `unlisted`), which FAF's autolobby takes for its texture
+  `textures/divisions/<division> <subdivision>.png` (`AutolobbyController.lua` lists both): exactly those words.
+  `/savereplay` and `/replay` take `localhost` beside `127.0.0.1`, as `/gpgnet` does.
+- **Card 2** has *Import SCFA ZIP…* beside *Import SCFA folder…*: E2b's ZIP import, for phone testers without the client.
+- **The game's logs** for the client's problem report: the status provider's call `game_logs` zips, for an allowed caller,
+  what Share results takes of the game (both games' reports, the engine's log, its newest crash report), each tombstone as
+  text (`Tombstone`: the signal, cause and abort message, the stacks and build ids, nothing of its memory, open files or
+  log) and `report.txt`, into the app's cache, and answers with the zip's `content://` URI, which it grants the caller to
+  read; `ResultsProvider` serves it, as it serves the results zips. The zip goes into public issues, so its texts are
+  scrubbed (`LogScrubber`): players' names become `player1`, `player2`, ..., learned from the lines that name players in
+  all of the zip's files, their ids `id1`, ..., a FAF game's id, a game's title, chat, the account's values and ICE
+  credentials placeholders, hosts' addresses `<ip>`, and the app's folders `<external>`, `<internal>` and `<apk>`, the
+  user's `<storage>`.
+- **Found on the way**: the inventory found more than names, addresses and paths. FAF's Lua logs every GPGNet message to
+  the launcher (`GpgNetSend`: players' ids, a team kill's names, chat, the stats' names) and the game's id (`REPLAY ID`, as
+  in `/savereplay`), the LAN games its screen found (host, title) and chat the lobby could not show; a launcher's switches
+  carry the account (rating, games, clan, country, division), and a game's or a player's id names the players on FAF's own
+  pages. Desert Arena's civilians are `civilian`, in lower case. `tools/tombstone.py` reads a signal's fault address from
+  fields 7 and 8 (`sender_pid`, `has_fault_address`) where tombstone.proto has 8 and 9, so it never shows the address;
+  `Tombstone` reads 8 and 9 (0x40 on a system tombstone whose text says 0x40).
+- **Checked on the emulator** (fafre_api36, x86_64, read-only) with E2b's throwaway callers, given a mode that calls
+  `game_logs`, copies the zip by its URI and lists it: the refused caller got a null answer, and a `SecurityException` on
+  the allowed one's URI; the allowed one got the zip in 0.09 to 0.12 s, its name and size by `OpenableColumns`, and read
+  it; a later call's zip took the earlier one's place and grant (its URI then failed). The pulled zips' texts had none of
+  the players' names (counted by a script that took them from the raw logs, which stayed on the PC), no host's address and
+  no path of the phone: after a skirmish against seven AIs from FAF's lobby, also while it ran; after a replay of the
+  parity runs, a multiplayer game, whose two players became `player1` and `player2`; after that replay's native crash
+  without its map, whose tombstone's summary (SIGSEGV at 0x8, 33 threads) has the same 345 frames as `tools/tombstone.py`;
+  and after a launcher's start against `gpgnet_host.py --mode 1` with an invented name, uid, game id, clan, rating and
+  division (`/division gold /subdivision II` and `/savereplay gpgnet://localhost:...` passed the whitelist, and the
+  autolobby's `CreateLobby`, FAF's `REPLAY ID` and the Test's ICE message were scrubbed). Card 2 shows both buttons; *Import
+  SCFA ZIP…* opened the file picker and imported a small SCFA ZIP (27 files, 23 there already). An engine log of 10 MB
+  took 8 s.
+- **Tests**: the app's unit tests (494, 3 skipped) pin the whitelist's new values, the Game card's line for an import
+  without fonts, the scrubber on the logs' line shapes with invented names and documentation addresses, the tombstone's
+  summary of debuggerd's fields and what it leaves out, and the zip's entries, order and scrubbing across its files. Both
+  native presets build (nothing native changed).
+- **Not shown**: a phone; a LAN or online game with other players, whose peers' lines are pinned from the engine's and
+  FAF's sources; the FAF client itself.
+- **Open**: FAF's Java client passes more for a matchmaker game, which the whitelist still refuses: the faction (`/uef`,
+  `/aeon`, `/cybran`, `/seraphim`), `/map`, `/gameoptions` with `key:value` arguments and `/replayid`. A name that only a
+  mod's own log line gives, or only a crash report of an earlier game, stays in the zip. `tools/tombstone.py`'s fault
+  address.

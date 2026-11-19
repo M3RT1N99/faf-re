@@ -330,7 +330,8 @@ the game data they imported. Everything lives in the app's external files folder
 - **Share results** zips `summary.json`, the math output, the log, the game's report, tombstone, log and crash report
   (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the last
   game's (`game-previous.txt`, `game-previous-tombstone.pb`) and each replay's `headless.out`,
-  `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks symbolized.
+  `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks symbolized. The FAF client gets the
+  game's part of it scrubbed, the tombstones as text, for its problem report (the launcher's contract, The logs).
 
 The default replays (26930624 and 26902315), *Use the core set* and *Use the extended set* (the core
 set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all
@@ -341,7 +342,7 @@ S22 Ultra the little cores.
 ## The launcher's contract
 
 The FAF client is an app of its own (`com.faforever.rustclient`, signed by another key), which starts the game across
-apps and reads its status. This app stays the game: the engine, the SCFA import, FAF's game files and the test cards.
+apps and reads its status and logs. This app stays the game: the engine, the SCFA import, FAF's game files and the test cards.
 
 **Who may.** Apps of one signer, whose certificate's SHA-256 is on the allowlist, in one place (`Callers.ALLOWED`): this
 PC's debug key, which also signs this app; the client's release certificate comes there once it has one. Android 9 and
@@ -458,6 +459,56 @@ name or a path.
 | `exit_code` | int, or null: the program's own, when it returned or the engine ended its process |
 | `crashed` | 1 when the game crashed or stopped on a fatal error |
 | `end` | How it ended, in the app's words alone (`the program returned 0 after 61.2 s`, `CRASHED: native crash, status 11`, `the start failed: NO_MAP`), null until it has: the report's END line without the engine's log, a fatal error's message, Android's description or a failed start's message |
+
+**The logs.** For the client's problem report:
+`getContentResolver().call(Uri.parse("content://io.github.m3rt1n99.fafre.status"), "game_logs", null, null)`, off the main
+thread, as the provider writes the zip before it answers (on the emulator 0.1 s for its games' logs of 30 to 60 KB, 8 s for
+an engine log of 10 MB), and for allowed callers only (`Callers`, as `play_token`): a refused one gets a null answer. The
+answer has the zip's `content://` URI as the Parcelable `uri`,
+`content://io.github.m3rt1n99.fafre.results/game_logs/faf-re-game-logs-<time>.zip` (`application/zip`, its name and size by
+`OpenableColumns`), which the provider has granted the caller to read (`grantUriPermission`,
+`FLAG_GRANT_READ_URI_PERMISSION`) and the client may hand on with that flag, to an app it shares the zip with; or, when the
+zip could not be written, `message`, why, and no `uri`. No other app can open it. The zip lies in this app's cache until the
+next call, which deletes it and takes its grants back: the client reads or copies it at once.
+
+| In the zip | |
+|---|---|
+| `report.txt` | The app's version and version code, the engine's commit, Android's version and API level, the device's maker and model, and the stand-ins below; no account |
+| `game.txt`, `game-previous.txt` | The last game's report, with its end once the game's process is gone, and the one before |
+| `game-tombstone.txt`, `game-previous-tombstone.txt` | A native crash's tombstone of either game as text (`Tombstone`): the signal and its fault address, the cause, the abort message, each thread's stack (library and offset, function) and the libraries' build ids, for `tools/tombstone.py`'s way of symbolizing a build's frames; not the tombstone's memory, registers, open files, log and command line |
+| `game/engine.sclog` | The engine's log of the last game |
+| `game/faf_crash_latest.txt` | The engine's newest crash report, which can be an earlier game's (its `time` says when) |
+
+The zip goes into public issues, so its texts are scrubbed (`LogScrubber`) as one zip's: what names a player, their account
+or the network becomes a stand-in, the same one throughout the zip.
+
+- **Where these are**, on the emulator's games and by the engine's and FAF's sources: the command line in `game.txt` has the
+  app's paths and a launcher's switches, the player's name and game in `/savereplay gpgnet://.../<game id>/<name>.SCFAreplay`
+  and the account in `/mean`, `/deviation`, `/numgames`, `/clan`, `/country`, `/division` and `/subdivision`; a replay that
+  could not be copied can quote the launcher's `content://` URI. The engine's log has the app's folders (the engine writes
+  them with backslashes in lower case too), the profile's folder of the game's replays, each army's nickname as the sim
+  begins, the lobby's peers with name, address and uid (the engine's `LOBBY:` lines; FAF's lobby and autolobby:
+  `CreateLobby`, `JoinGame`, `ConnectToPeer` and more), FAF's `REPLAY ID`, each message to the launcher (`GpgNetSend`, which
+  FAF's Lua logs: players' ids, a team kill's names, chat, the stats' names), the LAN games the screen found (host, title,
+  address), a peer's ICE message (ids, credentials, the candidates' addresses) and chat that the lobby could not show. The
+  crash report has the app's install folder and Lua's strings, a tombstone's summary its abort message.
+- **Players' names** are learned from those lines, in all of the zip's files, and replaced wherever they stand, in any case,
+  as a word of their own: `player1`, `player2`, ... in the order the files name them, so that the player is mostly `player1`.
+  AIs (`<name> (AI: <type>)`), the civilians' armies (`Civilian`, `civilian`) and names without a letter stay.
+- **Players' ids** (the lobby's uid, in a game of FAF's the player's id there) where those lines give them: `id1`, `id2`, ...;
+  **a FAF game's id**: `<game>`; **a game's title**: `<title>`; **chat**: `<chat>`; **the account's values**: `<account>`;
+  **ICE credentials**: `<secret>`.
+- **Addresses**: every IPv4 and IPv6 address of a host, private or public, is `<ip>`; the loopback, `0.0.0.0`, `::`, the
+  broadcast and multicast addresses stay, as does what is no address (`1.3.275.0`, a time, a MAC). A version of four
+  numbers up to 255 looks like an address and goes too.
+- **Paths**: the app's external folder (`/storage/emulated/0/Android/data/io.github.m3rt1n99.fafre` and its other names,
+  `/sdcard/Android/data/...`) is `<external>`, its internal one (`/data/user/0/io.github.m3rt1n99.fafre`) `<internal>`, its
+  install folder (`/data/app/.../io.github.m3rt1n99.fafre-...`) `<apk>`; any other path of the shared storage, the user's
+  own, is `<storage>`, and a `content://` URI keeps its authority alone. Android's own paths stay.
+
+What no line of that list names stays: a name that only a mod's own log line gives, or only a crash report of an earlier
+game. The JVM tests (`LogScrubberTest`, `TombstoneTest`, `GameLogsTest`) pin the lines' shapes, with invented names and
+documentation addresses.
 
 **The setup.** `startActivity(new Intent("io.github.m3rt1n99.fafre.action.SETUP_GAME_DATA").setPackage("io.github.m3rt1n99.fafre").putExtra("io.github.m3rt1n99.fafre.extra.STEP", "scfa"))`,
 or the same for a result: `SetupActivity`, this app's own screen for the game's data, in the look of its cards. Any app
