@@ -25,6 +25,13 @@ the host, with ConnectToPeer between the joining games, the newer offering; it r
 seconds after the host's lobby seated every other player, and its status is 0 when it did: when the host's game sent
 a PlayerOption for each of the others' ids, which FAF's lobby sends once a player is in a slot.
 
+With --play as well the games go on from the lobby into a game, which the host launches: the session ends when every
+game has closed its connection, and its status is 0 when the host's lobby seated every other player, every game
+launched (GameState Launching), a game reported the game's end (GameEnded) and none a desync (Desync). As FAF's server
+does, a game whose connection closes before the host launched leaves the others' lobbies (DisconnectFromPeer [its id]
+to each); after the launch the games handle a lost peer themselves, and an IceMsg for a gone game is dropped. A long
+IceMsg's line names its CandidatesMessage's candidates by type, and its SHA-256 is the same where it goes on.
+
 With --ice-msg BYTES (one game) it sends, before CreateLobby, a peer's ICE message of BYTES bytes as a launcher in
 native mode relays one (IceMsg [sender id, CandidatesMessage JSON]), and the same arguments as Test, whose arguments
 the game logs: the game reaches its lobby only when it has read both whole. It prints the text's length and SHA-256,
@@ -36,6 +43,7 @@ as a tag byte (0 an int32, 1 a string, 2 data) and its body; a string is its len
 """
 
 import argparse
+import collections
 import hashlib
 import json
 import socket
@@ -99,12 +107,25 @@ def ice_message(size, sender, receiver):
 START = time.monotonic()
 
 
+def candidates(text):
+    """A CandidatesMessage's candidates by type, as ', 3 candidates: 3 HOST_CANDIDATE'; '' for any other text."""
+    try:
+        message = json.loads(text)
+    except ValueError:
+        return ""
+    found = message.get("candidates") if isinstance(message, dict) else None
+    if not isinstance(found, list):
+        return ""
+    kinds = collections.Counter(str(c.get("type")) if isinstance(c, dict) else "?" for c in found)
+    return f", {len(found)} candidates: " + ", ".join(f"{count} {kind}" for kind, count in kinds.items())
+
+
 def shown(arg):
     if isinstance(arg, Data):
         return f"<data {len(arg)} bytes>"
     if isinstance(arg, str) and len(arg) > 200:
         text = arg.encode()
-        return f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}>"
+        return f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}{candidates(arg)}>"
     return repr(arg)
 
 
@@ -171,7 +192,7 @@ class Connection:
 
 
 class Seat:
-    """One game: its listener's port, its player, and how far its lobby has come."""
+    """One game: its listener's port, its player, and how far its lobby and its game have come."""
 
     def __init__(self, label, port, name, uid):
         self.label = label
@@ -180,10 +201,14 @@ class Seat:
         self.uid = uid
         self.server = None
         self.game = None
+        self.gone = None  # how its connection ended, once it has
         self.lobby = False
         self.hosted = False  # the host: HostGame sent
         self.joined = False  # another game: JoinGame sent, and ConnectToPeer to the games before it
         self.seated = False  # another game: the host's PlayerOption named it
+        self.launched = False  # its GameState Launching
+        self.ended = False  # its GameEnded: its simulation reached the game's end
+        self.desyncs = 0  # its Desync messages
 
 
 class Session:
@@ -196,11 +221,17 @@ class Session:
         self.lock = threading.Lock()
         self.finished = threading.Event()
         self.succeeded_at = None
+        self.launched = False  # the host's GameState Launching, from which FAF's server has the game live
 
     def succeeded(self):
         if not all(seat.lobby for seat in self.seats):
             return False
         return all(seat.seated for seat in self.seats[1:])
+
+    def played(self):
+        """--play's goal: the lobby's, then every game launched, one reported the game's end and none a desync."""
+        return (self.succeeded_at is not None and all(seat.launched for seat in self.seats)
+                and any(seat.ended for seat in self.seats) and not any(seat.desyncs for seat in self.seats))
 
     def by_uid(self, uid):
         return next((seat for seat in self.seats if seat.uid == uid), None)
@@ -219,10 +250,18 @@ class Session:
                 seat.lobby = True
                 if len(self.seats) > 1:
                     self.match()
+            elif command == "GameState" and values == ["Launching"] and not seat.launched:
+                seat.launched = True
+                if seat is self.seats[0]:
+                    self.launched = True
+            elif command == "GameEnded":
+                seat.ended = True
+            elif command == "Desync":
+                seat.desyncs += 1
             elif command == "IceMsg" and len(self.seats) > 1 and len(values) == 2 and isinstance(values[0], int):
                 receiver = self.by_uid(values[0])
-                if receiver is None or receiver.game is None:
-                    note(f"{seat.label}'s IceMsg for player {values[0]} not delivered")
+                if receiver is None or receiver.game is None or receiver.gone is not None:
+                    note(f"{seat.label}'s IceMsg for player {values[0]} not delivered: no game of that player's")
                 else:
                     receiver.game.send("IceMsg", seat.uid, values[1])
             elif command == "PlayerOption" and seat is self.seats[0] and values and str(values[0]).isdigit():
@@ -278,20 +317,41 @@ class Session:
         note(f"{seat.label} connected from {peer[0]}:{peer[1]}")
         with self.lock:
             seat.game = Connection(sock, seat.label)
+        how = f"{seat.label}'s connection ended"
         with sock:
             try:
                 while not self.finished.is_set():
                     message = seat.game.receive()
                     if message is None:
-                        self.finish(f"{seat.label} closed the connection")
+                        how = f"{seat.label} closed the connection"
                         break
                     command, values = message
                     say(seat.label, command, values)
                     self.on_message(seat, command, values)
             except (EOFError, ConnectionError, ValueError) as error:
-                self.finish(f"{seat.label}'s connection broke: {error}")
+                how = f"{seat.label}'s connection broke: {error}"
             except OSError:
-                self.finish(f"{seat.label}'s connection ended")
+                pass
+        self.on_gone(seat, how)
+
+    def on_gone(self, seat, how):
+        """A game's connection ended: without --play the session ends; with it the session ends with the last game,
+        and before the host's launch the games in the host's game drop the player, as FAF's server has them do."""
+        with self.lock:
+            if self.finished.is_set():
+                seat.gone = f"the session's end closed it at {time.monotonic() - START:.2f} s"
+                return
+            seat.gone = f"{how} at {time.monotonic() - START:.2f} s"
+            if not self.args.play:
+                self.finish(how)
+                return
+            note(how)
+            if not self.launched:
+                for other in self.seats:
+                    if other is not seat and (other.hosted or other.joined) and other.gone is None:
+                        other.game.send("DisconnectFromPeer", seat.uid)
+            if all(other.gone is not None for other in self.seats):
+                self.finish("every game closed its connection")
 
 
 def main():
@@ -310,6 +370,9 @@ def main():
                         help="CreateLobby's player id (default 1), with several games the first one's")
     parser.add_argument("--hold", type=float, default=0,
                         help="seconds to hold the connections after the lobby, 0 until a game closes its own")
+    parser.add_argument("--play", action="store_true",
+                        help="the games go on into a game, and the session ends with the last game's connection "
+                             "(several games, no --hold)")
     parser.add_argument("--native", action="store_true",
                         help="a launcher in native mode (/nativenet): IceServers before CreateLobby")
     parser.add_argument("--ice-servers", default="[]", metavar="JSON",
@@ -327,6 +390,10 @@ def main():
         args.native = True
         if args.ice_msg:
             parser.error("--ice-msg: with one game only")
+    elif args.play:
+        parser.error("--play: with several games only")
+    if args.play and args.hold:
+        parser.error("--play: the session lasts as long as the games, without --hold")
     try:
         if not isinstance(json.loads(args.ice_servers), (list, dict)):
             raise ValueError("neither a list nor an object")
@@ -369,8 +436,15 @@ def main():
         print("the game reached its lobby" if seats[0].lobby else "the game did not reach its lobby", flush=True)
     else:
         for seat in seats:
-            print(f"{seat.label} ({seat.name}, {seat.uid}): {'in its lobby' if seat.lobby else 'no lobby'}"
-                  + ("" if seat is seats[0] else ", seated by the host" if seat.seated else ", not seated"), flush=True)
+            line = (f"{seat.label} ({seat.name}, {seat.uid}): {'in its lobby' if seat.lobby else 'no lobby'}"
+                    + ("" if seat is seats[0] else ", seated by the host" if seat.seated else ", not seated"))
+            if args.play:
+                line += (", launched" if seat.launched else ", not launched") \
+                    + (", GameEnded" if seat.ended else ", no GameEnded") \
+                    + f", {seat.desyncs} Desync; " + (seat.gone or "never connected")
+            print(line, flush=True)
+    if args.play:
+        return 0 if session.played() else 1
     return 0 if session.succeeded_at is not None else 1
 
 

@@ -173,7 +173,8 @@ its own, with bionic's `getaddrinfo`. Its random bytes, STUN's transaction ids a
 seeded by the clock, as its `getrandom` leaves Android out; the patched `random.c` takes bionic's `arc4random_buf`
 (`patches/README.md`). The lane's keys come from `arc4random_buf` already (`src/remote/net`). Two games on two
 emulators, whose Wi-Fi is one network (netsim), connected over their IPv6 host candidates, moved onto the encrypted
-lane, and the host's lobby seated the other player (`gpgnet_host.py` with two ports, Tests).
+lane, and the host's lobby seated the other player; the host launched, both commanders moved for minutes, and the game
+ran to its end with no desync (`gpgnet_host.py --play`, Tests).
 
 GPGNet, the game's line to its launcher, is the engine's TCP stream on `platform::net` (`CNetTCPBuf`), built as on
 Linux. A launcher in the app (`../README.md`, Game) listens on the loopback and starts the game with
@@ -266,6 +267,29 @@ adb -s emulator-5556 reverse tcp:7237 tcp:7238
 python -I android/tools/gpgnet_host.py --port 7237 --port 7238 --hold 30
 adb -s emulator-5554 shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity --esa io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS /gpgnet,127.0.0.1:7237,/nativenet
 adb -s emulator-5556 shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity --esa io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS /gpgnet,127.0.0.1:7237,/nativenet
+```
+
+With `--play` in place of `--hold` the games go on into a game, and the script stays FAF's server for it: it ends when
+every game has closed its connection, and its exit code is 0 when the host's lobby seated every other player, every game
+launched (`GameState Launching`), a game reported the game's end (`GameEnded`) and none a desync (`Desync`). A game
+whose connection closes in the lobby leaves the others' lobbies (`DisconnectFromPeer`), as FAF's server has it; after
+the host's launch the server sends nothing more, and an `IceMsg` for a game that is gone is dropped. Each `IceMsg` line
+has the text's length and SHA-256, the same on both sides of the relay, and its candidates by type (`HOST_CANDIDATE`,
+`SERVER_REFLEXIVE_CANDIDATE`, `RELAYED_CANDIDATE`). `--map` names a map that both devices have; a small one loads
+quickly (`desert_arena_-_faf_version.v0002` from FAF's vault). The game is played by taps on each device
+(`adb shell input tap`): each player's *Ready* box, then the host's *Launch Game*; a move is the orders panel's *Move*
+and, about a second later, the ground (a tap right after *Move* gave no order). Ctrl+Shift+F11
+(`adb shell input keycombination KEYCODE_CTRL_LEFT KEYCODE_SHIFT_LEFT KEYCODE_F11`) shows the game's network panel, each
+link's state, path (`direct (host/host)` on the emulators) and round trip. A player who leaves through the menu's
+*Exit to Windows* loses; the other's game reports its victory and the end, and its score screen's *Exit* ends it.
+
+A game's `IceMsg` is as long as its candidates make it, one host candidate for each address of the device and at most
+14 (libjuice's `MAX_HOST_CANDIDATES_COUNT`). An emulator has three; after `adb root`, eleven documentation addresses on
+its dummy interface make 14 and a CandidatesMessage of about 2.5 KB, which the game sends and the other game reads
+whole (The network) and connects with:
+
+```sh
+adb -s emulator-5554 shell 'for i in $(seq 1 11); do ip addr add 198.51.100.$i/32 dev dummy0; done'
 ```
 
 `faf_shell_tests` (`tests/shell`) pins the patched shell's rule for a key-down a handler took (`patches/README.md`,
