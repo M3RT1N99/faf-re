@@ -343,21 +343,30 @@ S22 Ultra the little cores.
 The FAF client is an app of its own (`com.faforever.rustclient`, signed by another key), which starts the game across
 apps and reads its status. This app stays the game: the engine, the SCFA import, FAF's game files and the test cards.
 
-**Who may.** Apps signed by a certificate whose SHA-256 is on the allowlist, in one place (`Callers.ALLOWED`): this PC's
-debug key, which also signs this app; the client's release certificate comes there once it has one. Android 9 and later
-answer with `PackageManager.hasSigningCertificate(package, sha256, CERT_INPUT_SHA256)`, which also knows a rotated key's
-past, earlier ones with `GET_SIGNATURES`. A permission with `knownSigner` would say the same from Android 12 on only. The
+**Who may.** Apps of one signer, whose certificate's SHA-256 is on the allowlist, in one place (`Callers.ALLOWED`): this
+PC's debug key, which also signs this app; the client's release certificate comes there once it has one. Android 9 and
+later answer with `PackageManager.hasSigningCertificate(package, sha256, CERT_INPUT_SHA256)`, which also knows a rotated
+key's past and gives an app of more than one signer none of theirs (a key's rotation is a single signer's); earlier ones
+with `GET_SIGNATURES`, by the same rule. A permission with `knownSigner` would say the same from Android 12 on only. The
 client declares `<queries><package android:name="io.github.m3rt1n99.fafre" /></queries>`, without which Android 11 and
 later hide the status provider from it.
 
-**The start.** `startActivityForResult(new Intent("io.github.m3rt1n99.fafre.action.PLAY").setPackage("io.github.m3rt1n99.fafre"), ...)`,
-or the Activity Result API: a start that waits for a result, as Android names its caller to no other (`CALLER`).
-`LaunchGameActivity` takes it, the only way in from outside, with no UI: it checks the caller, then the extras, starts
-`GameActivity` (not exported) with `FLAG_ACTIVITY_FORWARD_RESULT`, so that the game's result goes straight to the
-client, and ends. Its own refusals end with the same result.
+**The start.** Right before it, the client asks the status provider for a token:
+`getContentResolver().call(Uri.parse("content://io.github.m3rt1n99.fafre.status"), "play_token", null, null)`, whose
+answer has it as the String `token`; an app that is not allowed gets a null answer. Then
+`startActivityForResult(new Intent("io.github.m3rt1n99.fafre.action.PLAY").setPackage("io.github.m3rt1n99.fafre").putExtra("io.github.m3rt1n99.fafre.extra.TOKEN", token), ...)`,
+or the Activity Result API: a start that waits for a result, as Android names its caller to no other (`CALLER`). That
+name is the app the result goes to, which another app that the client started for a result (a file picker, say) could
+borrow by forwarding PLAY with extras of its own (`FLAG_ACTIVITY_FORWARD_RESULT`): the provider sees the app that asks
+it, so a token says that the start is an allowed app's. One start spends a token, within 60 s of its call; a start
+without one, or with one spent or older, gets `CALLER`. `LaunchGameActivity` takes the start, the only way in from
+outside, with no UI: it checks the caller and the token, then the extras, starts `GameActivity` (not exported) with
+`FLAG_ACTIVITY_FORWARD_RESULT`, so that the game's result goes straight to the client, and ends. Its own refusals end
+with the same result.
 
 | Extra `io.github.m3rt1n99.fafre.extra.` | Type | What |
 |---|---|---|
+| `TOKEN` | String | The status provider's `play_token` for this start, which it spends |
 | `GAME_VERSION` | int | The version the game plays, the lobby's or the replay's, whose files must be ready (no other: a lobby would refuse it or desync); without it the newest ready one |
 | `LAUNCHER_ARGUMENTS` | String[] | The launcher's switches, by the whitelist below; never split, a value is one element |
 | `FEATURED_MOD` | String | `faf`, also when absent; any other gives `NO_GAME_FILES` for now |
@@ -367,12 +376,14 @@ client, and ends. Its own refusals end with the same result.
 | `MAP` | String `^[a-z0-9_.-]{1,64}$`, not `.` or `..` | FAF's map folder name: unless the SCFA import or the game's vault has it, it comes from `content.faforever.com/maps/<MAP>.zip` into `game/vault/maps` before the program starts |
 | `MODS` | String[] of uids, `^[0-9A-Za-z_.-]{8,64}$`, not first a `.`, each once | The mods the game needs in `game/vault/mods`: a folder there whose `mod_info.lua` has the uid, in any case, or else its file |
 | `MOD_FILES` | String[], one for each of `MODS` in its order | That mod version's file in `content.faforever.com/mods/`, the last segment of FAF's `downloadUrl`: `<name>.zip`, no folder. It must hold the uid; it takes the place of a folder of its name |
-| the intent's data (REPLAY) | `content://` URI, with `FLAG_GRANT_READ_URI_PERMISSION` | A replay in SCFA's format, copied into the app's cache before the program, which plays it (`/replay <copy>`); `GAME_VERSION` names its version, `MAP` its map where the phone may not have it |
+| the intent's data (REPLAY) | `content://` URI, with `FLAG_GRANT_READ_URI_PERMISSION` on the start | A replay in SCFA's format, copied into the app's cache before the program, which plays it (`/replay <copy>`); `GAME_VERSION` names its version, `MAP` its map where the phone may not have it. Android lets a start with the grant through only when its app may read the URI itself, and the game reads nothing for a start without it, with access of its own |
 
 Another extra of the prefix, and an extra of another type, give `ARGUMENTS`. Map and mods come as the replay test's do,
 one request a second, a download tried again for about ten minutes when the network drops; the game's activity shows
-the step and Back cancels it. `MODS` names uids, as FAF's lobby does, and FAF's content server has no file by uid, nor
-its API without a login: so the client, which has both, names the files.
+the step and Back cancels it, also while a zip unpacks. A zip unpacks beside its download, out of the vault, which its
+folder joins whole: a process that ends meanwhile leaves no half of a map or mod there. `MODS` names uids, as FAF's lobby
+does, and FAF's content server has no file by uid, nor its API without a login: so the client, which has both, names
+the files.
 
 The whitelist of `LAUNCHER_ARGUMENTS`: each switch spelled so, once, followed by its value. Anything else gives
 `ARGUMENTS`: any other switch, among them `/init`, `/log`, `/prefs`, `/fullscreen`, `/nomovie`, `/notelemetry`,
@@ -400,7 +411,7 @@ which ends its process, or any other end of the process there, which takes the a
 
 | `failure` | Why |
 |---|---|
-| `CALLER` | The caller is not allowed, or did not wait for a result |
+| `CALLER` | The caller is not allowed, did not wait for a result, or gave no token of the game's (none, spent, or older than 60 s) |
 | `ARGUMENTS` | An extra or a switch is not what the contract says |
 | `NO_GAME_FILES` | No ready FAF game files, none of `GAME_VERSION`, or a featured mod other than `faf` |
 | `NO_SCFA`, `NO_FONTS` | No SCFA imported, or the import has no fonts |
@@ -410,8 +421,8 @@ which ends its process, or any other end of the process there, which takes the a
 | `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name |
 | `NO_MOD` | A mod of `MODS` is not on the phone, and `MOD_FILES` names none of it, FAF has no such file, or it holds another uid |
 | `DOWNLOAD` | A download of the map or a mod failed: the network, after its tries, or the phone's storage |
-| `REPLAY` | The data is no `content://` URI of another app's, the launcher did not grant reading it, or it could not be copied (empty, more than 256 MB) |
-| `CANCELLED` | Back ended the start while it fetched or copied what the game needs |
+| `REPLAY` | The data is no `content://` URI of another app's, the start does not grant reading it (`FLAG_GRANT_READ_URI_PERMISSION`), or it could not be copied (empty, more than 256 MB) |
+| `CANCELLED` | Back ended the start while it fetched, unpacked or copied what the game needs |
 
 The game connects to the `/gpgnet` port; when nothing listens there, or the launcher closes the connection before its
 `CreateLobby`, the game says so in a box and ends after its OK (`RESULT_CANCELED`), unless it was started with `/rejoin`
@@ -421,10 +432,11 @@ device holds no key for is refused in a box of the rejoin's own and goes on to F
 
 **The status.** `content://io.github.m3rt1n99.fafre.status/game_data` and `/last_game` (`StatusProvider`), read-only and
 for allowed callers only: a refused one gets the table's columns and no row; another table gives a null cursor. All
-columns come, whatever the projection. Each table's URI is notified when a job of the app's begins, takes its next step
-(every 2 s at most) or ends, when a game begins or its start fails, and when its end is found (by a query, or the Game
-card); the program's end itself reaches the launcher as its result, after which `last_game` has it. No column has a
-player's name or a path.
+columns come, whatever the projection. No change is notified: Android lets any app that sees the provider observe its
+URIs, whatever a query answers it, and a notification would tell it when the player plays. The launcher queries when it
+needs to know: before a start, after its result, when it comes back to the front, and every 2 s or so while
+`job_running` is 1; the program's end reaches it as its result, after which `last_game` has it. No column has a player's
+name or a path.
 
 | `game_data` (one row) | |
 |---|---|
@@ -457,10 +469,10 @@ and no URI (the intent's data is not read), and no job starts without the player
 Another value or type of `STEP`, or another extra of the prefix, ends the screen at once with `RESULT_FIRST_USER`,
 `failure` `ARGUMENTS` and its `message`. Else the result is `RESULT_CANCELED`, whatever the player did there: the caller
 reads what came of it in `game_data` (`scfa_archives`, `scfa_fonts`, `game_versions`), as it does before a start. An
-import or a download goes on after Back in the app's service, one job at a time (`job_running`, `job_step`, notified at
-each step and at its end), and the screen's Cancel ends it. Started from the caller's activity the screen opens in its
-task, and Back returns there; with `FLAG_ACTIVITY_NEW_TASK` it opens in a task of its own, which a later start brings
-back with the new start's step.
+import or a download goes on after Back in the app's service, one job at a time (`job_running`, `job_step`, which the
+caller polls), and the screen's Cancel ends it; an import gives back the grant on its folder or ZIP when it ends. Started
+from the caller's activity the screen opens in its task, and Back returns there; with `FLAG_ACTIVITY_NEW_TASK` it opens in
+a task of its own, which a later start brings back with the new start's step.
 
 The ZIP's import (`ScfaZip`) takes what the folder import takes, by its rules (`ScfaImport`):
 
@@ -481,8 +493,8 @@ The ZIP's import (`ScfaZip`) takes what the folder import takes, by its rules (`
   every 64 MB, and stops when what it still has to write no longer fits.
 - **All or nothing**: the files go to `scfa/.zip-import/`, and from there to their places once the whole ZIP has been
   read. A refusal, a Cancel or a failure leaves `scfa/` as it was, and what an import whose process ended left there goes
-  at the next. The progress shows as the folder import's: the step (*Checking the ZIP*, *Skipping*, *Importing* a file's
-  name, no path) and the log's lines.
+  as the next import begins, a ZIP's or the folder's, before its room is checked. The progress shows as the folder
+  import's: the step (*Checking the ZIP*, *Skipping*, *Importing* a file's name, no path) and the log's lines.
 
 The JVM tests (`ScfaZipTest`) make the ZIPs themselves, a deflated one with a skipped entry of more than 4 GB among them.
 The stored one is 4 GB on the disk, and runs where `FAFRE_ZIP64_DIR` names a folder for it:

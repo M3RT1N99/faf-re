@@ -476,3 +476,47 @@ setup):
 - **Not shown**: a phone; the whole SCFA folder as one ZIP of some 9 GB (the emulator has 1.3 GB free); a stored ZIP over
   4 GB on Android; the move into place failing half way (read only: the log says how many files scfa/ has then).
 - **Next**: the client's release certificate on the allowlist.
+
+*2026-11-19, C5's start and setup from the FAF client's app, the review's fixes (E2b):* a review of parts 1 and 2 found
+seven faults, each checked against the code and shown on the emulator (fafre_api36, x86_64, read-only) before its fix,
+with throwaway callers outside the repository: one signed by this PC's debug key, one by a throwaway key, one by both.
+The contract's changes are in the [README](README.md) (The launcher's contract):
+- **The start's app**: Android names a start's caller only as the app its result goes to (`getCallingPackage`), which an
+  app the client starts for a result can borrow: the refused caller, started for a result by the allowed one, forwarded
+  PLAY with `GAME_VERSION` 1 (`FLAG_ACTIVITY_FORWARD_RESULT`), and the game's activity checked its extra. Each start now
+  carries a token that the status provider's call `play_token` gives an allowed app, as a provider sees the app that
+  asks (`PlayTokens`: one start, within 60 s); the forwarded start gets `CALLER`.
+- **A replay its launcher cannot read**: the trampoline passed on a URI that the app itself could read. The refused caller
+  opened the setup screen with a read grant on its replay, and the allowed one's start of that URI without a grant made
+  the game copy it. A start with data now needs `FLAG_GRANT_READ_URI_PERMISSION` itself, which Android lets through only
+  for an app that may read the URI (the allowed one's start with the grant on the other's URI failed in its own
+  `startActivity`). The review's way, `checkUriPermission` for the launcher's uid, sees explicit grants only and would
+  refuse a launcher's own provider. The folder import gives back its lasting grant at its end, as the ZIP's did.
+- **The status's observers**: Android lets any app that sees the provider observe its URIs, whatever a query answers it:
+  the refused caller's observer heard a failed start. The provider notifies nothing now, and the launcher queries.
+- **Two signers**: `hasSigningCertificate` gives an app of more than one signer none of theirs (the caller signed by both
+  keys got `CALLER`), while the `GET_SIGNATURES` path before Android 9 took any one, and `CallersTest`'s fake said yes on
+  9 and later too. One rule on every version now, one signer on the allowlist, and the fake answers as Android does.
+- **A ZIP's leftover**: what an import whose process ended left in `scfa/.zip-import` went only once a later ZIP passed its
+  room check, which the leftover's own room failed for good: 1.15 GB of it there, and a ZIP of 60 MB was refused for
+  160 MB. Either import drops it first now, and the same ZIP came in.
+- **Back while a zip unpacks**: Back during the unpack of scmp_029 (28 MB) was lost, and the game started. The unpack
+  checks the Cancel now, and the preparation after each fetch and at its end: `CANCELLED`, with nothing of the map left.
+- **Half a mod in the vault**: a mod's zip unpacked in `vault/mods/.unzip-<uid>`, where a kill -9 of the game while it
+  unpacked M28AI left 40 of its files, for FAF's mod scan and the next fetch. A zip unpacks beside it in `downloads/` now,
+  and its folder joins the vault whole: after the same kill the vault had nothing of it, and the next start brought M28AI
+  whole (its 110 files).
+- **Checked again**: with its token the allowed caller reached FAF's menu with `/numgames 3`, got `RUNNING` beside it and
+  `RESULT_CANCELED` at its end; `CALLER` without a token, for the refused caller (no token, no rows) and for a start that
+  waited for no result; `ARGUMENTS` for `/init` and a `/gpgnet` host off the loopback; `NO_GAME_FILES` for `FEATURED_MOD`
+  `coop`; the replay with its map fetched played on Open Palms; `MODS` with `MOD_FILES` brought M28AI; a map FAF has not
+  gave `NO_MAP`; with the network off Back gave `CANCELLED` 0.34 s later; `REJOIN_OFFER`'s switches came after the
+  launcher's, and the GPGNet box ended the game with `RESULT_CANCELED` and `the program returned 0 after 43.0 s`.
+- **Tests**: the app's unit tests (471, 3 skipped) pin the tokens, the one-signer rule on both sides of Android 9, the
+  replay's grant, the leftover's room, Back after a download's last byte and where a zip unpacks; each fails with its
+  fix taken out. `faf_griff_tests` (140), `faf_net_tests` (23), `faf_shell_tests` (5) and `faf_movie_tests` (three movies)
+  pass on the emulator; both native presets build.
+- **Not shown**: a phone; Android before 9 (the JVM tests pin it). Back during a stalled connection still acts only at its
+  read's timeout (60 s), as before. A replay whose map the phone has not, started without `MAP`, ends in a native crash
+  (SIGSEGV after the engine's `Error in background task: No such file or directory`): the client names the map.
+- **Next**: the token on the client's side; the client's release certificate on the allowlist.
