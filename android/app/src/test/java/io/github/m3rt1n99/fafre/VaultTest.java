@@ -26,7 +26,8 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * The map and the mods a launcher's start names, into the game's vault (Preparation): from FAF's servers when the phone has
- * not got them, checked against the name and the uid asked for, and each failure as the start's code.
+ * not got them, checked against the name and the uid asked for, and each failure as the start's code. Also M28AI, into the
+ * replay test's cache.
  */
 public class VaultTest {
     private static final String UID = "e7846e9b-23a4-4b95-ae3a-fb69b289a585";
@@ -164,6 +165,8 @@ public class VaultTest {
         assertFalse("the older version is gone", new File(mod, "old.lua").exists());
         assertEquals(UID, Vault.modUid(new File(mod, "mod_info.lua")));
         assertEquals(Collections.singletonList("M28AI"), Arrays.asList(mods.list()));
+        // The older version left the vault whole and went beside the zip, which is gone too.
+        assertEquals("nothing in downloads", Collections.emptyList(), Arrays.asList(storage.downloads().list()));
         // There now, in any case: no download, and no file needed.
         assertEquals(mod, Vault.fetchMod(storage, mods, UID.toUpperCase(java.util.Locale.ROOT), null, LOG, server, null));
         assertEquals(1, server.downloaded.size());
@@ -240,6 +243,27 @@ public class VaultTest {
         assertTrue("whole", new File(mod, "lua/ai.lua").isFile());
         assertFalse(unpacked.exists());
         assertFalse(zip.exists());
+    }
+
+    @Test
+    public void aCancelWhileM28AIUnpacksLeavesNoneTheReplayTestsNextRunTakes() throws IOException {
+        // The replay test's cache takes any folder with a mod_info.lua for whole, and its Cancel stops an unpack: one right
+        // after the download leaves nothing there, and the next run fetches M28AI again.
+        Storage storage = new Storage(folder.getRoot());
+        Server server = new Server();
+        server.zips.put(Http.MOD_URL + "m28ai.v0247.zip", entries("M28AI/mod_info.lua", modInfo(UID), "M28AI/lua/ai.lua", "x"));
+        server.backAfterLastByte = true;
+        assertThrows(Cancellation.Cancelled.class, () -> Vault.m28(storage, 247, LOG, server));
+        assertEquals("nothing in the cache", Collections.emptyList(), Arrays.asList(storage.m28().list()));
+
+        Cancellation.reset();
+        server.backAfterLastByte = false;
+        File mod = Vault.m28(storage, 247, LOG, server);
+
+        assertEquals(new File(storage.m28(), "m28ai.v0247/M28AI"), mod);
+        assertTrue("whole", new File(mod, "lua/ai.lua").isFile());
+        assertEquals(2, server.downloaded.size());
+        assertEquals("nothing in downloads", Collections.emptyList(), Arrays.asList(storage.downloads().list()));
     }
 
     @Test

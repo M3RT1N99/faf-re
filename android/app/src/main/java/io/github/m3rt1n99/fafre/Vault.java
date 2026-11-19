@@ -20,9 +20,10 @@ import java.util.zip.ZipInputStream;
  * The maps and M28AI versions a replay needs, as tools/parity-data/shard.py gets them: a map
  * the user's SCFA install has (maps/, mounted by the init file) is used from there; any other
  * comes from FAF's map vault into a per-run vault folder. The game's own vault gets the map and
- * the mods a launcher's start names (Preparation) the same way. Their zips unpack beside them in
- * downloads/, out of the vaults, which a map's or a mod's folder joins whole: a process that ends
- * meanwhile leaves no half of one where the game or the next fetch would take it for whole.
+ * the mods a launcher's start names (Preparation) the same way. Their zips, M28AI's too, unpack
+ * beside them in downloads/, out of the vaults and the cache, which a folder joins whole and an
+ * older one of its name leaves whole (place): a process that ends meanwhile, or a Cancel, leaves no
+ * half of one where the game or the next fetch would take it for whole.
  */
 final class Vault {
     /** FAF has no such map or mod: its file holds none of the name or uid asked for. */
@@ -99,10 +100,7 @@ final class Vault {
                 throw new Missing(file + " holds the mod " + held + ", not " + uid);
             }
             File path = new File(mods, found.equals(raw) ? uid : found.getName());
-            Storage.deleteTree(path);
-            if (!found.renameTo(path)) {
-                throw new IOException("cannot move " + found + " to " + path);
-            }
+            place(found, path, zip);
             return path;
         } finally {
             Storage.deleteTree(raw);
@@ -130,8 +128,11 @@ final class Vault {
         return uid.find() ? uid.group(1) : null;
     }
 
-    /** The cached M28AI mod folder of {@code version}, downloaded when missing. */
-    static File m28(Storage storage, int version, GameFiles.Log log) throws IOException {
+    /**
+     * The cached M28AI mod folder of {@code version}, downloaded when missing. The cache takes any folder with a mod_info.lua
+     * for whole, so its zip unpacks beside it as the vaults' do, which the replay test's Cancel can stop half way.
+     */
+    static File m28(Storage storage, int version, GameFiles.Log log, Http.Downloads downloads) throws IOException {
         String tag = String.format(Locale.ROOT, "m28ai.v%04d", version);
         File dir = new File(storage.m28(), tag);
         File found = findModInfo(dir);
@@ -140,23 +141,46 @@ final class Vault {
         }
         File zip = new File(storage.downloads(), tag + ".zip");
         log.step("Downloading M28AI v" + version);
-        Http.download(Http.MOD_URL + tag + ".zip", zip, null);
+        downloads.download(Http.MOD_URL + tag + ".zip", zip, null);
+        File raw = unpacked(zip);
         try {
-            Storage.deleteTree(dir);
-            unzip(zip, dir);
+            Storage.deleteTree(raw);
+            unzip(zip, raw);
+            if (findModInfo(raw) == null) {
+                throw new IOException(tag + ".zip holds no mod_info.lua");
+            }
+            place(raw, dir, zip);
         } finally {
+            Storage.deleteTree(raw);
             zip.delete();
         }
-        found = findModInfo(dir);
-        if (found == null) {
-            throw new IOException(tag + ".zip holds no mod_info.lua");
-        }
-        return found;
+        return findModInfo(dir);
     }
 
     /** Where {@code zip}'s files unpack: beside it, out of the vaults. */
     static File unpacked(File zip) {
         return new File(zip.getPath() + ".unpacked");
+    }
+
+    /**
+     * {@code source}, unpacked beside {@code zip}, as {@code path} in a vault or the cache, in place of a folder of that name
+     * there: by renames alone, the older folder first out beside the zip, where it goes, so that a process that ends
+     * meanwhile leaves there the older folder or the new one whole, or neither. A deletion in place would leave half of the
+     * older one, its mod_info.lua perhaps among what is left.
+     */
+    private static void place(File source, File path, File zip) throws IOException {
+        File older = new File(zip.getPath() + ".older");
+        Storage.deleteTree(older);
+        if (path.exists() && !path.renameTo(older)) {
+            throw new IOException("cannot move " + path + " to " + older);
+        }
+        try {
+            if (!source.renameTo(path)) {
+                throw new IOException("cannot move " + source + " to " + path);
+            }
+        } finally {
+            Storage.deleteTree(older);
+        }
     }
 
     /**
@@ -180,11 +204,7 @@ final class Vault {
                 throw new Missing("no one map folder " + folder + " in the map zip (" + found.size() + " with a scenario file)");
             }
             File path = new File(mapsDir, folder);
-            Storage.deleteTree(path);
-            File source = named.size() == 1 ? named.get(0) : found.get(0);
-            if (!source.renameTo(path)) {
-                throw new IOException("cannot move " + source + " to " + path);
-            }
+            place(named.size() == 1 ? named.get(0) : found.get(0), path, zip);
             return path;
         } finally {
             Storage.deleteTree(raw);

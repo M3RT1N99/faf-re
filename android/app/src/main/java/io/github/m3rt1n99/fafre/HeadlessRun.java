@@ -98,7 +98,7 @@ final class HeadlessRun {
         GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
         Vault.map(storage, info.map, log);
         if (info.m28 != null) {
-            Vault.m28(storage, info.m28, log);
+            Vault.m28(storage, info.m28, log, Http.WITH_RETRIES);
         }
         replay.state = "ready";
         TestState.touch();
@@ -122,7 +122,7 @@ final class HeadlessRun {
         // Its game files, map and M28AI (fetch put them in the caches).
         File gameDir = GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
         File map = Vault.map(storage, info.map, log);
-        File mod = info.m28 != null ? Vault.m28(storage, info.m28, log) : null;
+        File mod = info.m28 != null ? Vault.m28(storage, info.m28, log, Http.WITH_RETRIES) : null;
 
         File run = new File(storage.runs(), String.valueOf(replay.id));
         Storage.deleteTree(run);
