@@ -1,8 +1,8 @@
 diff --git a/src/moho/ui/CUIWorldViewEvents.cpp b/src/moho/ui/CUIWorldViewEvents.cpp
-index b9aa5fb..2164ea5 100644
+index b9aa5fb..3259f90 100644
 --- a/src/moho/ui/CUIWorldViewEvents.cpp
 +++ b/src/moho/ui/CUIWorldViewEvents.cpp
-@@ -6,6 +6,88 @@
+@@ -6,6 +6,90 @@
  #include "platform/Window.h"
  #endif
  
@@ -18,6 +18,8 @@ index b9aa5fb..2164ea5 100644
 +  std::atomic<bool> sPlacingBuilding{false};
 +  std::atomic<bool> sGamePlaying{false};
 +  std::atomic<moho::CUIWorldView*> sMainWorldView{nullptr};
++  /** A touch host's answer whether the press the world view takes is a finger's (UI_SetFingerPressQuery); none: a mouse's. */
++  std::atomic<bool (*)()> sFingerPress{nullptr};
 +
 +  /** What the world's next press would be for, if anything: an order, a ping, a building. Ask only with a world view up. */
 +  [[nodiscard]] fa::string CommandMode()
@@ -91,7 +93,7 @@ index b9aa5fb..2164ea5 100644
  namespace moho
  {
    bool ren_BuildGhostsPerBeat = true;
-@@ -19,6 +101,103 @@ namespace moho
+@@ -19,6 +103,112 @@ namespace moho
        &ren_BuildGhostsPerBeat
      );
    } // namespace
@@ -100,6 +102,15 @@ index b9aa5fb..2164ea5 100644
 +  bool UI_PlacingBuilding() noexcept
 +  {
 +    return sPlacingBuilding.load();
++  }
++
++  /**
++   * A touch host's answer to whether the press the world view takes now is a finger's, which in build mode only puts the
++   * building's ghost (HandleEvent). Where no host gave one, every press is a mouse's, as on the PC. On the program's thread.
++   */
++  void UI_SetFingerPressQuery(bool (*const query)()) noexcept
++  {
++    sFingerPress.store(query);
 +  }
 +
 +  /** Whether a game goes on behind the game's UI, as the last frame saw it: not in the menus, and not on the score screen. */
@@ -195,7 +206,7 @@ index b9aa5fb..2164ea5 100644
  } // namespace moho
  
  namespace
-@@ -896,6 +1075,25 @@ void moho::UIBuildDragger::DragRelease(
+@@ -896,6 +1086,25 @@ void moho::UIBuildDragger::DragRelease(
    delete this;
  }
  
@@ -221,7 +232,7 @@ index b9aa5fb..2164ea5 100644
  /**
   * Address: 0x00822F60 (FUN_00822F60)
   *
-@@ -1853,9 +2051,6 @@ moho::CUIWorldView::CUIWorldView(
+@@ -1853,9 +2062,6 @@ moho::CUIWorldView::CUIWorldView(
        if (!params["ui_SelectTolerance"].IsNil()) {
          moho::ui_SelectTolerance = params["ui_SelectTolerance"].GetNumber();
        }
@@ -231,7 +242,7 @@ index b9aa5fb..2164ea5 100644
        if (!params["ui_ExtractSnapTolerance"].IsNil()) {
          moho::ui_ExtractSnapTolerance = params["ui_ExtractSnapTolerance"].GetNumber();
        }
-@@ -1928,6 +2123,13 @@ moho::CUIWorldView::~CUIWorldView()
+@@ -1928,6 +2134,13 @@ moho::CUIWorldView::~CUIWorldView()
    }
  
    ren_Viewport->RemoveWorldView(this);
@@ -245,7 +256,7 @@ index b9aa5fb..2164ea5 100644
  }
  
  /**
-@@ -3257,7 +3459,11 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3257,7 +3470,11 @@ bool moho::CUIWorldView::HandleEvent(
    // Ordering matters: this test sits ahead of the left-press one, and a
    // double-click on any other button falls straight through into the
    // right-double-click arm at 0x00870F1B.
@@ -258,7 +269,7 @@ index b9aa5fb..2164ea5 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3285,7 +3491,7 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3285,7 +3502,7 @@ bool moho::CUIWorldView::HandleEvent(
    }
  
    // --- left-button press (0x00870CA4) ------------------------------------
@@ -267,7 +278,21 @@ index b9aa5fb..2164ea5 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3428,6 +3634,13 @@ void moho::CUIWorldView::Frame(
+@@ -3303,6 +3520,13 @@ bool moho::CUIWorldView::HandleEvent(
+ 
+     case COMMOD_Build:
+     case COMMOD_BuildAnchored:
++      // Android client build: a finger has no hover. Nothing shows where a building would go until
++      // the finger is down, and then the finger covers it. So a finger's press only puts the building's
++      // ghost there, and the app sends a mouse's press for a finger that taps the ghost (TouchInput).
++      // A mouse places at once as ever: only a touch host says that a press is a finger's.
++      if (const auto fingerPress = sFingerPress.load(); fingerPress != nullptr && fingerPress()) {
++        return true;
++      }
+       func_NewUIBuildDragger(GetRootFrame(), mWldSession, &eventData, mCamera.get(), &mBuildDrag);
+       return true;
+ 
+@@ -3428,6 +3652,13 @@ void moho::CUIWorldView::Frame(
  {
    func_ProcessMouseScrubbing();
  

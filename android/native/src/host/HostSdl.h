@@ -52,6 +52,10 @@ namespace host
 
   // --- For the engine and the app -----------------------------------------------------------------------------------
 
+  /// On the program's thread, before the engine reads its first event: the engine asks the host whether a press is a
+  /// finger's (moho::UI_SetFingerPressQuery, patches/src/moho/ui/CUIWorldViewEvents.cpp.patch).
+  void Install();
+
   /// The game's thread: whether the press the engine takes now is a finger's (TouchButton), which in build mode only
   /// puts the building's ghost (patches/src/moho/ui/CUIWorldViewEvents.cpp.patch).
   [[nodiscard]] bool PressFromFinger();

@@ -42,6 +42,7 @@
 
 #include "GameAndroid.h"
 #include "ScreenKeyboardAndroid.h"
+#include "../host/HostSdl.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/misc/StartupHelpers.h"
 
@@ -145,6 +146,7 @@ namespace
     (void)SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     (void)SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
     screenkeyboard::Install();
+    host::Install();
     // Logged to until the process ends, which runs no destructors.
     static ReportLines reportLines;
     program.exitCode = SDL_main(program.argc, program.argv);

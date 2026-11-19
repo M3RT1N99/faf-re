@@ -16,6 +16,11 @@
 #include "platform/Window.h"
 #include "platform/sdl/WindowSdlPlatform.h"
 
+namespace moho
+{
+  void UI_SetFingerPressQuery(bool (*query)()) noexcept;
+} // namespace moho
+
 namespace
 {
   using platform::window::Event;
@@ -238,6 +243,11 @@ void host::CursorPos(int& x, int& y)
 {
   x = gCursorX;
   y = gCursorY;
+}
+
+void host::Install()
+{
+  moho::UI_SetFingerPressQuery(&host::PressFromFinger);
 }
 
 bool host::PressFromFinger()
