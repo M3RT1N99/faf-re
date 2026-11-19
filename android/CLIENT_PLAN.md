@@ -650,3 +650,44 @@ by the engine's and FAF's sources. The contract's changes are in the [README](RE
 - **Open**: an id of one or two digits stays where no shape gives it, as in native mode's `NETLINK:` lines, which the
   Android build does not have yet (an id of FAF's size there goes). The refused caller was not tried again: the
   provider's checks did not change.
+
+*2026-11-19, C5's own peer links in native mode (E3, part 1):* the FAF client's app will start the game with
+`/gpgnet 127.0.0.1:<port> /nativenet`, and the game then runs every peer link itself
+(`docs/LAUNCHER_NATIVE_NETWORK.md`; the launcher's side in the [README](README.md), The launcher's contract). The
+Android build makes upstream's links now, and the stand-in that kept them off is gone ([native README](native/README.md),
+The network):
+- **The build**: libjuice 1.7.4, libdatachannel 0.24.6 with usrsctp, plog and Mbed TLS 3.6.7, and `src/netlink`, by
+  upstream's recipes (`cmake/deps`) at the pins of `cmake/FafDependencies.cmake`, as the Linux client adds them;
+  `moho/net/NetlinkPeers.cpp` is compiled as upstream has it, and `src/net/NetlinkPeersAndroid.cpp` went. WebRTC
+  builds whole with the NDK: Mbed TLS comes from source, and its media part (SRTP) is off upstream as well, so nothing is
+  left out; it stays off by default (`net_NativeNetWebRtc 0`). The licences, MPL-2.0 (libjuice, libdatachannel),
+  BSD-3-Clause (usrsctp), MIT (plog) and Apache-2.0 (Mbed TLS, which WebRTC's DTLS needs), are in the app's
+  `assets/licenses`.
+- **What the platform needs**: sockets, threads and `getaddrinfo` are bionic's, as on Linux. libjuice leaves
+  `getifaddrs` out on Android (`NO_IFADDRS`): its host candidates come from `SIOCGIFCONF`, the IPv4 addresses, and from
+  the IPv6 address of the default route; it binds every interface. Its random bytes on Android, STUN's transaction ids
+  and ICE's tie-breaker, were `random()` seeded by the clock, as its `getrandom` leaves Android out: the patched
+  `random.c` takes bionic's `arc4random_buf` ([patches README](native/patches/README.md)). `Game.networkInUse` counts
+  the links' transports too (`NET_PeerTransportsActive`), so that `NetworkGameService` keeps the network while a link is
+  up, also without a UDP connector.
+- **Shown on the emulator** (fafre_api36, x86_64, two read-only instances, whose Wi-Fi netsim puts in one network): a
+  game started with `/gpgnet 127.0.0.1:<port> /nativenet` said `GameState Idle`, took `IceServers` (FAF's list: two server
+  addresses of three URLs, as TURN over TCP is skipped; the API's session object with the list under `servers` as well)
+  and `CreateLobby`, answered `GameState Lobby` within 40 ms, and its log has `NETLINK: native mode`. With
+  `gpgnet_host.py` as both games' launcher and as FAF's lobby server, one game hosted and the other joined it: each
+  gathered three host candidates, the links connected over the emulators' IPv6 Wi-Fi addresses, took each other for
+  ours, moved onto the encrypted lane, and the host's lobby seated the other player (`PlayerOption`) about 2 s after
+  `JoinGame`; with an ICE server named `localhost` that never answers, which libjuice resolved and then waited for, about
+  10 s after it. The network service ran in both games.
+- **Tests**: upstream's `faf_netlink_tests` (13: the JSON and the signalling against the Java adapter's, two links over
+  the device's addresses with 10,000 datagrams each way, the lane encrypted and plain, a reconnect from either side, a
+  silent ICE server, our peers' detection, the duplication and the WebRTC data channel) and `faf_net_tests` (25) pass on
+  the x86_64 emulator; the app's unit tests (498, 3 skipped); both native presets build.
+- **Not shown**: a phone and arm64 beyond the build; a game played over the links (the lobby only); ICE servers that
+  answer (server-reflexive and relayed candidates); a Java adapter at the other end; WebRTC in the game; the FAF client
+  as the launcher.
+- **Open**: `.github/workflows/android-app.yml` runs three native tests on its arm64 runner; `faf_netlink_tests` could be
+  the fourth (outside `android/`, not changed). The patch of libjuice's `random.c` is a candidate for libjuice. The
+  game's logs now have native mode's `NETLINK:` lines: the scrubber (`game_logs`) took both games' names and every
+  address out of them, the selected pairs' and the peers' engine addresses too, in a throwaway JVM check over the two
+  engine logs; their ids of one digit stay, as the scrubber leaves such ids where no shape gives them.

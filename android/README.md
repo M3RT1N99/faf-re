@@ -293,7 +293,9 @@ the game data they imported. Everything lives in the app's external files folder
     game is running*, and a tap on it brings the game back. In the back the game's window is minimized: it draws nothing,
     and its simulation and network go on, also while a game that the host launched loads.
     - The source is the transport (`Game.networkInUse`): a UDP connector's socket, on SDL's activity the engine's count
-      of UDP connectors with their socket open (`NET_OpenUDPConnectors`, `native/README.md`). A skirmish has none (`LOBBY: Game
+      of UDP connectors with their socket open (`NET_OpenUDPConnectors`, `native/README.md`), or in native mode
+      (`/nativenet`) a peer link of the game's own, the engine's count of the links' transports
+      (`NET_PeerTransportsActive`). A skirmish has none (`LOBBY: Game
       port 0[None]`) and starts no service, nor does the LAN screen's search for games, whose list has no use for the
       network in the back. The service goes within a second of the socket's end (leaving a lobby, the program's end), about
       3 s after a game has ended, as the game over panel and the score screen hold the socket with nothing left to play,
@@ -434,6 +436,18 @@ box, and their results reach nobody ([native README](native/README.md), The netw
 device holds no key for is refused in a box of the rejoin's own and goes on to FAF's menu without GPGNet. A GPGNet
 argument may be as long as the launcher needs: the game reads an ICE server list or a peer's ICE message of 2 KB or
 more whole (checked up to 64 KB), where upstream's engine ended the connection.
+
+**Native mode.** With `/nativenet` the game runs every peer link itself, and the launcher starts no ICE adapter
+([LAUNCHER_NATIVE_NETWORK.md](../docs/LAUNCHER_NATIVE_NETWORK.md)). On the game's `GameState Idle` it sends
+`IceServers [json]`, the TURN and STUN servers (FAF's list of `{urls, username, credential}`, or the API's ICE session
+with that list under `servers`), and `CreateLobby [init mode, port, login, id, 1]` as before; `IceServers` again when
+the list changes, for the links that start after it. It passes the lobby server's `HostGame [map]`,
+`JoinGame [login, id]`, `ConnectToPeer [login, id, offer]` (`offer` an int, 1 or 0), `DisconnectFromPeer [id]` and
+`IceMsg [sender id, text]` to the game as the server sends them, and every message of the game's to the server, the
+game's `IceMsg [receiver id, text]` among them, which the server routes to that player. The game sends no link states:
+they are in its log (`NETLINK:`). `/nativenetrelay` keeps the links to relayed candidates, the client's *force relay*.
+Two games on two emulators played it with the PC's script as their launchers and the lobby server
+([native README](native/README.md), Tests).
 
 **The status.** `content://io.github.m3rt1n99.fafre.status/game_data` and `/last_game` (`StatusProvider`), read-only and
 for allowed callers only: a refused one gets the table's columns and no row; another table gives a null cursor. All

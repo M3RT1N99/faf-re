@@ -20,7 +20,8 @@ The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) tak
 The engine's dependencies come first, once, as for any engine build:
 `cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;vulkan;ffmpeg" -P cmake/FafDependencies.cmake`
 (from the repository root). The client's own (SDL3, FAudio, FreeType, msdfgen, DirectX-Headers,
-DirectXTex, DirectXMath, stb, Dear ImGui) come with the configure, from the same script.
+DirectXTex, DirectXMath, stb, Dear ImGui, and the peer links' libjuice, libdatachannel, usrsctp, plog
+and Mbed TLS) come with the configure, from the same script.
 
 ## How it fits together
 
@@ -36,12 +37,14 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_client_imaging`, `faf_directxtex_android` | The engine's texture codec on DirectXTex's CPU code and stb, as the Linux client builds them |
 | `faf_movie_player` | The engine's movie player, whose decoder is on FFmpeg's headers |
 | `SDL3-static`, `FAudio-static`, `faf_imgui_sdl`, `faf_freetype`, `faf_msdfgen` | The client's libraries, by their recipes (`dependencies/SDL3`, `dependencies/FAudio`, `cmake/deps`) |
+| `faf_netlink`, `faf_juice`, `faf_datachannel`, `faf_usrsctp`, `faf_mbedtls` | The game's own peer links (`src/netlink`) on libjuice, and their WebRTC data channel on libdatachannel with usrsctp, Mbed TLS and plog's headers, by their recipes (`cmake/deps/libjuice`, `cmake/deps/libdatachannel`), as the Linux client builds them (see The network) |
 | `FFmpeg::FFmpeg` | FFmpeg's libraries (`ffmpeg/`, see Sound and movies) |
 | `faf_dxc` | `libdxcompiler.so`, DXC built from source (see The shader compiler) |
 | `fafgame` | `libfafgame.so`: all of the above, which the app's game activity loads (card 5 of the app) |
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 | `faf_griff_tests` | The touch scheme Griff's rules (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
+| `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
 
 The client's objects are compiled with the simulation's settings (`faf_sim_settings`) and the engine's
@@ -59,11 +62,10 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 | `src/app/GameMainAndroid.cpp` | The app's entry, `FafGameMain`, which the game's activity names to SDL: SDL's hints for a game on a phone (the program goes on in the back; landscape; no screen keyboard by itself), the program's path as `argv[0]`, the least display mode for a screen below 1024 x 768, the engine's main thread with the Windows program's 4 MB stack, and the process's end with the program; the report's lines (`FAF_GAME_REPORT`), with the engine's lines a tester needs: the GPU, each swap chain, how BC textures are sampled, the sound's output or its failure to start |
 | `src/app/ScreenKeyboardAndroid.cpp` | The phone's keyboard for FAF's text fields: SDL's, shown when a finger's press lands on a text field (the lobby's chat, a profile's name, the console's line) or FAF's Menu tab asks for it; it asks for plain keys (`TYPE_NULL`), which a keyboard that sends keys for them types as a keyboard does (one that commits text instead, as AOSP's does for most characters, still closes the console that its grave accent opens: `patches/README.md`, Shell.cpp), Back hides it before Back is Esc again, Enter goes to the game and then hides it. It watches SDL's events through the window layer's hook for the developer windows, which Android, with its one window, never makes |
 | `src/app/SoundAndroid.cpp` | The game's sound follows the activity and Android's audio focus, which the activity asks for: SDL's own pause of its output (`AAUDIO_PauseDevices`, `OPENSLES_PauseDevices`: the stream under the game's sound and a movie's, and with their patch the streams SDL builds while it lasts) in the back and while another app has the focus, on SDL's main thread; the report says when it pauses and when it plays again |
-| `src/app/GameJniAndroid.cpp` | The natives of the app's `Game` class on SDL's activity: the activity's front and its audio focus; for `NetworkGameService` whether a UDP connector has its socket open (`NET_OpenUDPConnectors`, the patched `CNetUDPConnector.cpp`) and whether a game is playing (`UI_GamePlaying`); the app's lines in the report |
+| `src/app/GameJniAndroid.cpp` | The natives of the app's `Game` class on SDL's activity: the activity's front and its audio focus; for `NetworkGameService` whether a UDP connector has its socket open (`NET_OpenUDPConnectors`, the patched `CNetUDPConnector.cpp`) or a peer link of the game's own is up (`NET_PeerTransportsActive`, see The network) and whether a game is playing (`UI_GamePlaying`); the app's lines in the report |
 | `src/app/UiPackageAndroid.cpp` | The UI package's globals (`../TOUCH_UI.md`) on SDL's activity until the touch schemes come back: the page, the fingers' owner and the HUD's factor go nowhere yet, the Menu tab's Keyboard brings the keyboard, and Griff is off (`FafreGriffWanted`), so its Lua leaves FAF's UI as it is; `src/host` registers these on the earlier host |
 | `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) on SDL, in place of `VulkanSurface.cpp`: the surface from `SDL_Vulkan_CreateSurface`, and for the patched `DeviceVulkan.cpp` the surface's coming and going (see The surface) |
 | `src/gal/BlockCompressionAndroid.cpp` | BC1-3 on the CPU, with WARP's decode, for GPUs without BC (`patches/README.md`), and an encoder after D3DX's |
-| `src/net/NetlinkPeersAndroid.cpp` | The in-engine peer links and native networking, off: netlink's libraries (libjuice, libdatachannel and theirs) are not built here yet |
 | `include/DirectXTexAndroid.h` | `aligned_alloc` for DirectXTex below Android 9: this build is for API 26 (`cmake/toolchains/android-pins.cmake`) |
 
 `src/host` (`GriffAndroid.cpp`, `MenuFingers.cpp`) is the touch scheme Griff's half in the engine on the
@@ -152,10 +154,26 @@ configure and make, which an Android cross build on Windows cannot.
 The game's own lobby, its games and the discovery of LAN games run on the engine's UDP transport on
 `platform::net` (`src/platform/posix/NetPosix.cpp`), as on Linux; `patches/README.md` has the lines of the
 transport that change. The app holds a `MulticastLock` while the activity is in front, without which
-Wi-Fi hands a phone no broadcasts. The in-engine peer links are off (`src/net`). While a UDP connector has its socket
-open, a network lobby's or game's, the app's `NetworkGameService` keeps the process's network in the back
+Wi-Fi hands a phone no broadcasts. While a UDP connector has its socket open, a network lobby's or game's, or a peer
+link of the game's own is up (below), the app's `NetworkGameService` keeps the process's network in the back
 (`../README.md`, Network games): the patched `CNetUDPConnector.cpp` counts those connectors from its thread's start to
-its deletion (`NET_OpenUDPConnectors`), which the service asks through `Game.networkInUse`.
+its deletion (`NET_OpenUDPConnectors`), the engine counts the links' transports, one for each peer from its `JoinGame`
+or `ConnectToPeer` to its link's close (`NET_PeerTransportsActive`), and the service asks both through
+`Game.networkInUse`.
+
+Online the game runs its peer links itself, in native mode (`/nativenet`, `../../docs/LAUNCHER_NATIVE_NETWORK.md`):
+upstream's netlink (`src/netlink`, `moho/net/NetlinkPeers.cpp`) with ICE on libjuice, a link that FAF's Java ICE adapter
+takes for one of its own, and a WebRTC data channel between two of our builds on libdatachannel, with usrsctp, Mbed TLS
+for its DTLS and plog, all at upstream's pins and by its recipes; nothing of them is left out. WebRTC stays off, as
+upstream has it (`net_NativeNetWebRtc 0`), and the launcher's switches cannot turn it on. On Android libjuice leaves
+`getifaddrs` out (`NO_IFADDRS`) and takes its host candidates from `SIOCGIFCONF`, which lists the IPv4 addresses, and
+the IPv6 address of the default route (a UDP socket connected to a documentation address); it binds every interface, so
+the launcher needs no `/nativenetbind`, which its whitelist leaves out. It resolves ICE servers by name on a thread of
+its own, with bionic's `getaddrinfo`. Its random bytes, STUN's transaction ids and ICE's tie-breaker, were `random()`
+seeded by the clock, as its `getrandom` leaves Android out; the patched `random.c` takes bionic's `arc4random_buf`
+(`patches/README.md`). The lane's keys come from `arc4random_buf` already (`src/remote/net`). Two games on two
+emulators, whose Wi-Fi is one network (netsim), connected over their IPv6 host candidates, moved onto the encrypted
+lane, and the host's lobby seated the other player (`gpgnet_host.py` with two ports, Tests).
 
 GPGNet, the game's line to its launcher, is the engine's TCP stream on `platform::net` (`CNetTCPBuf`), built as on
 Linux. A launcher in the app (`../README.md`, Game) listens on the loopback and starts the game with
@@ -207,6 +225,17 @@ adb push build/android-x64/bin/faf_net_tests /data/local/tmp/
 adb shell "chmod 755 /data/local/tmp/faf_net_tests && /data/local/tmp/faf_net_tests"
 ```
 
+`faf_netlink_tests` is upstream's test of the game's own peer links (`tests/netlink/NetlinkTests.cpp`), as the engine's
+`tests/CMakeLists.txt` builds it, linked statically: the JSON, the signalling and the lane's keys against what FAF's Java
+adapter writes, then two links in one process that connect over the device's own addresses and carry 10,000 datagrams
+each way, with the redundant lane, encrypted and plain, a reconnect from either side, an ICE server that never answers,
+the detection of our peers, the duplication and the WebRTC data channel. On the emulator its 13 tests take a minute.
+
+```sh
+adb push build/android-x64/bin/faf_netlink_tests /data/local/tmp/
+adb shell "chmod 755 /data/local/tmp/faf_netlink_tests && /data/local/tmp/faf_netlink_tests"
+```
+
 `../tools/gpgnet_host.py` is a launcher's GPGNet side on the PC, for the game's connect (The network): it listens on
 127.0.0.1, prints what the game sends, answers its `GameState Idle` with `CreateLobby`, and its exit code says whether
 the game reached its lobby. `adb reverse` takes the game's loopback port to it. With the port reversed and the script
@@ -222,6 +251,23 @@ python -I android/tools/gpgnet_host.py --port 7237
 adb shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity --esa io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS /gpgnet,127.0.0.1:7237
 ```
 
+With `--native` the script is a launcher in native mode, for a game started with `/nativenet` too: it sends the ICE
+servers (`--ice-servers`: FAF's JSON list, or the API's ICE session) as `IceServers` before `CreateLobby`, and the
+game's log says `NETLINK: native mode` and how many server addresses it took. With `--port` more than once it is the
+lobby server as well, for one game in native mode on each port, each device's loopback port reversed to its own port on
+the PC: the first game hosts (`HostGame`), each other joins it as FAF's server has it (`JoinGame` to it,
+`ConnectToPeer` to the host and between the joiners), and each game's `IceMsg [receiver id, text]` goes on to the
+receiver's game as `IceMsg [sender id, text]`. Its exit code then says whether the host's lobby seated every other
+player (the host's `PlayerOption` for each of them):
+
+```sh
+adb -s emulator-5554 reverse tcp:7237 tcp:7237
+adb -s emulator-5556 reverse tcp:7237 tcp:7238
+python -I android/tools/gpgnet_host.py --port 7237 --port 7238 --hold 30
+adb -s emulator-5554 shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity --esa io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS /gpgnet,127.0.0.1:7237,/nativenet
+adb -s emulator-5556 shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity --esa io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS /gpgnet,127.0.0.1:7237,/nativenet
+```
+
 `faf_shell_tests` (`tests/shell`) pins the patched shell's rule for a key-down a handler took (`patches/README.md`,
 `Shell.cpp`): it gets no char, neither the shell's own for Enter nor the window system's text that comes before the key's
 key-up; a skipped key-down gets both; a key-up ends the rule. It runs `ShellApp::Dispatch` on the patched copy with a
@@ -230,8 +276,8 @@ window layer of the test's own (`platform/Window.h`) in place of SDL's, and is l
 ## Patches
 
 `patches/<path>.patch` is a `git diff` of the engine file `<path>`, or of a dependency's file under
-`dependencies/` (SDL's, which the configure has fetched by then into `FAF_DEPENDENCIES_DIR`, `dependencies/`
-unless a cache variable says otherwise). At configure time
+`dependencies/` (SDL's and libjuice's, which the configure has fetched by then into `FAF_DEPENDENCIES_DIR`,
+`dependencies/` unless a cache variable says otherwise). At configure time
 `cmake/FafAndroidOverlay.cmake` copies the file to `build/android-<abi>/overlay/<path>` and
 applies the patch to the copy. A patched source replaces the original in the targets, the
 dependency's in its own target, and a patch of a dependency's that replaces none of that target's sources stops
