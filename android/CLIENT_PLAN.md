@@ -441,3 +441,38 @@ TCP ([native README](native/README.md), The network). On the emulator (fafre_api
   `finishActivity` while the preparation runs, and Android destroying the activity meanwhile (read only: the process
   ends, or the program starts on the next activity's surface); the FAF client itself.
 - **Next**: part 2, the import of a game data ZIP (`SETUP_GAME_DATA`); the client's release certificate on the allowlist.
+
+*2026-11-19, C5's setup from the FAF client's app (E2b, part 2):* the client sends the player to this app for the game's
+data, which its start needs (`NO_SCFA`, `NO_FONTS`, `NO_GAME_FILES`). The contract is in the [README](README.md) (The
+setup):
+- **The way in** is `SetupActivity`, exported, with the action `io.github.m3rt1n99.fafre.action.SETUP_GAME_DATA`, which any
+  app may open: it shows this app's own screen and takes nothing but `STEP`, `scfa` (the SCFA import from its folder or a
+  ZIP of it), `game_files` (FAF's newest game files, with the metered network's question) or none (both). Its jobs are
+  `TestService`'s, as the test app's are, and go on after Back; the caller reads `game_data`. Another `STEP` or extra of
+  the prefix gives `ARGUMENTS`. The test app's look, pickers and question moved to a base of both screens (`Screen`).
+- **The ZIP's import** (`ScfaZip`) shares the folder import's rules (`ScfaImport`: what it takes, what is there, a file
+  written whole by way of its `.part`). It reads the content URI twice with `ZipInputStream`, as a stream reaches no list
+  at the ZIP's end and its local headers need not hold the sizes: its list, then its files, into `scfa/.zip-import/`, which
+  they leave for their places once the whole ZIP has been read. It checks the ZIP's first bytes, each name against Zip
+  Slip, the SCFA folder's place (the ZIP's top or one folder there) and the room, up front and as it writes.
+- **Found on the way**: Android 16 refuses a `..` with `/` itself (`ZipPathValidator`), but not with `\`, which the app's
+  guard catches. A second start with `FLAG_ACTIVITY_NEW_TASK` found the first's screen in its task and kept its step; the
+  screen takes the new start's now. The folder import left a cut-off file's `.part`; the shared copy removes it.
+- **Checked on the emulator** (fafre_api36, x86_64, read-only, the import moved aside and put back), each ZIP through the
+  file picker of `SETUP_GAME_DATA`: an SCFA-shaped ZIP of 30 entries from the PC's own files, in its folder, stored and
+  deflated, gave its 27 files, each equal to the PC's, and left `bin/` and `installscript.vdf`; a ZIP64 of 4 GiB and 1 MiB of
+  zeros before three real files gave those three, from Python's ZIP (the sizes in the local header's ZIP64 field) and from
+  Java's (a ZIP64 data descriptor); `../evil.txt` was refused by Android's check, `gamedata\..\..\evil.scd` by the app's,
+  with nothing written; a ZIP whose movie of 2 GiB did not fit was refused up front (1301 MB free, 2148 MB needed); a text
+  file named `.zip` was refused by its bytes; a Cancel while two files waited in `scfa/.zip-import/` left `scfa/` as it was.
+  The folder picker's import of a small folder went the shared way. A throwaway app on no allowlist opened the screen in
+  its task and got `RESULT_CANCELED` on Back, and `ARGUMENTS` for `STEP` `bogus` and for an extra `GAME_VERSION`. With Wi-Fi
+  off (mobile data, metered) and 3841 out of sight, *Get FAF's newest version* asked about 683 MB on the screen, and *Not
+  now* downloaded nothing. The game started on the import put back (FAF 3841, 18 archives).
+- **Tests**: the app's unit tests (459, 3 skipped) pin the rules the imports share, the ZIP's first bytes, the paths and the
+  guard, the SCFA folder's place, the plan, the room up front and as it writes, a Cancel, a damaged ZIP, one that changed
+  between its reads, a name not in UTF-8, and a deflated ZIP64 entry of more than 4 GB; with `FAFRE_ZIP64_DIR` a stored one
+  of 4 GB passed too. Both native presets build.
+- **Not shown**: a phone; the whole SCFA folder as one ZIP of some 9 GB (the emulator has 1.3 GB free); a stored ZIP over
+  4 GB on Android; the move into place failing half way (read only: the log says how many files scfa/ has then).
+- **Next**: the client's release certificate on the allowlist.

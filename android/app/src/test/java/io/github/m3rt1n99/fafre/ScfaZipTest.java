@@ -41,7 +41,7 @@ import org.junit.rules.TemporaryFolder;
  * it takes of it, by the folder import's rules; the guard on every path (Zip Slip); the room it needs, up front and as it
  * goes; that a refusal, a failure or a Cancel leaves scfa/ as it was; and ZIP64, an entry of more than 4 GB before the
  * game's files. The stored one, which needs 4 GB on the disk, runs with FAFRE_ZIP64_DIR naming a folder for it:
- * {@code FAFRE_ZIP64_DIR=G:/faf-builds/e2b ./gradlew :app:testReleaseUnitTest --tests '*ScfaZipTest' --rerun}.
+ * {@code FAFRE_ZIP64_DIR=<a folder with 4.1 GB free> ./gradlew :app:testReleaseUnitTest --tests '*ScfaZipTest' --rerun}.
  */
 public class ScfaZipTest {
     /** More than ZIP's 32 bits hold: 4 GiB and 1 MiB. */

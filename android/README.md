@@ -53,7 +53,7 @@ the game data they imported. Everything lives in the app's external files folder
 
 | Folder | What |
 |---|---|
-| `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd`, `fonts/`, `sounds/`, `movies/` (*Import SCFA folder…*, which copies what an earlier release's import has not), `maps/` if imported |
+| `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd`, `fonts/`, `sounds/`, `movies/` (*Import SCFA folder…*, which copies what an earlier release's import has not, or the setup's folder or ZIP, below), `maps/` if imported; `.zip-import/` while a ZIP's import runs |
 | `parity/game/<version>/` | FAF's game files for one game version, packed as `tools/parity-data` packs them for CI: `gamedata/*.nx2` whole, as FAF's updater publishes them (pack format 3), `bin/init_ci.lua`, `fa_path.lua` pointing at `scfa/` |
 | `parity/replays/`, `maps/`, `m28/` | Downloaded replays, vault maps and M28AI versions |
 | `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log`, `speed.csv` |
@@ -442,3 +442,48 @@ player's name or a path.
 | `exit_code` | int, or null: the program's own, when it returned or the engine ended its process |
 | `crashed` | 1 when the game crashed or stopped on a fatal error |
 | `end` | How it ended, in the app's words alone (`the program returned 0 after 61.2 s`, `CRASHED: native crash, status 11`, `the start failed: NO_MAP`), null until it has: the report's END line without the engine's log, a fatal error's message, Android's description or a failed start's message |
+
+**The setup.** `startActivity(new Intent("io.github.m3rt1n99.fafre.action.SETUP_GAME_DATA").setPackage("io.github.m3rt1n99.fafre").putExtra("io.github.m3rt1n99.fafre.extra.STEP", "scfa"))`,
+or the same for a result: `SetupActivity`, this app's own screen for the game's data, in the look of its cards. Any app
+may open it, without the allowlist: it shows only this app's UI and takes nothing of its caller's but the step, no file
+and no URI (the intent's data is not read), and no job starts without the player's tap. The player goes back with Back.
+
+| `STEP` (String) | The screen |
+|---|---|
+| `scfa` | The SCFA import: *Folder…*, the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`), as the Game data card's, or *ZIP file…*, the file picker (`ACTION_OPEN_DOCUMENT`, `application/zip` and `application/x-zip-compressed`) |
+| `game_files` | FAF's newest game files, *Get FAF's newest version* as on the Game card, with its question before a download on a metered network; no other version (a replay's) |
+| none | Both |
+
+Another value or type of `STEP`, or another extra of the prefix, ends the screen at once with `RESULT_FIRST_USER`,
+`failure` `ARGUMENTS` and its `message`. Else the result is `RESULT_CANCELED`, whatever the player did there: the caller
+reads what came of it in `game_data` (`scfa_archives`, `scfa_fonts`, `game_versions`), as it does before a start. An
+import or a download goes on after Back in the app's service, one job at a time (`job_running`, `job_step`, notified at
+each step and at its end), and the screen's Cancel ends it. Started from the caller's activity the screen opens in its
+task, and Back returns there; with `FLAG_ACTIVITY_NEW_TASK` it opens in a task of its own, which a later start brings
+back with the new start's step.
+
+The ZIP's import (`ScfaZip`) takes what the folder import takes, by its rules (`ScfaImport`):
+
+- **What it takes**: `gamedata/*.scd`, and `fonts/`, `sounds/`, `movies/` and `maps/` whole, all in any case, of the SCFA
+  folder, which is the ZIP's top or one folder there (as Windows' *Send to, Compressed folder* makes it): where its
+  `gamedata` folder is. Anything else in the ZIP is left. A ZIP with no `gamedata` folder there, or with one in two
+  places, is refused. A file there already with the same size is not written again; a file the ZIP holds twice, also in
+  another case, counts once, as its later entry.
+- **The ZIP** is read as a stream from its content URI with `ZipInputStream`, twice: first its list, for the place of the
+  SCFA folder and the files' sizes, which a stream's local headers need not hold, then the files. ZIP64 (over 4 GB),
+  stored or deflated, and names with `\`, as Windows PowerShell 5.1's `Compress-Archive` writes them. Its first bytes make
+  it a ZIP, an entry's local header, whatever its name or type say; an empty ZIP, a name not in UTF-8, more than 100,000
+  entries, and a damaged or cut-off ZIP are refused, each before anything is written.
+- **Zip Slip**: an entry whose name is absolute or has a `..`, with `/` or `\`, refuses the whole ZIP, as Android 14's
+  `ZipInputStream` does with `/` alone (`ZipPathValidator`), and every file the import writes is resolved under `scfa/`.
+- **Room**: before it writes anything, the files it writes must fit in the free space with 100 MB to spare, as FAF's game
+  files' must, or the log says how much is free and how much it needs; as it writes it checks again at each file and
+  every 64 MB, and stops when what it still has to write no longer fits.
+- **All or nothing**: the files go to `scfa/.zip-import/`, and from there to their places once the whole ZIP has been
+  read. A refusal, a Cancel or a failure leaves `scfa/` as it was, and what an import whose process ended left there goes
+  at the next. The progress shows as the folder import's: the step (*Checking the ZIP*, *Skipping*, *Importing* a file's
+  name, no path) and the log's lines.
+
+The JVM tests (`ScfaZipTest`) make the ZIPs themselves, a deflated one with a skipped entry of more than 4 GB among them.
+The stored one is 4 GB on the disk, and runs where `FAFRE_ZIP64_DIR` names a folder for it:
+`FAFRE_ZIP64_DIR=<a folder with 4.1 GB free> ./gradlew :app:testReleaseUnitTest --tests '*ScfaZipTest' --rerun`.
