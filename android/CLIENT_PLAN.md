@@ -393,3 +393,51 @@ TCP ([native README](native/README.md), The network). On the emulator (fafre_api
   rejoin refused itself in its own box (no seat key on the device) and went on to the menu without GPGNet. A launcher's
   result was not read (am start has none).
 - **Next**: the game's own links in native mode (`/nativenet`), with netlink's libraries built for Android.
+
+*2026-11-19, C5's start from the FAF client's own app (E2b, part 1):* the FAF client becomes an app of its own
+(`com.faforever.rustclient`, signed by another key), and this app stays the game. The launcher's contract is in the
+[README](README.md) (The launcher's contract):
+- **The way in** is `LaunchGameActivity`, exported, with the action `io.github.m3rt1n99.fafre.action.PLAY` and no UI. It
+  checks the caller's signing certificate against the allowlist (`Callers`: `hasSigningCertificate` from Android 9,
+  `GET_SIGNATURES` before it; `knownSigner` would hold from Android 12 only), then the extras (`Launch`), and starts the
+  game's activity, which stays unexported, with `FLAG_ACTIVITY_FORWARD_RESULT`. The launcher's switches pass a whitelist;
+  this side adds what only it may give, the rejoin's key file and console variables for `REJOIN_OFFER` and `/rejoin` for
+  `REJOIN_PEERS` with `REJOIN_SOURCE`. The map and mods a start names come into the game's vault, and its replay, a
+  `content://` URI it grants, into the app's cache, before the program starts: on SDL's thread (`GameActivity.main`,
+  `Preparation`), with the step over the surface, and Back cancels. New codes: `CALLER`, `NO_MAP`, `NO_MOD`, `DOWNLOAD`,
+  `REPLAY`, `CANCELLED`.
+- **The status** is `StatusProvider`, exported for allowed callers only, read-only: `game_data` (the SCFA import, the
+  ready versions, the app's job, whether the game runs, the app's version) and `last_game` (its start, end, exit code and
+  crash, the end in the app's words alone, as the report's END line quotes the engine's log). `-PfafVersionCode` names
+  the version code where it is given.
+- **Found on the way**: FAF's API answers `401` without a login and its content server lists nothing, so a mod's uid alone
+  names no file the game app could fetch: `MOD_FILES` carries the file of each mod of `MODS`, which the client has from
+  the API, and the game checks the uid in the file it gets. And mods' uids are not all hex: M28AI's are
+  `fnewm028-v247-...`, so `MODS` takes letters, digits, `_ . -`. Android 11's package visibility needs the client's
+  `<queries>` for the status provider; the game sees its callers without one, as they start it for a result or ask its
+  provider. A download's wait between tries, up to 5 minutes while the network is down, heard the user's Cancel only at
+  its end (Back on a start, and the Progress card's Cancel): it now ends within half a second.
+- **Checked on the emulator** (fafre_api36, x86_64, read-only) with two throwaway callers outside the repository, one
+  signed with this PC's debug key and one with a throwaway key, each starting PLAY with `startActivityForResult` and
+  logging the result: the allowed one reached FAF's main menu with `/numgames 3` on the command line, and got
+  `RESULT_CANCELED` at the game's end; while that game ran its second start got `RUNNING`; `/init` and a `/gpgnet` host off
+  the loopback got `ARGUMENTS`, a start that waited for no result `CALLER`, and `FEATURED_MOD` `coop`, by the explicit
+  component, `NO_GAME_FILES`; the refused caller got `CALLER`. The provider answered the allowed caller (also its
+  observer, at each game's start) and gave the refused one columns without rows. A replay of the parity runs (26930624,
+  3835) as the allowed caller's `content://` URI played on its map, `scmp_007`, which `MAP` fetched from FAF's vault
+  (1.3 MB) while the activity showed the step; the grant reached the game's activity through the trampoline's end.
+  `MODS` with `MOD_FILES` brought M28AI v247 (1.9 MB) into the vault, and FAF's Mods Manager listed it. A map FAF has not
+  gave `NO_MAP`, a replay without the grant `REPLAY`; with the emulator's network off, Back on a map's download gave
+  `CANCELLED` 0.4 s later, and the game's process ended. `REJOIN_OFFER` put its switches after the launcher's, the seat
+  key in the app's no-backup folder, and the game's box for a `/gpgnet` port with no launcher ended it with
+  `RESULT_CANCELED`. `last_game` said `the program returned 0 after 93.7 s` for the menu's Exit and `CRASHED: killed by a
+  signal, status 9` for a kill, with nothing of the engine's log.
+- **Tests**: the app's unit tests (426, 2 skipped) pin the whitelist case by case, the allowlist with a fake package
+  manager on both sides of Android 9, the rejoin's arguments and rules, the patterns of `MAP`, `MODS` and `MOD_FILES`,
+  the fetches and their codes, the provider's columns, the version code and the Cancel in a wait between tries.
+  `faf_griff_tests` (140), `faf_net_tests` (23), `faf_shell_tests` (5) and `faf_movie_tests` (six movies) pass on the
+  emulator; both native presets build.
+- **Not shown**: a phone; Android before 11, where the `GET_SIGNATURES` path runs (the JVM tests pin it); a client's
+  `finishActivity` while the preparation runs, and Android destroying the activity meanwhile (read only: the process
+  ends, or the program starts on the next activity's surface); the FAF client itself.
+- **Next**: part 2, the import of a game data ZIP (`SETUP_GAME_DATA`); the client's release certificate on the allowlist.

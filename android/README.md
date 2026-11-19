@@ -37,8 +37,9 @@ under its ARM translation (an arm64-only APK).
   build links, `dependencies/SDL3/android-project` (the native configure downloads it), so that both
   halves are the same release.
 - `stageFafAssets` puts `tests/sim_math/golden.txt` into the assets.
-- `versionCode` is `git rev-list --count HEAD`, so a newer commit installs over an older one;
-  `versionName` is in `gradle.properties`.
+- `versionCode` is `git rev-list --count HEAD`, so a newer commit installs over an older one, or what
+  `-PfafVersionCode=<n>` names (1 to 2100000000), for a build that must install over one of another branch
+  (`VersionCodeTest` checks both); `versionName` is in `gradle.properties`.
 - Signing: `FAF_ANDROID_KEYSTORE` (with `FAF_ANDROID_KEYSTORE_PASSWORD`, `FAF_ANDROID_KEY_ALIAS`,
   `FAF_ANDROID_KEY_PASSWORD`), else the standard debug key `~/.android/debug.keystore`. Android installs
   an update only with the installed app's key; the testers' releases are signed with the debug key of
@@ -123,29 +124,16 @@ the game data they imported. Everything lives in the app's external files folder
     of the activity (`am start -S ... --ef hudScale 1.6 --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
     arguments, and the phones' way with BC textures on a GPU that has BC. Only the program's start reads them:
     without `-S` a running program goes on as it was, and the report says so.
-  - A launcher, the FAF client in an activity of the app's main process, starts it for a result (`GameStart`), with
-    `io.github.m3rt1n99.fafre.extra.GAME_VERSION` (int), the lobby's game version, whose files must be ready (no other:
-    a lobby would refuse it or desync; without the extra the newest), and
-    `io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS` (String[], never split, as a value may hold spaces), such as
-    `/gpgnet 127.0.0.1:<port> /nativenet`, which go after the activity's arguments and a test's, before `/fullscreen`;
-    the activity's own switches (`/init`, `/log`, `/notelemetry`, `/nomovie`, `/fullscreen`, the HUD's two) are not among
-    them. The game connects to that port; when nothing listens there, or the launcher closes the connection before its
-    `CreateLobby`, the game says so in a box and ends after its OK, unless it was started with `/rejoin` or has joined a
-    game server (`/connectserver`, the launcher's `JoinServer`): those go on without the launcher, with no box, and their
-    results reach nobody ([native README](native/README.md), The network). A `/rejoin` start whose seat the device holds
-    no key for is refused in a box of the rejoin's own and goes on to FAF's menu without GPGNet.
-    A start that fails before the program runs gives `RESULT_FIRST_USER` with `failure`, its code (`NO_SCFA`,
-    `NO_FONTS`, `NO_GAME_FILES`, also for a version that is not ready, `INIT_FILE`, `ENVIRONMENT`, `STORAGE`, `ARGUMENTS`
-    for such a switch or an extra of another type), and `message`, the reason in words that name no card; the report has
-    both, and its end, like the toast of a start that waits for no result, keeps the card's words. So does a launcher's
-    start, one with either extra, that runs no game: `RUNNING` while a game runs already, which its version and arguments
-    would not reach (the running game goes on, and its report gets the line but no end); `PROCESS_ENDED` when Android
-    brings back (Recents) the activity of a launcher's game whose process ended in the back, ended by Android, by a crash
-    or by the program's end: Android keeps such an activity, which would start the game anew with the launcher's
-    arguments, a GPGNet session the launcher saw end; the report of the game that is gone, `game-previous.txt`, says how
-    its process ended. In front the program's end, which ends the process, gives `RESULT_CANCELED`, as does a process
-    that ends there in any other way, which takes the activity with it: the report and `ProcessExit` say how it ended.
-    Any other start while the program runs shows it, as above.
+  - A launcher, the FAF client, an app of its own, starts the game through `LaunchGameActivity` for a result (the
+    launcher's contract, below), which checks the start and forwards it here. `GameActivity` is not exported: it takes the
+    same extras from the app itself, from the trampoline after its checks and from a test through a root shell, as the
+    [native README](native/README.md)'s GPGNet check does, where only the activity's own switches are refused among the
+    launcher's arguments. Those go after the activity's arguments and a test's, before `/fullscreen`. What a start needs
+    first, its map and mods fetched and its replay copied, the activity gets on SDL's thread before the program starts
+    (`Preparation`), with the step over the black surface; Back cancels it. A start that fails before the program runs,
+    the Game card's too, ends with the result the contract gives; the report has its code and line, and its end, like the
+    toast of a start that waits for no result, keeps the card's words. Any start but a launcher's while the program runs
+    shows it, as above.
 
   What follows is the game card of release 0.14, on the earlier host (`LegacyGameActivity`, the
   Win32 message layer and wx-lite): the bar, the touch controls and the pages come back on SDL's activity
@@ -349,3 +337,108 @@ set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPL
 recorded on FAF game version 3835. A test runs at full speed only with the app in front: Android
 moves a background app, and the simulation process it started, to another CPU group, on a Galaxy
 S22 Ultra the little cores.
+
+## The launcher's contract
+
+The FAF client is an app of its own (`com.faforever.rustclient`, signed by another key), which starts the game across
+apps and reads its status. This app stays the game: the engine, the SCFA import, FAF's game files and the test cards.
+
+**Who may.** Apps signed by a certificate whose SHA-256 is on the allowlist, in one place (`Callers.ALLOWED`): this PC's
+debug key, which also signs this app; the client's release certificate comes there once it has one. Android 9 and later
+answer with `PackageManager.hasSigningCertificate(package, sha256, CERT_INPUT_SHA256)`, which also knows a rotated key's
+past, earlier ones with `GET_SIGNATURES`. A permission with `knownSigner` would say the same from Android 12 on only. The
+client declares `<queries><package android:name="io.github.m3rt1n99.fafre" /></queries>`, without which Android 11 and
+later hide the status provider from it.
+
+**The start.** `startActivityForResult(new Intent("io.github.m3rt1n99.fafre.action.PLAY").setPackage("io.github.m3rt1n99.fafre"), ...)`,
+or the Activity Result API: a start that waits for a result, as Android names its caller to no other (`CALLER`).
+`LaunchGameActivity` takes it, the only way in from outside, with no UI: it checks the caller, then the extras, starts
+`GameActivity` (not exported) with `FLAG_ACTIVITY_FORWARD_RESULT`, so that the game's result goes straight to the
+client, and ends. Its own refusals end with the same result.
+
+| Extra `io.github.m3rt1n99.fafre.extra.` | Type | What |
+|---|---|---|
+| `GAME_VERSION` | int | The version the game plays, the lobby's or the replay's, whose files must be ready (no other: a lobby would refuse it or desync); without it the newest ready one |
+| `LAUNCHER_ARGUMENTS` | String[] | The launcher's switches, by the whitelist below; never split, a value is one element |
+| `FEATURED_MOD` | String | `faf`, also when absent; any other gives `NO_GAME_FILES` for now |
+| `REJOIN_OFFER` | boolean | The game offers its return after a crash: this side adds `/rejoinoffer /rejoinkeyfile <noBackupFilesDir>/faf_rejoin_seat.key /con net_PeerFeatures=1;net_RejoinAccept=1` |
+| `REJOIN_PEERS` | String `^\d{1,10}=\d{1,3}(,\d{1,10}=\d{1,3}){0,15}$` | With `REJOIN_SOURCE` the start takes the seat back: this side adds `/rejoin <peers> <source> 0`. Needs `REJOIN_OFFER` on the same start, and the other of the two |
+| `REJOIN_SOURCE` | int, 0 to 255 | The `RejoinOffer`'s first field |
+| `MAP` | String `^[a-z0-9_.-]{1,64}$`, not `.` or `..` | FAF's map folder name: unless the SCFA import or the game's vault has it, it comes from `content.faforever.com/maps/<MAP>.zip` into `game/vault/maps` before the program starts |
+| `MODS` | String[] of uids, `^[0-9A-Za-z_.-]{8,64}$`, not first a `.`, each once | The mods the game needs in `game/vault/mods`: a folder there whose `mod_info.lua` has the uid, in any case, or else its file |
+| `MOD_FILES` | String[], one for each of `MODS` in its order | That mod version's file in `content.faforever.com/mods/`, the last segment of FAF's `downloadUrl`: `<name>.zip`, no folder. It must hold the uid; it takes the place of a folder of its name |
+| the intent's data (REPLAY) | `content://` URI, with `FLAG_GRANT_READ_URI_PERMISSION` | A replay in SCFA's format, copied into the app's cache before the program, which plays it (`/replay <copy>`); `GAME_VERSION` names its version, `MAP` its map where the phone may not have it |
+
+Another extra of the prefix, and an extra of another type, give `ARGUMENTS`. Map and mods come as the replay test's do,
+one request a second, a download tried again for about ten minutes when the network drops; the game's activity shows
+the step and Back cancels it. `MODS` names uids, as FAF's lobby does, and FAF's content server has no file by uid, nor
+its API without a login: so the client, which has both, names the files.
+
+The whitelist of `LAUNCHER_ARGUMENTS`: each switch spelled so, once, followed by its value. Anything else gives
+`ARGUMENTS`: any other switch, among them `/init`, `/log`, `/prefs`, `/fullscreen`, `/nomovie`, `/notelemetry`,
+`/nobugreport`, `/con`, `/rejoinoffer`, `/rejoinkeyfile` and `/rejoin`, a switch in another case (the engine would find
+it), a value where a switch goes, a file's path, a host off the loopback, a switch twice, and a missing or bad value.
+
+| Switch | Value |
+|---|---|
+| `/gpgnet` | `127.0.0.1:<port>` or `localhost:<port>`, port 1 to 65535 |
+| `/savereplay` | `gpgnet://127.0.0.1:<port>/<game id>/<name>.SCFAreplay`: the id 1 to 10 digits, the name `[A-Za-z0-9_.-]{1,64}` |
+| `/replay` | The same, a live replay through the client on the loopback |
+| `/nativenet`, `/nativenetrelay` | none |
+| `/mean`, `/deviation` | A decimal number, `-?\d{1,10}(\.\d{1,20})?` |
+| `/numgames`, `/team`, `/players`, `/startspot` | A whole number from 0 to 9999 |
+| `/country` | `[A-Z]{2}` |
+| `/clan` | `[A-Za-z0-9_-]{1,8}` |
+
+A start plays one replay, `REPLAY` or `/replay`, and a rejoin none (`ARGUMENTS`). The switches go after the activity's
+own (`/init`, `/log`, `/notelemetry`, the HUD's two, `/nomovie` for an import without movies), this side's after the
+launcher's, and `/fullscreen <the picture's size>` last.
+
+**The result.** `RESULT_FIRST_USER` when the start ran no program, with `failure`, its code, and `message`, the reason
+in English that names none of the test app's cards. `RESULT_CANCELED` when the program ran and ended: its end in front,
+which ends its process, or any other end of the process there, which takes the activity with it; `last_game` says how.
+
+| `failure` | Why |
+|---|---|
+| `CALLER` | The caller is not allowed, or did not wait for a result |
+| `ARGUMENTS` | An extra or a switch is not what the contract says |
+| `NO_GAME_FILES` | No ready FAF game files, none of `GAME_VERSION`, or a featured mod other than `faf` |
+| `NO_SCFA`, `NO_FONTS` | No SCFA imported, or the import has no fonts |
+| `INIT_FILE`, `ENVIRONMENT`, `STORAGE` | The game's init file, its environment or the app's shared storage failed |
+| `RUNNING` | A game runs already, which this start's version and arguments would not reach: the running game goes on, and its report gets the line but no end |
+| `PROCESS_ENDED` | Android brought back (Recents) the activity of a launcher's game whose process ended in the back (ended by Android, by a crash or by the program's end): it would start the game anew on a GPGNet session the launcher saw end; the gone game's report, `game-previous.txt`, says how |
+| `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name |
+| `NO_MOD` | A mod of `MODS` is not on the phone, and `MOD_FILES` names none of it, FAF has no such file, or it holds another uid |
+| `DOWNLOAD` | A download of the map or a mod failed: the network, after its tries, or the phone's storage |
+| `REPLAY` | The data is no `content://` URI of another app's, the launcher did not grant reading it, or it could not be copied (empty, more than 256 MB) |
+| `CANCELLED` | Back ended the start while it fetched or copied what the game needs |
+
+The game connects to the `/gpgnet` port; when nothing listens there, or the launcher closes the connection before its
+`CreateLobby`, the game says so in a box and ends after its OK (`RESULT_CANCELED`), unless it was started with `/rejoin`
+or has joined a game server (`/connectserver`, the launcher's `JoinServer`): those go on without the launcher, with no
+box, and their results reach nobody ([native README](native/README.md), The network). A `/rejoin` start whose seat the
+device holds no key for is refused in a box of the rejoin's own and goes on to FAF's menu without GPGNet.
+
+**The status.** `content://io.github.m3rt1n99.fafre.status/game_data` and `/last_game` (`StatusProvider`), read-only and
+for allowed callers only: a refused one gets the table's columns and no row; another table gives a null cursor. All
+columns come, whatever the projection. Each table's URI is notified when a job of the app's begins, takes its next step
+(every 2 s at most) or ends, when a game begins or its start fails, and when its end is found (by a query, or the Game
+card); the program's end itself reaches the launcher as its result, after which `last_game` has it. No column has a
+player's name or a path.
+
+| `game_data` (one row) | |
+|---|---|
+| `scfa_archives`, `scfa_fonts`, `scfa_sound_banks`, `scfa_movies` | int: the SCFA import's files |
+| `game_versions` | text: the ready versions, `"3841,3845"`, `""` for none |
+| `newest_known` | int, or null before a check: FAF's newest version as the app's last check found it |
+| `job_running`, `job_step` | 1 or 0, and the step's text or null: the app's job (an import, a download, the tests) |
+| `game_running` | 1 or 0: the game's process runs (`ProcessExit.running(":game")`) |
+| `version_code`, `version_name`, `engine_commit` | The app's version and the commit it was built from |
+
+| `last_game` (one row, none before the first game) | |
+|---|---|
+| `started_at` | ms since 1970; null for a game of an earlier release |
+| `ended` | 1 or 0 |
+| `exit_code` | int, or null: the program's own, when it returned or the engine ended its process |
+| `crashed` | 1 when the game crashed or stopped on a fatal error |
+| `end` | How it ended, in the app's words alone (`the program returned 0 after 61.2 s`, `CRASHED: native crash, status 11`, `the start failed: NO_MAP`), null until it has: the report's END line without the engine's log, a fatal error's message, Android's description or a failed start's message |
