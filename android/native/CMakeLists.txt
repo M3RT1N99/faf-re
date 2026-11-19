@@ -10,7 +10,7 @@
 #
 #   src/          what Android needs beyond the engine's POSIX client: the app's entry (src/app),
 #                 the Vulkan surface's coming and going and BC textures on the CPU for GPUs without
-#                 them (src/gal), the in-engine peer links off (src/net)
+#                 them (src/gal)
 #   patches/      the engine's files compiled changed, and SDL's (cmake/FafAndroidOverlay.cmake)
 #   cmake/        DXC built from source (FafAndroidDxc.cmake); ffmpeg/: FFmpeg built with the NDK.
 #                 The Linux client takes Microsoft's Linux DXC and runs FFmpeg's configure and make,
@@ -25,6 +25,7 @@
 #   faf_movie_tests                the engine's movie player on real movies (tests/movie)
 #   faf_griff_tests                the touch scheme Griff's rules (tests/griff)
 #   faf_net_tests                  the engine's network transport on platform::net (tests/net)
+#   faf_netlink_tests              the game's own peer links, upstream's tests (../../tests/netlink)
 #   faf_shell_tests                the patched shell's rule for a key-down a handler took (tests/shell)
 
 cmake_minimum_required(VERSION 3.25)
@@ -72,9 +73,9 @@ add_subdirectory(ffmpeg "${CMAKE_BINARY_DIR}/ffmpeg" EXCLUDE_FROM_ALL SYSTEM)
 
 # --- The client's dependencies ---------------------------------------------------------------
 # Those of cmake/FafLinuxClient.cmake, at its pins (cmake/FafDependencies.cmake), but DXC's Linux
-# release (x86_64 only; cmake/FafAndroidDxc.cmake builds DXC) and the in-engine peer links' own
-# (src/net).
-set(FAF_DEPENDENCIES_ONLY DirectX-Headers SDL3 FAudio DirectXTex DirectXMath stb freetype msdfgen imgui)
+# release (x86_64 only; cmake/FafAndroidDxc.cmake builds DXC).
+set(FAF_DEPENDENCIES_ONLY DirectX-Headers SDL3 FAudio DirectXTex DirectXMath stb freetype msdfgen
+  libjuice libdatachannel usrsctp plog mbedtls imgui)
 include("${FAF_REPO}/cmake/FafDependencies.cmake")
 
 # The files compiled changed (patches/), the engine's and its dependencies', which are here now, and
@@ -111,17 +112,31 @@ target_compile_options(FAudio-static PRIVATE -w)
 add_subdirectory("${FAF_REPO}/cmake/deps/freetype" "${CMAKE_BINARY_DIR}/deps/freetype")
 add_subdirectory("${FAF_REPO}/cmake/deps/msdfgen" "${CMAKE_BINARY_DIR}/deps/msdfgen")
 
+# The game's own peer links (src/netlink: native mode's, /nativenet, and the in-engine links of #233) on
+# libjuice, and their WebRTC data channel between two of our builds (#239) on libdatachannel with usrsctp,
+# Mbed TLS and plog, by their recipes, as cmake/FafLinuxClient.cmake adds them. netlink's recipe takes the
+# engine's src from PROJECT_SOURCE_DIR, which is the repository's root in the engine's own builds.
+add_subdirectory("${FAF_REPO}/cmake/deps/libjuice" "${CMAKE_BINARY_DIR}/deps/libjuice")
+add_subdirectory("${FAF_REPO}/cmake/deps/libdatachannel" "${CMAKE_BINARY_DIR}/deps/libdatachannel")
+block()
+  set(PROJECT_SOURCE_DIR "${FAF_REPO}")
+  add_subdirectory("${FAF_REPO}/src/netlink" "${CMAKE_BINARY_DIR}/netlink")
+endblock()
+
 # Lowercase spellings of POSIX stand-in headers the client includes, as cmake/FafLinuxClient.cmake
 # writes them, next to the engine's <windows.h> (cmake/FafLinux.cmake).
 file(WRITE "${CMAKE_BINARY_DIR}/win32-alias/shlobj.h" "#pragma once\n#include <ShlObj.h>\n")
 
 # The licences of what this build links from others' sources, for the app's assets: the client's
-# libraries, and those the simulation brings (the net channel's Monocypher, Zstandard for saves).
+# libraries, those of its peer links (Mbed TLS's for WebRTC's DTLS too), and those the simulation brings
+# (the net channel's Monocypher, Zstandard for saves).
 foreach(_licence
     "SDL3/LICENSE.txt|SDL3.txt" "FAudio/LICENSE|FAudio.txt" "freetype/LICENSE.TXT|FreeType.txt"
     "freetype/docs/FTL.TXT|FreeType-FTL.txt" "msdfgen/LICENSE.txt|msdfgen.txt" "DirectXTex/LICENSE|DirectXTex.txt"
     "DirectXMath/LICENSE|DirectXMath.txt" "DirectX-Headers/LICENSE|DirectX-Headers.txt" "stb/LICENSE|stb.txt"
-    "imgui/LICENSE.txt|DearImGui.txt" "monocypher/LICENCE.md|Monocypher.txt" "zstd/LICENSE|Zstandard.txt")
+    "imgui/LICENSE.txt|DearImGui.txt" "libjuice/LICENSE|libjuice.txt" "libdatachannel/LICENSE|libdatachannel.txt"
+    "usrsctp/LICENSE.md|usrsctp.txt" "plog/LICENSE|plog.txt" "mbedtls/LICENSE|MbedTLS.txt"
+    "monocypher/LICENCE.md|Monocypher.txt" "zstd/LICENSE|Zstandard.txt")
   string(REPLACE "|" ";" _licence "${_licence}")
   list(GET _licence 0 _from)
   list(GET _licence 1 _to)
@@ -146,10 +161,8 @@ set(_faf_client_windows_only
   # Built apart, with DirectX-Headers' Win32 adapter (faf_client_imaging below).
   "^gpg/gal/backends/common/ImageCodecDirectXTex\\.cpp$"
   # Android's own beyond the Linux client's: the Vulkan backend's surface, whose window can lose it
-  # while the program runs (src/gal/VulkanSurfaceAndroid.cpp), and the in-engine peer links, whose
-  # libraries this build does not make yet (src/net/NetlinkPeersAndroid.cpp).
+  # while the program runs (src/gal/VulkanSurfaceAndroid.cpp).
   "^gpg/gal/backends/vulkan/VulkanSurface\\.cpp$"
-  "^moho/net/NetlinkPeers\\.cpp$"
   # The movie player, whose decoder is on FFmpeg's headers: faf_movie_player has it.
   "^moho/movie/sfd/(IndependentSfdBackend|SfdMetadata|FfmpegSfdDecoder)\\.cpp$")
 set(_faf_client_shared_backend_files
@@ -326,10 +339,9 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/app/SoundAndroid.cpp
   src/app/UiPackageAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
-  src/gal/VulkanSurfaceAndroid.cpp
-  src/net/NetlinkPeersAndroid.cpp)
+  src/gal/VulkanSurfaceAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings FAudio-static SDL3::SDL3-static faf_imgui_sdl faf_freetype
-  faf_msdfgen)
+  faf_msdfgen faf_netlink)
 # Device.cpp includes the patched DeviceVulkan.h by its path; the header finds the neighbours it
 # includes by their bare names here. The patched UI file takes the choice of a finger's target from
 # include/ (TapTarget.h).
@@ -343,7 +355,7 @@ add_library(fafgame SHARED ${FAF_ANDROID_SIM_OBJECTS}
   $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_client_dxc> $<TARGET_OBJECTS:faf_client_imaging>
   $<TARGET_OBJECTS:faf_movie_player>)
 target_link_libraries(fafgame PRIVATE faf_android_settings faf_directxtex_android FAudio-static SDL3::SDL3-static
-  faf_imgui_sdl faf_freetype faf_msdfgen FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
+  faf_imgui_sdl faf_freetype faf_msdfgen faf_netlink FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
 # The library exports what Java and SDL's activity look up in it (exports.map): the JNI entry points,
 # SDL's main and the app's. The static libraries' symbols stay local, and what nothing reaches is
 # dropped. The Windows import libraries the sources name (#pragma comment(lib, "psapi.lib")) do not
@@ -391,6 +403,15 @@ target_link_options(faf_griff_tests PRIVATE -static -Wl,--gc-sections)
 add_executable(faf_net_tests tests/net/NetTests.cpp ${FAF_ANDROID_SIM_OBJECTS})
 target_link_libraries(faf_net_tests PRIVATE faf_android_settings ${_faf_sim_libraries})
 target_link_options(faf_net_tests PRIVATE -static -Wl,--gc-sections)
+
+# faf_netlink_tests: upstream's tests of the game's own peer links (../../tests/netlink/NetlinkTests.cpp), as the engine's
+# tests/CMakeLists.txt builds them: the JSON, the signalling and the lane's keys against what FAF's Java adapter writes, then
+# two links in one process that connect over the device's own addresses and carry datagrams both ways, with the redundant
+# lane, encrypted and plain, a reconnect from either side, the detection of our peers, the duplication and the WebRTC data
+# channel. Linked statically, as faf_griff_tests is.
+add_executable(faf_netlink_tests "${FAF_REPO}/tests/netlink/NetlinkTests.cpp")
+target_link_libraries(faf_netlink_tests PRIVATE faf_netlink faf_codegen gtest)
+target_link_options(faf_netlink_tests PRIVATE -static -Wl,--gc-sections)
 
 # faf_shell_tests (tests/shell): the patched shell's rule for a key-down a handler took (patches/README.md, Shell.cpp),
 # through ShellApp::Dispatch, with a window layer of the test's own in place of SDL's. The shell is the patched copy; the

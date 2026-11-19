@@ -7,6 +7,7 @@
 #include <string>
 
 #include "GameAndroid.h"
+#include "moho/net/NetPeerTransport.h"
 
 namespace moho
 {
@@ -28,11 +29,12 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_audioFocus(
   platform::android::SetAudioFocus(held != JNI_FALSE);
 }
 
-/// Whether a network lobby or game has its connections: a UDP connector with its socket open. The LAN screen's search
-/// for games has a datagram socket, and a skirmish none.
+/// Whether a network lobby or game has its connections: a UDP connector with its socket open, or a peer link of the
+/// game's own (native mode, /nativenet), which runs on libjuice's sockets and registers a transport for the game's
+/// datagrams to its peer. The LAN screen's search for games has a datagram socket, and a skirmish none.
 extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_networkInUse(JNIEnv*, jclass)
 {
-  return moho::NET_OpenUDPConnectors() > 0 ? JNI_TRUE : JNI_FALSE;
+  return moho::NET_OpenUDPConnectors() > 0 || moho::NET_PeerTransportsActive() ? JNI_TRUE : JNI_FALSE;
 }
 
 /// Whether a game goes on behind the game's UI, as opposed to the menus and the score screen.
