@@ -21,6 +21,13 @@ fun git(vararg args: String): String =
         workingDir = repoRoot
     }.standardOutput.asText.get().trim()
 
+// -PfafVersionCode=<n> names the version code, for a build that must install over one of another branch; without it
+// `git rev-list --count HEAD`, which only grows on a branch. VersionCodeTest pins both.
+val fafVersionCode: Int = providers.gradleProperty("fafVersionCode").orNull?.let { given ->
+    given.toIntOrNull()?.takeIf { it in 1..2_100_000_000 }
+        ?: throw GradleException("fafVersionCode must be a whole number from 1 to 2100000000, not \"$given\"")
+} ?: git("rev-list", "--count", "HEAD").toInt()
+
 // The NDK the engine is built with (cmake/toolchains/android-pins.cmake): AGP strips the
 // programs with its llvm-strip.
 val pinnedNdk: String =
@@ -38,7 +45,7 @@ android {
         minSdk = 26
         targetSdk = 35
         // Only grows on a branch, so every build of a newer commit installs over an older one.
-        versionCode = git("rev-list", "--count", "HEAD").toInt()
+        versionCode = fafVersionCode
         versionName = providers.gradleProperty("fafVersionName").get()
         buildConfigField("String", "GIT_COMMIT", "\"${git("rev-parse", "--short=10", "HEAD")}\"")
         ndk {
@@ -160,4 +167,9 @@ val stageFafAssets by tasks.registering(Sync::class) {
 
 tasks.named("preBuild") {
     dependsOn(stageFafNative, stageFafAssets)
+}
+
+// VersionCodeTest checks BuildConfig's version code against what the build was given ("" for nothing).
+tasks.withType<Test>().configureEach {
+    systemProperty("fafVersionCode", providers.gradleProperty("fafVersionCode").orNull ?: "")
 }
