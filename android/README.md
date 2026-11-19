@@ -127,11 +127,14 @@ the game data they imported. Everything lives in the app's external files folder
     `io.github.m3rt1n99.fafre.extra.GAME_VERSION` (int), the lobby's game version, whose files must be ready (no other:
     a lobby would refuse it or desync; without the extra the newest), and
     `io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS` (String[], never split, as a value may hold spaces), such as
-    `/gpgnet 127.0.0.1:<port> /nativenet`, which go after the activity's arguments and a test's, before `/fullscreen`.
-    The game connects to that port; when nothing listens there, or the launcher closes the connection before its
-    `CreateLobby`, the game says so in a box and ends after its OK ([native README](native/README.md), The network).
-    The activity's own switches (`/init`, `/log`, `/notelemetry`, `/nomovie`, `/fullscreen`, the HUD's two) are not among
-    them. A start that fails before the program runs gives `RESULT_FIRST_USER` with `failure`, its code (`NO_SCFA`,
+    `/gpgnet 127.0.0.1:<port> /nativenet`, which go after the activity's arguments and a test's, before `/fullscreen`;
+    the activity's own switches (`/init`, `/log`, `/notelemetry`, `/nomovie`, `/fullscreen`, the HUD's two) are not among
+    them. The game connects to that port; when nothing listens there, or the launcher closes the connection before its
+    `CreateLobby`, the game says so in a box and ends after its OK, unless it was started with `/rejoin` or has joined a
+    game server (`/connectserver`, the launcher's `JoinServer`): those go on without the launcher, with no box, and their
+    results reach nobody ([native README](native/README.md), The network). A `/rejoin` start whose seat the device holds
+    no key for is refused in a box of the rejoin's own and goes on to FAF's menu without GPGNet.
+    A start that fails before the program runs gives `RESULT_FIRST_USER` with `failure`, its code (`NO_SCFA`,
     `NO_FONTS`, `NO_GAME_FILES`, also for a version that is not ready, `INIT_FILE`, `ENVIRONMENT`, `STORAGE`, `ARGUMENTS`
     for such a switch or an extra of another type), and `message`, the reason in words that name no card; the report has
     both, and its end, like the toast of a start that waits for no result, keeps the card's words. So does a launcher's

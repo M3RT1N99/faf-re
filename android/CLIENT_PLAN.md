@@ -383,4 +383,13 @@ TCP ([native README](native/README.md), The network). On the emulator (fafre_api
 - **Not shown**: anything on a phone or on arm64 beyond the build; the FAF client as the launcher; `HostGame`, `JoinGame`
   and a whole online game; the end of a `/rejoin` start or a server session whose launcher is not there (by reading
   only: they go on, as before).
+- **The review's fixes**, each reproduced on the emulator first: a launcher's start while a game ran showed that game,
+  which its version and `/gpgnet` port never reached, and gave its result only at that game's end; it now gives
+  `RUNNING` and ends at once, in a task of its own or on the game's, and the game goes on (its picture, its GPGNet
+  connection, and a tap's way to it after Home and back). A launcher's game whose process was killed in the back came
+  back through Recents as a new game on the old port, which accepted a second `CreateLobby`; it now gives
+  `PROCESS_ENDED` and connects nowhere, and the gone game's report says how it ended. With *Don't keep activities* a
+  launcher's game still comes back around its program. A `/rejoin` start with no launcher showed no GPGNet box: the
+  rejoin refused itself in its own box (no seat key on the device) and went on to the menu without GPGNet. A launcher's
+  result was not read (am start has none).
 - **Next**: the game's own links in native mode (`/nativenet`), with netlink's libraries built for Android.
