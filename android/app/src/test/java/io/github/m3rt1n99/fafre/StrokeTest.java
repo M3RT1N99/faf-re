@@ -91,26 +91,38 @@ public class StrokeTest {
     @Test
     public void theLabelSaysWhatTheEndIsOnInTheMockupsOrder() {
         int engineers = Stroke.END_ENGINEERS;
+        int attackMove = Stroke.END_ATTACK_MOVE;
         // A panel or the minimap first, whatever the stroke is.
-        assertEquals(Stroke.SAYS_CANCEL, Stroke.meaning(Stroke.END_PANEL, Stroke.PATROL, false));
-        assertEquals(Stroke.SAYS_MINIMAP, Stroke.meaning(Stroke.END_MINIMAP, Stroke.CANCEL, true));
+        assertEquals(Stroke.SAYS_CANCEL, Stroke.meaning(Stroke.END_PANEL, Stroke.PATROL));
+        assertEquals(Stroke.SAYS_MINIMAP, Stroke.meaning(Stroke.END_MINIMAP | attackMove, Stroke.CANCEL));
         // Then a loop: taken back, or a patrol where FAF offers one; not yet known, a patrol too.
-        assertEquals(Stroke.SAYS_CANCEL, Stroke.meaning(Stroke.END_ATTACK, Stroke.CANCEL, false));
-        assertEquals(Stroke.SAYS_PATROL, Stroke.meaning(Stroke.END_MOVE | Stroke.END_PATROL_OFFERED, Stroke.PATROL, false));
-        assertEquals(Stroke.SAYS_PATROL, Stroke.meaning(0, Stroke.PATROL, false));
+        assertEquals(Stroke.SAYS_CANCEL, Stroke.meaning(Stroke.END_ATTACK, Stroke.CANCEL));
+        assertEquals(Stroke.SAYS_PATROL, Stroke.meaning(Stroke.END_MOVE | Stroke.END_PATROL_OFFERED, Stroke.PATROL));
+        assertEquals(Stroke.SAYS_PATROL, Stroke.meaning(0, Stroke.PATROL));
         // For factories alone a loop is their rally route.
-        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(Stroke.END_MOVE, Stroke.PATROL, false));
-        // Then FAF's order there: an attack before Attack's attack-move, and Attack's before an assist.
-        assertEquals(Stroke.SAYS_ATTACK, Stroke.meaning(Stroke.END_ATTACK, Stroke.ROUTE, true));
-        assertEquals(Stroke.SAYS_ATTACK_MOVE, Stroke.meaning(Stroke.END_GUARD | engineers, Stroke.ROUTE, true));
-        assertEquals(Stroke.SAYS_ASSIST, Stroke.meaning(Stroke.END_GUARD | engineers, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_ASSIST, Stroke.meaning(Stroke.END_REPAIR | engineers, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_GUARD, Stroke.meaning(Stroke.END_GUARD, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_RECLAIM, Stroke.meaning(Stroke.END_RECLAIM | engineers, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_CAPTURE, Stroke.meaning(Stroke.END_CAPTURE | engineers, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_ORDER, Stroke.meaning(Stroke.END_OTHER, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(Stroke.END_MOVE | engineers, Stroke.ROUTE, false));
-        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(0, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(Stroke.END_MOVE, Stroke.PATROL));
+        // Then FAF's order there: an attack before the attack-move FAF's button armed, and that before an assist.
+        assertEquals(Stroke.SAYS_ATTACK, Stroke.meaning(Stroke.END_ATTACK | attackMove, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ATTACK_MOVE, Stroke.meaning(Stroke.END_GUARD | engineers | attackMove, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ATTACK_MOVE, Stroke.meaning(Stroke.END_MOVE | attackMove, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ASSIST, Stroke.meaning(Stroke.END_GUARD | engineers, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ASSIST, Stroke.meaning(Stroke.END_REPAIR | engineers, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_GUARD, Stroke.meaning(Stroke.END_GUARD, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_RECLAIM, Stroke.meaning(Stroke.END_RECLAIM | engineers, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_CAPTURE, Stroke.meaning(Stroke.END_CAPTURE | engineers, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ORDER, Stroke.meaning(Stroke.END_OTHER, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(Stroke.END_MOVE | engineers, Stroke.ROUTE));
+        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(0, Stroke.ROUTE));
+    }
+
+    @Test
+    public void theHandlesRestSaysFafsDistributeOrdersWhateverItsEndIsOn() {
+        // The finger is on the handle, over the map beside the group: what FAF's right click there would order counts for nothing.
+        assertEquals(Stroke.SAYS_DISTRIBUTE, Stroke.meaning(0, Stroke.DISTRIBUTE));
+        assertEquals(Stroke.SAYS_DISTRIBUTE, Stroke.meaning(Stroke.END_MOVE | Stroke.END_ATTACK_MOVE, Stroke.DISTRIBUTE));
+        assertEquals(Stroke.SAYS_DISTRIBUTE, Stroke.meaning(Stroke.END_PANEL, Stroke.DISTRIBUTE));
+        // No stroke's shape gives it.
+        assertEquals(Stroke.CANCEL, classify(0, 0, 5, 0));
     }
 
     @Test

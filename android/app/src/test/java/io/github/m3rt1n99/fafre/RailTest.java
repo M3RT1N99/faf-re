@@ -6,13 +6,10 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-/** Griff's rail: a tap lights a button for the next action, a hold counts while held; how they look, and where they stand. */
+/** Griff's rail, Box and Plus: a tap lights a button for the next action, a hold counts while held; how they look. */
 public class RailTest {
     private static final int BOX = TouchInput.RAIL_BOX;
     private static final int PLUS = TouchInput.RAIL_QUEUE;
-    private static final int ATTACK = TouchInput.RAIL_ATTACK;
-    /** The view's pixels in a mm, for the rail's places. */
-    private static final float MM = 10;
 
     private final Rail rail = new Rail();
 
@@ -40,12 +37,12 @@ public class RailTest {
 
     @Test
     public void heldItCountsUntilItGoesUpAndAMomentAfter() {
-        rail.press(ATTACK, 0);
-        assertTrue(rail.held(ATTACK));
-        assertEquals(ATTACK, rail.counting(2000));
-        rail.release(ATTACK, 2000, true);
-        assertFalse(rail.held(ATTACK));
-        assertEquals(ATTACK, rail.counting(2000 + Rail.LIFT_MILLISECONDS - 1));
+        rail.press(PLUS, 0);
+        assertTrue(rail.held(PLUS));
+        assertEquals(PLUS, rail.counting(2000));
+        rail.release(PLUS, 2000, true);
+        assertFalse(rail.held(PLUS));
+        assertEquals(PLUS, rail.counting(2000 + Rail.LIFT_MILLISECONDS - 1));
         assertEquals(0, rail.counting(2000 + Rail.LIFT_MILLISECONDS));
         assertEquals(0, rail.shown());
     }
@@ -91,8 +88,8 @@ public class RailTest {
 
     @Test
     public void aFingerThatSlidOffIsNoTap() {
-        rail.press(ATTACK, 0);
-        rail.release(ATTACK, 100, false);
+        rail.press(BOX, 0);
+        rail.release(BOX, 100, false);
         assertEquals(0, rail.shown());
     }
 
@@ -106,10 +103,10 @@ public class RailTest {
     @Test
     public void theButtonsCountEachForItself() {
         tap(BOX, 0);
-        rail.press(ATTACK, 0);
-        assertEquals(BOX | ATTACK, rail.counting(500));
+        rail.press(PLUS, 0);
+        assertEquals(BOX | PLUS, rail.counting(500));
         rail.used(BOX);
-        assertEquals(ATTACK, rail.counting(500));
+        assertEquals(PLUS, rail.counting(500));
     }
 
     @Test
@@ -134,57 +131,29 @@ public class RailTest {
 
     @Test
     public void theMomentAfterALiftCountsButLooksIdle() {
-        rail.press(ATTACK, 0);
-        rail.release(ATTACK, 2000, false);
-        assertEquals(ATTACK, rail.counting(2001));
-        assertEquals(Rail.IDLE, rail.look(ATTACK));
+        rail.press(PLUS, 0);
+        rail.release(PLUS, 2000, false);
+        assertEquals(PLUS, rail.counting(2001));
+        assertEquals(Rail.IDLE, rail.look(PLUS));
     }
 
     @Test
     public void eachButtonLooksAsItIs() {
         tap(BOX, 0);
-        rail.press(ATTACK, 0);
         assertEquals(Rail.LIT, rail.look(BOX));
         assertEquals(Rail.IDLE, rail.look(PLUS));
-        assertEquals(Rail.HELD, rail.look(ATTACK));
+        rail.press(PLUS, 0);
+        assertEquals(Rail.LIT, rail.look(BOX));
+        assertEquals(Rail.HELD, rail.look(PLUS));
     }
 
     @Test
-    public void inABandWithRoomAButtonIsElevenMillimetres() {
-        // The S22 Ultra: 11.4 mm where FAF's unit view stands highest.
-        assertEquals(11 * MM, Rail.side(11.4f * MM, MM), 0.001f);
-    }
-
-    @Test
-    public void inALowerBandAButtonIsAsHighAsTheBand() {
-        // The emulator at the phone's size: 10.2 mm where FAF's unit view stands highest.
-        assertEquals(10.2f * MM, Rail.side(10.2f * MM, MM), 0.001f);
-    }
-
-    @Test
-    public void aButtonStaysAFingersSizeInABandTooLowForIt() {
-        assertEquals(9 * MM, Rail.side(7 * MM, MM), 0.001f);
-    }
-
-    @Test
-    public void thePillBeginsAGapRightOfAttack() {
-        // Box at 20, Plus at 20 + 115, Attack at 20 + 230, which ends at 20 + 330.
-        assertEquals(20 + 330 + 15, Rail.pillLeft(20, 100, 15));
-    }
-
-    @Test
-    public void thePillIsAtMostThirtyFourMillimetresWide() {
-        assertEquals(340, Rail.pillWidth(400, 100, 2000, 70, MM));
-    }
-
-    @Test
-    public void thePillEndsTheHandlesReachBeforeTheScreensMiddle() {
-        // The emulator at the phone's size: the pill from 45 mm, the screen's middle at 70 mm, the handle's reach 7 mm.
-        assertEquals(700 - 70 - 450, Rail.pillWidth(450, 102, 700, 70, MM));
-    }
-
-    @Test
-    public void thePillIsNeverNarrowerThanTheRowIsHigh() {
-        assertEquals(102, Rail.pillWidth(600, 102, 700, 70, MM));
+    public void allOutLeavesNothingCounting() {
+        tap(BOX, 0);
+        rail.press(PLUS, 0);
+        rail.clear();
+        assertEquals(0, rail.counting(1));
+        assertEquals(0, rail.shown());
+        assertFalse(rail.held(PLUS));
     }
 }

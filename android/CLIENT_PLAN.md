@@ -250,6 +250,18 @@ most of C1, as 56 files stop at wx.
   - Open: a phone on real Wi-Fi (broadcasts through a router, the multicast lock, its power saving, Wi-Fi without
     internet beside mobile data); the service on a phone (its own battery rules, the game's speed in the back, Wi-Fi with
     the screen off); the TCP half of the transport, for GPGNet (C5).
+- **#448's programs on a phone (test release 0.15.1-pr448, a Galaxy S22 Ultra, 2026-11-17):** 0.15.1's app with the
+  replay runner and the math check of the Android headless pull request's head 93b195897.
+  - The math check passed on real ARM: 22,188 cases, none differing beyond the 564 known platform differences.
+  - Replays 26930624 (scmp_007) and 26902315 (x1mp_005), game version 3835: both played to their last beat, every
+    checksum matching, no desync report.
+  - On the emulator the arm64 runner stops on 26902315 under the ARM translation, 0.15.1's runner too. The translator
+    keeps its code in a window between 1 and 2 GiB (MAP_32BIT), and the Lua arena fills it. A phone runs arm64 code
+    without a translator, and is not affected.
+  - The game card, 0.15.1's engine, played a 30-minute game. Its log has FAF Lua errors: platoon.lua(1572) "attempt to
+    call method GetLocationCoords (a nil value)" twice, and effectutilitiesuef.lua(60) once. GetLocationCoords is a
+    method of FAF's Lua BuilderManager, not one of the engine's. Whether the PC's game shows the same is not checked.
+  - #448 has the result.
 - **Next:** the phone's word on sound, movies and the LAN game, then the speed (C4) and the rest of online (C5).
 
 *2026-11-15, stage 2a on the SDL3 client:* what android-client's game had, but Griff and network games in the back. All

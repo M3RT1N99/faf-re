@@ -1,15 +1,15 @@
 package io.github.m3rt1n99.fafre;
 
 /**
- * The touch scheme Griff's covers (buildstage/griff-v3-spec.md T3.7): the app's own pieces over the game's picture, the rail's
- * buttons, the draft's tick and cross, and the undo's pill while it shows and a short while after it went (Lingering). A finger
+ * The touch scheme Griff's covers (buildstage/griff-v3-spec.md T3.7): the app's own pieces over the game's picture, the draft's
+ * tick and cross, and the undo's button while it shows and a short while after it went (Lingering). A finger
  * on one is its view's, never the game's; the program keeps the handle clear of them and finds nothing of the game's under them
  * for a gesture, as under FAF's panels (Game.setGriffCovers). Each frame the activity gives every piece, shown or not, in the
  * picture's pixels; the program hears the covering ones when they changed.
  */
 final class Covers {
     /**
-     * A piece whose cover stays a short while after it went, where it last showed: the undo's pill, which goes when its time
+     * A piece whose cover stays a short while after it went, where it last showed: the undo's button, which goes when its time
      * runs out, maybe under a finger already on its way to it. A tap meant for it that comes late then lands on nothing, never
      * on the map beneath; but not where the player has opened something of FAF's (#forget). The program finds a tap's place
      * covered when it clicks, a settle after the finger's down (TouchInput.SETTLE_MILLISECONDS), so the time counts from the
@@ -53,7 +53,7 @@ final class Covers {
         }
     }
 
-    /** More pieces than the app has: the rail's three, the tick, the cross, the pill. */
+    /** More pieces than the app has: the tick, the cross, the undo's button. */
     static final int MOST = 16;
 
     private final int[] mBoxes = new int[4 * MOST];

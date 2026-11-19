@@ -1299,3 +1299,92 @@ WXT_TEST(GriffUndoAnAimedClickGoesWhereItsLandingWasChecked)
   WXT_CHECK_EQ(AimedClick(Landing::kHover, 640, 300, 652, 303), Aim::kAtAim);
   WXT_CHECK_EQ(AimedClick(Landing::kHover, 640, 300, 640, 300), Aim::kAtAim);
 }
+
+// Griff v4 offers the undo only where it saves the player work: a replaced queue that held a building to give back, or two
+// orders or more that come back. Idle units, one move, one assist, an attack-move (its script and its AggressiveMove are one
+// order) and a factory's own builds, which no click brings back, offer none.
+WXT_TEST(GriffUndoSavesWorkOnlyForABuildingOrTwoOrdersThatComeBack)
+{
+  using griffundo::SavesWork;
+  WXT_CHECK(!SavesWork({}));
+  WXT_CHECK(!SavesWork({Order(3, "Move", 10, 10)}));
+  WXT_CHECK(!SavesWork({On(Order(3, "Guard", 10, 10), 40)}));
+  WXT_CHECK(!SavesWork({AttackMoveScript(3, 30, 30), Order(kSimId, "AggressiveMove", 30, 30)}));
+  WXT_CHECK(!SavesWork({Named(Order(3, "BuildFactory", 0, 0), "uel0105"), Named(Order(4, "BuildFactory", 0, 0), "uel0105")}));
+  WXT_CHECK(!SavesWork({Order(3, "Move", 10, 10), Order(4, "Stop", 0, 0)}));
+  WXT_CHECK(SavesWork({Named(Order(3, "BuildMobile", 10, 10), "ueb1101")}));
+  WXT_CHECK(SavesWork({Order(3, "Move", 10, 10), Order(4, "Move", 20, 20)}));
+  WXT_CHECK(SavesWork({Order(3, "Patrol", 10, 10), Order(4, "Patrol", 20, 20)}));
+  WXT_CHECK(SavesWork({On(Order(3, "Reclaim", 10, 10), 51), On(Order(4, "Reclaim", 12, 10), 52)}));
+}
+
+// A draft the cross or two fingers' tap dropped is a record of Griff's own, which orders nothing: offered from two plans on, as
+// one plan comes back by a tap.
+WXT_TEST(GriffUndoADroppedDraftComesBackFromTwoPlansOn)
+{
+  using griffundo::DropSavesWork;
+  WXT_CHECK(!DropSavesWork(0));
+  WXT_CHECK(!DropSavesWork(1));
+  WXT_CHECK(DropSavesWork(2));
+  WXT_CHECK(DropSavesWork(30));
+}
+
+// A building picked where no draft is open opens one, which ends a dropped draft's record, whose undo would take the new one's
+// place; a building picked into the open draft, and any other record, leave the record as it is.
+WXT_TEST(GriffUndoADraftThatOpensEndsADroppedDraftsRecord)
+{
+  using griffundo::Kept;
+  using griffundo::OpeningEndsRecord;
+  WXT_CHECK(OpeningEndsRecord(false, Kept::kDraft));
+  WXT_CHECK(!OpeningEndsRecord(true, Kept::kDraft));
+  WXT_CHECK(!OpeningEndsRecord(false, Kept::kOrders));
+  WXT_CHECK(!OpeningEndsRecord(false, Kept::kGroup));
+}
+
+// A rest that stored a control group over other units is a record of Griff's own, which orders nothing: offered where the store
+// took out a unit that lived, not for a store on an empty slot, of the very units or of them and more, nor for Plus's append.
+WXT_TEST(GriffUndoAGroupARestStoredOverComesBack)
+{
+  using griffundo::StoreSavesWork;
+  WXT_CHECK(StoreSavesWork(false, {7, 8}, {9}));
+  // Fewer of the units it held: one that lived is out of the group.
+  WXT_CHECK(StoreSavesWork(false, {7, 8, 9}, {8}));
+  // The units it held and more: none is out of it, and the undo would only take the others out again.
+  WXT_CHECK(!StoreSavesWork(false, {7, 8}, {9, 8, 7}));
+  // An empty slot, or one whose units are all gone, held nothing to give back.
+  WXT_CHECK(!StoreSavesWork(false, {}, {9}));
+  // The very units, in whatever order: nothing changed.
+  WXT_CHECK(!StoreSavesWork(false, {8, 7}, {7, 8}));
+  // Plus's append took none of them out.
+  WXT_CHECK(!StoreSavesWork(true, {7, 8}, {7, 8, 9}));
+}
+
+// What a rest's store on a slot does to the undo's record: a store that took out a unit that lived is a record of its own, in
+// place of the one before; one that changed the group of a group's record ends it, as that record's undo would undo the store;
+// one that changed nothing, or another group, keeps it.
+WXT_TEST(GriffUndoAStoreOnASlotOffersEndsOrKeepsTheRecord)
+{
+  using griffundo::Kept;
+  using griffundo::OutcomeOfStore;
+  using griffundo::StoreOutcome;
+  // A second rest on the slot, or a double click there, stores the very units again.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8}, {8, 7}) == StoreOutcome::kKeep);
+  // Plus's append to the record's group, whose undo would take the units appended out again; one of units it held changed
+  // nothing.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, true, {7, 8}, {7, 8, 9}) == StoreOutcome::kEnd);
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, true, {7, 8}, {8, 7}) == StoreOutcome::kKeep);
+  // Other units over the group's: a record of its own, whatever the record before it.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8}, {9}) == StoreOutcome::kOffer);
+  WXT_CHECK(OutcomeOfStore(Kept::kOrders, 0, 2, false, {7, 8}, {9}) == StoreOutcome::kOffer);
+  WXT_CHECK(OutcomeOfStore(Kept::kDraft, 0, 2, false, {7, 8}, {9}) == StoreOutcome::kOffer);
+  // A store on another slot leaves the record's group as it was.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 3, 2, true, {7, 8}, {7, 8, 9}) == StoreOutcome::kKeep);
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 3, 2, false, {7, 8}, {9, 8, 7}) == StoreOutcome::kKeep);
+  // The group's units and more offer none, so the record of a gesture's orders stays on the button; the group's own ends.
+  WXT_CHECK(OutcomeOfStore(Kept::kOrders, 0, 2, false, {7, 8}, {9, 8, 7}) == StoreOutcome::kKeep);
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8}, {9, 8, 7}) == StoreOutcome::kEnd);
+  // Fewer of the group's units: a record of its own.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {7, 8, 9}, {8}) == StoreOutcome::kOffer);
+  // The record's group, all of whose units are gone, stored anew: changed.
+  WXT_CHECK(OutcomeOfStore(Kept::kGroup, 2, 2, false, {}, {9}) == StoreOutcome::kEnd);
+}

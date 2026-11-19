@@ -115,9 +115,14 @@ real density that may stay the panel's (about 501, which with that mode would sa
 250); which of them this phone does is not known. So the size is worked out from the active mode and from the largest
 supported one, at the density reported, and the one nearer what the logical size says is taken: logical pixels over the
 logical density, 61 mm there in every resolution, and a panel is about 15 % larger than that. Where the result is more
-than a factor of two from the logical size, the density is wrong and the logical size is all there is. At 460 lines the
-panels (372 lines from the multifunction panel down to the unit view) still leave the mouse's buttons about 6 mm each, and
-Griff's rail its least, 9 mm.
+than a factor of two from the logical size, the density is wrong and the logical size is all there is. The activity keeps
+itself where the screen's pixels or panel change (its `configChanges`: a resolution switched in a game, a foldable unfolded,
+`wm size`), so the short side is worked out anew whenever the layer that takes the fingers changes its size, and with it
+Griff's millimetre: its slops and reaches, the loupe's, the sizes the program measures by (`Game.setGriff`), and the rail's
+slop at each move. The mouse scheme's slop (the system's) and the factor as the game started (used only until the game says
+its own) stay as they were then. At 460 lines the
+panels (372 lines from the multifunction panel down to the unit view) still leave the mouse's buttons about 6 mm each; Griff's rail, which FAF's UI draws (see "Griff"), grows with FAF's
+panels.
 The value goes to the game as `/fafre_hud_scale`, which `fafre/scale.lua` reads, and the report has a line with it, what
 the size was taken from and what there was to choose from: only a phone can prove this. On the emulator `wm size` leaves
 its millimetres as they were, so a test gives the phone's factor: `am start ... --ef hudScale 1.6`.
@@ -182,12 +187,12 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | Hook | Why |
 |---|---|
 | `lua/sessioninit.lua` | The HUD's factor, in the session's fresh state, and `OnSync` at the HUD's factor |
-| `lua/ui/game/gamemain.lua` | `OnSelectionChanged`, `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume` at the HUD's factor; the game's UI starts Griff's report of the selection (`fafre/griff.lua`, see "Griff") |
+| `lua/ui/game/gamemain.lua` | `OnSelectionChanged`, `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume` at the HUD's factor; the game's UI starts Griff's report of the selection and its pieces in FAF's UI (`fafre/griff.lua`, `fafre/griffhud.lua`, see "Griff") |
 | `lua/ui/game/construction.lua` | Griff: a build icon's click (FAF's `OnClickHandler`, which the panel's buttons take when they are made) puts its building into the draft (`fafre/griff.lua` `BuildIconClicked`, after FAF's own handler), not FAF's ghost; FAF's build mode keys arm the build mode themselves (`buildmode.lua`), and a template's key (no mouse button) and click (no build item) reach the handler but stay FAF's |
 | `lua/ui/game/unitview.lua` | Nothing hovers on a phone: FAF's "Single Unit Selected Info" is on, or a selected unit's view would go with the pointer; the abilities list, which stands over the middle of the screen, only for a finger that rests on a unit |
 | `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The large buttons are as large as the list FAF shows fits: `Built` with 137 of FAF's lines and 70 a button of the list as `BuildContent` picks it, on 768 lines a single-player game's eleven at 0.85, a replay's ten at 0.92, a network game's eight at 1.10. What a tab shows is told to `fafre/opened.lua`: nothing of Griff's covers it (see "The rail, the control groups and the keyboard") |
 | `lua/ui/game/multifunction.lua` | Its dropouts (the overlay filters' list right of the panel, the map's options, the team colours) are told to `fafre/opened.lua` as their backgrounds are made: nothing of Griff's covers them |
-| `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 are slots that always show (see "Griff") |
+| `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 always show in FAF's column: FAF's own controls, or for an empty group the same frame with its number (see "Griff") |
 | `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on while the unit it took last still stands just before it in the avatar's list, which FAF makes anew each beat without the units ordered since, and starts over at the best idle unit where it does not, as a mouse's click after the order does |
 | `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the multifunction panel, Griff's rail and the unit view: a new window goes where it covers no panel and none of Griff's pieces, the minimap right of the screen's middle and the chat window above it ("The rail, the control groups and the keyboard"), and the reset button brings it back there (the chat's lines made again for its size); a place the user chose stays. From FAF 3841 on `chat.lua` only forwards to the new chat (the engine imports it at Enter): its hook does nothing there |
 | `lua/ui/game/chat/chatinterface.lua` | FAF 3841's chat window: its `DefaultRect`, the new window's place and its reset button's, lies at the HUD's factor below the picture; it is the chat's home, 8 of FAF's pixels wider for the title this window has |
@@ -226,7 +231,9 @@ sends the leave a Windows program gets, the event mapper tells the control it le
 finger rests, the pointer is there and they show, until the hold's right button comes at 350 ms, which FAF's buttons take
 for a press. A new finger takes the leave back, first thing and also when it is already on its way to the game: the
 leave carries a count of the fingers that have come down, and is dropped if the count has moved (`Game.pointerStay`). It
-stays with a building's ghost over the world (`UI_GhostWaitsAt`), and leaves a build icon that started the ghost.
+stays with a building's ghost over the world (`UI_GhostWaitsAt`), and leaves a build icon that started the ghost. While
+Griff's Distribute orders holds the cursor at the group's middle until a frame has drawn it there, the leave waits and comes
+after it, by the same count (`grifftap::Leave`, tested).
 
 Everything the activity gives, a finger's or a mouse's, reaches the program's thread as a task
 (`Win32Android_RunOnWindowThread`), and the input a task gives comes right behind it in the queue, ahead of what was given
@@ -273,9 +280,8 @@ the left edge between the multifunction panel and the unit view, 138 and 234 of 
 top while a selection shows the construction panel, `HudScale`). The right
 edge, which has more height, belongs to the avatars with their idle lists and to the control groups, and both grow.
 In the menus, on the score screen and over a dialog in a game, whose fingers are the menus', only *Keys* stays, 6.5 mm, in the upper left
-corner, which no menu uses for anything but a title. A toggle that is on goes off then. With the touch scheme Griff the bar is its rail
-in a game instead, a row of *Box*, *Plus* and *Attack* at the top left with the undo's pill after them (below, "The rail, the control
-groups and the keyboard"), and *Keys*
+corner, which no menu uses for anything but a title. A toggle that is on goes off then. With the touch scheme Griff the rail is FAF's
+UI's in a game, a row of FAF's order buttons at the top left (below, "The rail, the control groups and the keyboard"), and *Keys*
 is the menus' only: in a game the keyboard is *Keyboard* in FAF's Menu tab, in both schemes. A thumb on a rail button taps within
 Griff's slop of 2.5 mm.
 
@@ -287,34 +293,52 @@ each gesture ends in a click of the left or right button, a drag of the left or 
 arms it, or a console key action FAF binds to keys, what a PC player gives with a mouse and a keyboard. FAF decides what they order,
 and nothing else reaches the simulation. The camera is the UI's, which FAF's Lua moves as a player's keys and minimap do. The activity
 keeps the fingers (`TouchInput` with `setGriff`: slop, timing, the tap ladder, the stroke, two fingers, the draft's gestures; `Rail` for the
-rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the screen shows them; `Undo` for the undo's pill) and draws the
-handle, the stroke, a resting finger's ring, the draft's plans and its loupe, the pins of the orders given, and a short word for the user, a
-toast (`GriffLayer`; the draft's tick and cross are `DraftButton`s, the undo's pill an `UndoPill`, the rail's buttons `RailButton`s).
+rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the screen shows them; `Undo` for the undo's button). All Griff
+shows is FAF's UI's, in FAF's own look at the HUD's factor (Griff v4, the user's verdict on 0.14.0: every element as an original one of
+FA's), each piece checked side by side with the element of FAF's it follows (2026-11-15, on the emulator at the phone's size and HUD 1.6,
+in the four factions' skins where the skin changes it, but for the stroke's label, FAF's tooltip, whose colours follow the skin and which
+was seen in UEF's only). `fafre/griffhud.lua` has the rail's *Box*, *Plus* and *Groups*, the undo's button
+and the draft's tick and the cross, Griff's Esc, as FAF's order buttons, the hints where FAF prints its own messages and a waypoint marked for deletion
+under FAF's Cancel icon. `fafre/griffmap.lua`, on the map's view as FAF's reclaim labels are, has the handle as the brackets FAF draws
+about a selected unit, a resting finger's ring as a ring of FAF's pings, a stroke as FAF's command graph draws the route once it is
+ordered, the draft's plans as the ghosts of FAF's build preview, *Box*'s box over deposits as FAF's selection box and the loupe's frame
+as FAF's marker ring. `fafre/griffgroups.lua` has the groups' icons in FAF's strategic icon art ("The groups"). The activity says where its
+pieces are (`Game.setGriffShown`, `native/src/host/GriffShown.cpp`) and lays a view of its own over *Box*, *Plus*, the undo's button,
+the tick and the cross where FAF's UI reports them (`Game.griffHudPlaces`, `HudTarget`), which takes their fingers. Only the loupe's
+picture is the activity's own (`LoupeView`, framed by FAF's ring): FAF's UI has no picture of the game's picture to magnify, and a
+second world view cannot show the 6 mm about a finger at twice their size, as every camera stops at the console's nearest zoom
+(`cam_NearZoom`) and shows at its focus the width that zoom gives. While the player hides FAF's UI (`gamemain.lua` HideGameUI), all of
+Griff's pieces hide with it but a resting finger's ring and what a finger draws, and the views over its buttons take no finger.
 What a gesture clicks is decided on the program's thread, which knows what lies under the finger (`native/src/host/GriffAndroid.cpp`),
 with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 mm, the mockup's slop:
 
 | Gesture | FAF's input |
 |---|---|
-| Tap on the map | On one's own unit the left click, which selects it. One's own are the focus army's, as the engine selects no other (`CanSelectUnit`; FAF's world view leaves the click to it), which in a replay is the army that the score panel's row or the replay's army list focuses; an observer without a focus army, as a replay begins or after a defeat, selects nothing, by a PC's click as by a tap, which is the left click there too. On anything else, with a selection, the right click, which FAF makes the order for what is there; without one the left click. `TapKind` reads what the cursor is over (`GetRolloverInfo`, `GetRightMouseButtonOrder`) once the cursor has rested there, 120 ms as for every tap. A tap that misses a unit by a little still takes it: FAF's own pick reaches 3.5 mm about the cursor with nothing selected that takes orders, 2 mm with troops (mobile units, or factories alone), so that a tap for a move beside one's own units does not take the selection from them; the program sets FAF's console variable `ui_SelectTolerance` (an option of FAF's) at a first finger's down where it differs, but not while a command mode is armed, which picks as FAF sets it (its reclaim mode reaches further), and puts back the value it found when the game ends; both in as many digits as the console needs to read the very float back (`include/GriffTap.h` `FloatText`, tested). *Box* counts for the tap as it did at the finger's down, which set the reach. With a command mode armed: its left click. *Plus*: with Shift. *Box*: Shift's left click on one's own unit, which adds it or takes it out; on anything else nothing, and *Box* stays lit. A tap uses the rail's buttons that counted for it (`Rail`): *Box* only where it took or let go a unit, so a tap on FAF's UI or an armed mode's puts *Plus* and *Attack* out and leaves *Box* lit, and *Box*'s tap on nothing uses none (`include/GriffTap.h` `Used`, tested). *Attack*: FAF's attack-move mode (`StartCommandMode('order', {TaskName = 'AttackMove', ...})`, as its button), then the left click. With *Plus* or *Attack* and troops selected, a tap on one's own unit is the order there too (FAF's right click: assist or guard); adding a unit is *Box*'s |
+| Tap on the map | On one's own unit the left click, which selects it. One's own are the focus army's, as the engine selects no other (`CanSelectUnit`; FAF's world view leaves the click to it), which in a replay is the army that the score panel's row or the replay's army list focuses; an observer without a focus army, as a replay begins or after a defeat, selects nothing, by a PC's click as by a tap, which is the left click there too. On anything else, with a selection, the right click, which FAF makes the order for what is there; without one the left click. `TapKind` reads what the cursor is over (`GetRolloverInfo`, `GetRightMouseButtonOrder`) once the cursor has rested there, 120 ms as for every tap. A tap that misses a unit by a little still takes it: FAF's own pick reaches 3.5 mm about the cursor with nothing selected that takes orders, 2 mm with troops (mobile units, or factories alone), so that a tap for a move beside one's own units does not take the selection from them; the program sets FAF's console variable `ui_SelectTolerance` (an option of FAF's) at a first finger's down where it differs, but not while a command mode is armed, which picks as FAF sets it (its reclaim mode reaches further), and puts back the value it found when the game ends; both in as many digits as the console needs to read the very float back (`include/GriffTap.h` `FloatText`, tested). *Box* counts for the tap as it did at the finger's down, which set the reach. With a command mode armed (FAF's attack-move button's too): its left click. *Plus*: with Shift. *Box*: Shift's left click on one's own unit, which adds it or takes it out; on anything else nothing, and *Box* stays lit. A tap uses the rail's buttons that counted for it (`Rail`): *Box* only where it took or let go a unit, so a tap on FAF's UI or an armed mode's puts *Plus* out and leaves *Box* lit, and *Box*'s tap on nothing uses none (`include/GriffTap.h` `Used`, tested). With *Plus* and troops selected, a tap on one's own unit is the order there too (FAF's right click: assist or guard); adding a unit is *Box*'s |
 | Tap on a panel, or on the map within reach of a small control | The tap help's left click (above), as with the mouse |
-| Taps in a row | The tap ladder (`TouchInput.TapLadder`): a tap within 350 ms of the last one's lift and 6 mm of it climbs a rung by what the ladder's first tap was, whatever lies under the next, which the program says of each tap (`Game.griffSaid`). After a tap that selected one's own unit: all of its type on the screen (FAF's key action `UI_SelectByCategory +inview` with the type's own category, which the engine gives each blueprint: a double click at the first tap's place could land on the panels its selection brought up), then all of it on the map (`UI_ExpandCurrentSelection`, FAF's select_all_units_of_same_type). After a plain move (FAF's right click there was a move, without *Plus* or *Attack*): an attack-move at the first tap's place, which replaces the move, as FAF cannot change an order's kind (where FAF offers no attack-move, as for factories alone, the right click again: the rally point). After a tap on nothing with nothing selected: all one's own mobile units on the screen (`UI_SelectByCategory +inview MOBILE`). A tap on FAF's UI is clicked again where the first went, within the game's own double-click reach, so the message layer makes it its double click. *Plus*, *Attack* and *Box*, a drag, a rest, a stroke and two fingers start the ladder anew. The handle leaves a finger to the ladder where it may climb (`TapLadder.climbing`: soon and near enough, below the third rung, not with *Box*, *Plus* or *Attack* counting); where its lift does not climb after all, as when it came too late or the program had not said what the first tap was, it is the handle's tap, never FAF's click at the handle's place |
-| Rest 300 ms and lift | A ring of 7 mm about the finger shows the rest. On a panel the tap help's right click (a factory's icon: one less; an avatar: select and go to it). On the map nothing: the cursor stood there, so FAF showed what is under it. With *Box* no rest (the mockup's): no ring, and the lift on the map is *Box*'s tap; *Box* as it counted at the finger's down |
-| One finger that moves | On the map the middle button's drag, FAF's pan, pressed where the finger passed the slop, so the map does not jump by it; after a rest, or with *Box*, the left button's, FAF's box, which *Plus* makes add (Shift). On a panel or the minimap the left button's drag, as a mouse's. A pan that lifts while moving (its last move within 70 ms) glides on (not while the program's clicks run, below) at 0.9 of the finger's speed, slowing by e^-6t until under 0.7 mm a second: `griff.lua` moves the focus each frame of the UI by the ground the map's velocity takes past the view's middle, at FAF's own pan rate (`CameraPan`: the ground's breadth a pixel across the middle, both ways), on the system's clock, so a paused game glides too. A finger on the map or the minimap stops it, as do a key or the minimap moving the camera, and FAF's bounds of the camera |
-| Two fingers | They zoom at their middle and move the camera with it at once, through the UI's camera (`griff.lua` `Pinch`, `SaveSettings`/`RestoreSettings`): the ground under their middle when they began stays under it, the zoom by how far apart they are from then, within FAF's own limits (`GetMinZoom`, `GetMaxZoom`), and the camera tilts for its zoom as FAF's does. Each move is measured on the camera the last frame drew, so it holds however many come in a frame, one frame behind the finger as FAF's own pan is; `griff.lua` takes that camera each frame apart from the glide's and the flight's steps, which an error stops alone, and where it has none the fingers do nothing. The finger left of the two moves the camera on, and a finger again beside it pinches anew. A second finger on a pan ends the pan and the two pinch, once the program has said the drag is a pan (`Game.SAID_PAN`, by the drag's number); on a box, a panel's drag or the minimap's it does nothing, and the drag goes on. A quick tap of two, within 350 ms of the first finger down and neither moved 1.5 mm, ends an armed command mode (`EndCommandMode`), else `SelectUnits(nil)` |
+| Taps in a row | The tap ladder (`TouchInput.TapLadder`): a tap within 350 ms of the last one's lift and 6 mm of it climbs a rung by what the ladder's first tap was, whatever lies under the next, which the program says of each tap (`Game.griffSaid`). After a tap that selected one's own unit: all of its type on the screen (FAF's key action `UI_SelectByCategory +inview` with the type's own category, which the engine gives each blueprint: a double click at the first tap's place could land on the panels its selection brought up), then all of it on the map (`UI_ExpandCurrentSelection`, FAF's select_all_units_of_same_type). After a plain move (FAF's right click there was a move, without *Plus*): an attack-move at the first tap's place, which replaces the move, as FAF cannot change an order's kind (where FAF offers no attack-move, as for factories alone, the right click again: the rally point). After a tap on nothing with nothing selected: all one's own mobile units on the screen (`UI_SelectByCategory +inview MOBILE`). A tap on FAF's UI is clicked again where the first went, within the game's own double-click reach, so the message layer makes it its double click. *Plus* and *Box*, a drag, a rest, a stroke and two fingers start the ladder anew. The handle leaves a finger to the ladder where it may climb (`TapLadder.climbing`: soon and near enough, below the third rung, not with *Box* or *Plus* counting); where its lift does not climb after all, as when it came too late or the program had not said what the first tap was, it is the handle's tap, never FAF's click at the handle's place. Only that quick lift is the ladder's: a rest of the finger or a move past the slop is the handle's, from where the finger came down, as for a finger after the ladder's time (`TouchInput` `takeForHandle`): a rest the handle's rest, FAF's Distribute orders with its ring and label where the program says so (below), else the handle's tap at its lift, never the map's ring or right button at the handle's place, which would be a move or a formation there; a move the stroke |
+| Rest 300 ms and lift | A ring about the finger shows the rest, and the program hears of it (`Game.griffRest`, Griff v4): a ring of FAF's pings (`marker/ring_*02-blur.dds`, as large as two order buttons), in the look of what a drag from the rest gives, as the program says once it has found it (`Game.REST_`): the move ping's blue for FAF's formation, the alert ping's yellow for the left button's drag, as a mouse's there (FAF's box on the map, an armed command mode's own drag, the minimap's camera, a panel's), the attack ping's red where it gives nothing: on a waypoint marked for deletion, and on a Checkbox of FAF's, whose press a slide leaves alone (below), though the lift there stays the panel's right click. On a waypoint of the selection's orders within the tap help's reach (one FAF draws in its command graph, `griffundo::Removable`), Shift goes down so that FAF draws its waypoints and FAF's cursor goes onto it; while FAF's cursor hovers that very command, FAF's own Cancel icon (`orders-panel/no-parking_bmp.dds`, the Cancel of its mouse tooltips) marks it (`griffhud.lua`, `FafreGriffMarked`), and the lift takes that order out with FAF's Shift+Ctrl right release, which strips it from every unit it went to, as the undo does (`DeleteMarked`); where FAF's cursor did not hover it then, a hint says *Not deleted* (FAF keeps a factory's last rally point so). Waypoints show while Shift is down, as for a PC player: with *Plus* held. With units selected, on the ground where FAF's right click is a plain move and no command mode is armed, the rest is the right button's, as the mouse scheme's hold: its lift is FAF's right click there (*Plus*: Shift), the order, watched for its undo. On a panel the tap help's right click (a factory's icon: one less; an avatar: select and go to it). Elsewhere on the map nothing: the cursor stood there, so FAF showed what is under it (on one's own unit its abilities, the hook of `unitview.lua`). With *Box* no rest (the mockup's): no ring, and the lift on the map is *Box*'s tap; *Box* as it counted at the finger's down. A second finger, or the system taking the fingers, ends a rest with nothing (`Game.griffRestGone`), a mark's Shift with it |
+| One finger that moves | On the map the middle button's drag, FAF's pan, pressed where the finger passed the slop, so the map does not jump by it. After a rest on the ground with mobile units selected (above) the right button's drag from where it rested, FA's formation: FAF turns it to face the way the finger goes, as its right-button drag does, and orders it at the lift (*Plus*: Shift), watched for its undo. A second finger gives it up and says *Cancelled*, also one that came before the program said the drag is FAF's formation (`Game.SAID_FORMATION`), at the word, and so, without a word, does the system taking the fingers or a first finger that comes while the gesture still runs: the world views forget the order a release would give and the formation FAF shows, then the right button goes up (`GiveUpDrag`), as only a lifted finger orders. That runs in a task of its own, which comes after the right button's press also where the give-up was asked before the drag's own task had run (`GiveUpFormationTask`). On the emulator (2026-11-15, the final build) Home in the middle of the drag, which gives the activity the system's cancel (0.2 s after the drag's first move, 0.6 s before the finger lifted), and a second finger after ten moves each left the ten tanks selected with no order, where the same drag alone ordered all ten. One constant chooses what this drag gives (`GriffAndroid.cpp` `kRestDragGivesFormation`, the user's to decide: FAF's formation as the mouse scheme's hold, or 0.14.0's box); a selection without mobile units (factories alone, whose right click there is the rally point) boxes either way, and the rest's lift stays FAF's right click. After a rest on a waypoint nothing: the finger slid off, and its mark goes with Shift. After any other rest, and with *Box* at once, the left button's, FAF's box, which *Plus* makes add (Shift): so with a selection *Box* arms the next drag as a box, where nothing is selected a rest and a drag box, and a two fingers' tap still clears the selection. On a panel or the minimap the left button's drag, as a mouse's, but from a Checkbox of FAF's nothing, also after a rest on it: FAF's Checkbox acts on the press (`maui/checkbox.lua`, found by its `ToggleCheck`), so a thumb that slid from the orders panel onto the map fired the button it started on, Stop or a toggle, which no mouse does by sliding, and a rest that reads a tooltip had no way off it that did nothing. That is the orders panel's buttons and toggles, the construction panel's tabs and the panels' collapse arrows; a mark over one that takes hit tests of its own (an order toggle's ring, its question mark for a mixed selection) counts as the button, as the press goes on to it (`include/GriffTap.h` `DragPressesNothing`, tested). The pointer goes with the finger, and a rest that lifts without sliding stays the panel's right click (above). FAF's buttons, which act at the release (the build icons, the factory queue's reorder by its drag), the minimap, windows, scroll bars and sliders keep their press. A pan that lifts while moving (its last move within 70 ms) glides on (not while the program's clicks run, below) at 0.9 of the finger's speed, slowing by e^-6t until under 0.7 mm a second: `griff.lua` moves the focus each frame of the UI by the ground the map's velocity takes past the view's middle, at FAF's own pan rate (`CameraPan`: the ground's breadth a pixel across the middle, both ways), on the system's clock, so a paused game glides too. A finger on the map or the minimap stops it, as do a key or the minimap moving the camera, and FAF's bounds of the camera |
+| Two fingers | They zoom at their middle and move the camera with it at once, through the UI's camera (`griff.lua` `Pinch`, `SaveSettings`/`RestoreSettings`): the ground under their middle when they began stays under it, the zoom by how far apart they are from then, within FAF's own limits (`GetMinZoom`, `GetMaxZoom`), and the camera tilts for its zoom as FAF's does. Each move is measured on the camera the last frame drew, so it holds however many come in a frame, one frame behind the finger as FAF's own pan is; `griff.lua` takes that camera each frame apart from the glide's and the flight's steps, which an error stops alone, and where it has none the fingers do nothing. The finger left of the two moves the camera on, and a finger again beside it pinches anew. A second finger on a pan ends the pan and the two pinch, once the program has said the drag is a pan (`Game.SAID_PAN`, by the drag's number); on a box, a panel's drag or the minimap's it does nothing, and the drag goes on. One that came before the program's word, which comes a program frame and a post after the drag began, waits for it and is no gesture's until then: the word for a pan makes two fingers of it, whose lift is no tap of two, and the word for FAF's formation gives the formation up; with no word, on a box or a panel's drag, it waits for its lift. A quick tap of two, within 350 ms of the first finger down, each finger within 1.5 mm of where it was as the second came down and their distance within 1.5 mm of what it was then, ends an armed command mode (`EndCommandMode`), else `SelectUnits(nil)`, also where the first finger came down on the handle, which gives no stroke up then. Two fingers that twist about a still middle pinch, which moves nothing. Two that began on a pan or a pinch, where the first had travelled already, are no tap |
 | Tap on the handle | The camera flies to the group's middle, 1 - e^-14t of the way each frame (`ToGroup`), its zoom and turn kept, until it is within a pixel of it, or where FAF's bounds hold the camera (it moved less than half the step asked); at once where the system's animations are off |
-| Stroke from the handle | Waypoints about every 15 mm and at the corners (`Stroke.waypoints`); each the right click at its place, in a task of its own so that it sees what the one before did; the first replaces unless *Plus* counts, the rest go with Shift. Each picks what is under it, as the world view updates its pick at each event (`CUIWorldView::HandleEvent`), so the last one gives the order for what the stroke ends on, also on the minimap. While it is drawn, the cursor hovers at its end every 0.1 s, so FAF shows its order cursor there, and a label 14 mm above the finger says what lifting gives, from what FAF's right click there would order: Route, Attack, Assist (with engineers) or Guard, Reclaim, Capture, Order for FAF's others, Attack move with *Attack*, Minimap, Patrol, Cancel; with a dot at each waypoint. The handle stays where the stroke began. The lift counts where the finger was 50 ms before, as fingers wobble as they lift. A stroke that ends within 8 mm of where it began is a loop: longer than 40 mm, FAF's patrol (its orders panel's mode, `StartCommandMode('order', {name = 'RULEUCC_Patrol'})`, for each waypoint, armed again where FAF ended it), where FAF offers one (for factories alone a loop is their rally route, as any stroke); shorter, the finger took it back. Waypoints over a panel are left out, and a stroke that ends on a panel other than the minimap gives nothing. With *Attack* each is an attack-move, armed again where FAF ended the mode after a replacing order. A stroke given up, by a short loop, a second finger or an end on a panel, says Cancelled |
+| Rest 300 ms on the handle and lift | FAF's Distribute orders, its key action G and Shift-G (`spreadattack`), which FAF's UI has no button for, where the program says the selection can (`Game.handleRest`, `griff.lua` `CanDistribute`, `SAID_DISTRIBUTES`): two of the selected units or more that are no factory, and of them the one FAF itself picks with the cursor at the group's middle, the nearest to the world place under it (`distribute-queue.lua` `DistributeOrders`), holds two orders or more. Then a ring shows, the move ping's blue, and 14 mm above the finger FAF's tooltip with FAF's own words for G (`<LOC key_desc_distribute_orders>Distribute orders`, localized), the label alone. The lift within the slop puts the cursor on the group's middle and, once a frame drew it there (FAF reads the world place under the cursor, `GetMouseWorldPos`), runs FAF's own action string, which clears every queue and deals the unit's orders out over the selection (moves and reclaims in batches, attacks with full redundancy, builds one per engineer where plans and engineers match, else in batches: several plans to an engineer, or several engineers to a plan) and says *Distributing orders* where FAF prints its messages; the undo's record ends, as every queue is given anew. The pointer's leave that the lift asks for waits for that frame (*The pointer*, above); without that, on the emulator's frames of about 130 ms (one of 700 ms), the leave came first, took the cursor off the group and the lift only said *Cancelled* (2026-11-18). Where the group's middle has left the map by the lift, or a finger moved the cursor before the frame, *Cancelled*. A move past the slop is the stroke as ever, which a short loop back gives up. Where the program does not say so (one unit, one order or none, the group out of view or under a panel), nothing shows and the lift is the handle's tap, so a slow tap never deals queues out. So a spread move is a route or *Plus*-held taps, then the rest; a spread attack *Plus*-held taps on enemy units, then the rest; spread builds the draft's tick, then the rest |
+| Stroke from the handle | Waypoints about every 15 mm and at the corners (`Stroke.waypoints`); each the right click at its place, in a task of its own so that it sees what the one before did; the first replaces unless *Plus* counts, the rest go with Shift. Each picks what is under it, as the world view updates its pick at each event (`CUIWorldView::HandleEvent`), so the last one gives the order for what the stroke ends on, also on the minimap. While it is drawn, the cursor hovers at its end every 0.1 s, so FAF shows its order cursor there; FAF's UI shows the route close to how FAF's command graph draws it once it is ordered (`griffmap.lua`, `FafreGriffWaypoint`, the engine's own sizes): its order line from where the stroke began through each waypoint, a band of the order's colour as wide as FAF's for the selection's count (`commandwaypoint.lua` CalculateWaypointLineWidth: the middle half of that width and the brighter edges its texture shows on either side), straight from waypoint to waypoint as FAF's Lua draws lines on the map (`UI_DrawLine`), where the command graph rounds its corners and ends the line in its arrowhead, and a patrol's and an attack-move's the same band, where FAF's run as chevrons (`orderline_arrow02.dds`); FAF's waypoint icon at each waypoint, laid on the ground as large as the engine draws one there (its units counted up to `ui_CommandGraphMaxNodeUnits`, within `ui_MinWaypointSize` and `ui_MaxWaypointSize`); and a label 14 mm above the finger, FAF's tooltip (`tooltip.lua` CreateToolTip, in the skin's colours), says what lifting gives, from what FAF's right click there would order: Route, Attack, Assist (with engineers) or Guard, Reclaim, Capture, Order for FAF's others, Attack move with FAF's attack-move armed, Minimap, Patrol, Cancel. The handle stays where the stroke began. The lift counts where the finger was 50 ms before, as fingers wobble as they lift. A stroke that ends within 8 mm of where it began is a loop: longer than 40 mm, FAF's patrol (its orders panel's mode, `StartCommandMode('order', {name = 'RULEUCC_Patrol'})`, for each waypoint, armed again where FAF ended it), where FAF offers one (for factories alone a loop is their rally route, as any stroke); shorter, the finger took it back. Waypoints over a panel are left out, and a stroke that ends on a panel other than the minimap gives nothing. With FAF's attack-move armed as it began (its orders panel's button, `AttackMoveArmed`) each is an attack-move, armed again where FAF ended the mode after a replacing order, as a PC player's clicks with Shift in that mode give; any other mode armed goes first. A stroke given up, by a short loop, a second finger or an end on a panel, says Cancelled; a second finger before the stroke has left the slop is the two fingers' gesture instead, whose quick tap lets the selection go (below) |
 | *Plus* held | Shift held, in the order of the clicks. When the app's Shift goes up, FAF's check of each beat runs at once (`ShiftLetGo`, `commandmode.lua` `OnCommandModeBeat`): a command mode that an order with Shift used ends, which FAF otherwise does at its next beat, and a paused game has none. So a lit *Plus* appends one order in a mode and the mode ends with it, an attack route's mode ends with the route, and a held *Plus* keeps the mode until it goes up |
 
-Attack-move is FAF's only where its orders panel offers the button (`orders.lua`: engineers, or mobile units with a fire state). For a factory
-alone *Attack* arms nothing and the tap stays the right click: FAF's `AttackMove` sim callback fails on structures, on every client. While
-FAF's own ghost waits (its build mode keys, hotbuild, a template), the fingers place it as in the mouse scheme, and with no game behind the
-UI any more (its end) a tap and a rest are the UI's clicks wherever they land. Griff keeps the game's cursor off the picture's edge pixel: FAF scrolls the view while its cursor
-is on the window's edge (`ui_ScreenEdgeScrollView`), where a mouse is pushed on purpose and a finger at the glass's edge would hold it,
-which took a stroke's route elsewhere than it was drawn.
+Attack-move is FAF's own (Griff v4): its orders panel's button (`orders.lua`: `AttackMove`, slot 1, offered for engineers, or mobile
+units with a fire state), which a tap or a route takes as any armed mode, and the tap ladder's double tap on the ground, as a hotkey;
+the rail has no copy of it. For a factory alone the ladder's attack-move stays the right click: FAF's `AttackMove` sim callback fails on
+structures, on every client. While FAF's own ghost waits (its build mode keys, hotbuild, a template), the fingers place it as in the mouse
+scheme, and with no game behind the UI any more (its end) a tap and a rest are the UI's clicks wherever they land. Griff keeps the game's
+cursor off the picture's edge pixel: FAF scrolls the view while its cursor is on the window's edge (`ui_ScreenEdgeScrollView`), where a
+mouse is pushed on purpose and a finger at the glass's edge would hold it, which took a stroke's route elsewhere than it was drawn.
 
-A toast (`GriffLayer.toast`) says a word for 1.8 s in a pill under the free map's top at the screen's middle (FAF's top panels): Cancelled for
-a stroke given up, the draft's words below, Undone in part for an undo that could not take out every order of the gesture's or give back
-every one it replaced, Not undone for one that clicked nothing of it, and the control groups' words (below).
+A hint says a word where FAF prints its own messages (Griff v4, no Android toast): `textdisplay.lua` `PrintToScreen`, as userInit.lua's
+`PrintText` prints a word, in FAF's font at its size 14, white, in the screen's middle, fading as FAF's do, after 2 s (`griffhud.lua`
+`Hint`, by Game's HINT_, which `GriffAndroid.cpp`, the activity and the control groups' hook name): Cancelled for a stroke given up, the
+draft's words below, Undone in part for an undo that could not take out every order of the gesture's or give back every one it replaced,
+Not undone for one that clicked nothing of it, Not deleted for a marked waypoint FAF's cursor did not hover, and the control groups' words
+(below).
 
 #### The draft
 
@@ -327,25 +351,76 @@ selection's engineers become the draft's builders, if any are selected. The draf
 (`include/GriffDraft.h`, its rules, tested in `tests/wx/GriffDraftTests.cpp`; `GriffAndroid.cpp` for what only the engine knows): each plan
 a world place and its building, from the camera's own unprojection of the finger's place (`CameraScreenToSurface`, as FAF's `UnProject`).
 After each frame's paint the program projects the plans through the map's camera (as `CUIWorldView:Project`) and the activity reads them
-with the frame (`Game.griffDraft`, `Draft`), draws them (`GriffLayer`) and knows which a finger is on. While the draft is open there is no
-handle, and a finger makes plans (`TouchInput`'s `DRAFT_` states):
+with the frame (`Game.griffDraft`, `Draft`) and knows which a finger is on; FAF's UI draws them (`griffmap.lua`, `FafreGriffPlans`). While
+the draft is open there is no handle, and a finger makes plans (`TouchInput`'s `DRAFT_` states):
 
 | Gesture | What it does |
 |---|---|
 | Tap on the map | A plan of the picked building where the finger came down, on FAF's grid: the footprint's first cell the nearest whole one, as FAF places it. An extractor or hydrocarbon plant goes on the free deposit of its kind nearest to the finger within 5 mm, as FAF's build check knows the deposits (`ISimResources`), else "No free resource here". Ground that a plan or FAF's own build check refuses (`USERUNIT_CanBeBuiltAt`, by which FAF's ghost turns red: the structures and queued buildings it sees, the ground) says "Taken"; a 31st plan "Draft is full" |
-| Tap on a plan | It goes: the newest under the finger, within its box and 1.5 mm, the box at least 2.3 mm wide; a plan under a panel is the panel's |
+| Tap on a plan | It goes: the newest under the finger, within the box of the ground it takes, whose edge the map shows (below), the box at least 2.3 mm wide; nothing beyond, where a tap places a plan against it; a plan under a panel is the panel's |
 | Tap on FAF's UI | The UI's click, with the tap help; a lit *Plus* stays for the tick (a held *Plus* is Shift as ever) |
 | Drag from the newest plan | A line of its building from it towards the finger: in 8 directions (an axis counts with at least tan 22.5 degrees of the other, in the building's steps), whole steps of its skirt, so that the buildings stand side by side as FAF's own drag line puts them for adjacency, none before half a step and no more than 30 places, which FAF's own check is asked of at each move of the finger; shown as the finger moves, added where it was 50 ms before the lift, past taken places, up to the limit: the lift adds only places the line showed. A second finger gives it up and the two pinch |
 | Drag from another plan | The whole draft follows by whole world units, plans on deposits stay; kept where the finger was 50 ms before the lift; a second finger puts it back and the two pinch |
-| Drag with *Box* and a deposit's building picked | From anywhere: a box (drawn in the own colour), and at the lift every free deposit in it gets a plan; *Box* is used |
+| Drag with *Box* and a deposit's building picked | From anywhere: a box, FAF's selection box as its world view draws a box drag (`SelectionDragger2D`: a dark fill, a light edge 2 pixels wide), and at the lift every free deposit in it gets a plan; *Box* is used |
 | Drag elsewhere | A pan, whatever the rail says |
-| Rest 400 ms on no plan, without *Box* | The plan its lift places shows under the finger, with a loupe 14 mm above it (below where the top has no room): a circle of 12 mm, the 6 mm about the finger at twice their size, copied from the game's surface (`PixelCopy`, at most 30 times a second; on the emulator 0.6 to 15 ms, median 1.4 ms, for its 71 pixels), with the plan in it, a ring and a cross. The copy is kept on the picture (`Draft.loupeFrom`, tested), and the loupe shows it where it was taken: within 3 mm of the picture's edge, or where the finger has moved on since the copy, beside the finger over the background colour, so the cross is always on the finger's spot. A copy that fails or comes back blank (the emulator's at the main menu did) shows no loupe, and the game's report says so once. On a panel no loupe, and the lift is the rest's right click there |
-| Two fingers' tap | The draft goes |
+| Rest 400 ms on the map, on no plan, without *Box* | The plan its lift places shows under the finger, also where its ground is taken, then red, as FAF's ghost over ground its check refuses, and the lift says "Taken" (a deposit's building shows none where no free deposit is within reach), with a loupe 14 mm above it (below where the top has no room): a circle of 12 mm, the 6 mm about the finger at twice their size, copied from the game's surface (`PixelCopy`, at most 30 times a second; on the emulator 0.6 to 15 ms, median 1.4 ms, for its 71 pixels), with the plan in it, framed by FAF's marker ring (`marker/ring_yellow02.dds`, which FAF's UI lays about the circle where the activity says it is). The copy is kept on the picture (`Draft.loupeFrom`, tested), and the loupe shows it where it was taken: within 3 mm of the picture's edge, or where the finger has moved on since the copy, beside the finger over the game's black, so the finger's spot is always the circle's middle. A copy that fails or comes back blank (the emulator's at the main menu did) shows no loupe, and the game's report says so once. A rest on the map at 300 ms waits the other 100 ms for it |
+| Rest 300 ms on FAF's UI | Griff's rest, as outside the draft, once the program has said at 300 ms that the finger is on FAF's UI (`Game.draftRest`, `SAID_DRAFT_REST`): the ring and the buzz of the panel's rest, its lift FAF's right click there, its slide the panel's drag; no plan and no loupe, which are the map's. As the tap there, its lift and its slide use none of the rail: a lit *Plus* stays for the tick (a held *Plus* is Shift as ever). Where the word comes after the aim began, the aim's lift there is the right click all the same |
+| Two fingers' tap | The draft goes; one of two plans or more comes back by the undo's button (The undo) |
 
-Plans are the boxes their skirts take on the screen, in the build colour, the newest fuller, the line's fainter, red where the ground
-is taken (another plan's, or FAF's check). The tick and the cross (`DraftButton`, 13 and 11 mm, the mockup's look) stand on the map, their
-bottoms 2 mm above the construction panel, the tick 2 mm left of the column at the right (FAF's avatars), from where `griff.lua` reads them
-each frame. The cross drops the draft. The tick (`DraftCommitTask`): "No plan yet" without plans; "N plans were not ordered" at once, the
+Plans are the ghosts of FAF's build preview (`CBuildDragPreview`: the building's mesh through the UnitPlace shader, `FafreGriffGhost`), in
+its green, red where the ground is taken (another plan's, or FAF's check). The shader draws every ghost at a fifth of its colour, whatever
+alpha the colour has (`mesh.fx` UnitPlacePS), so plans differ by the colour alone: the newest, which a drag draws a line from, and the one
+a resting finger aims at in FAF's own colours, as its ghost under the cursor; the other plans and a line's places at half of them.
+
+While the draft is open the map shows the ground each building takes, as FAF's build mode shows it while it is armed (the user's verdict
+on 0.15.0, 2026-11-16: while placing, the other buildings were not to be seen, and their skirts should show). The draft ends FAF's build
+mode, so the world view's own overlay draws nothing; by a build-time patch (`patches/src/moho/ui/CUIWorldView.cpp`, the draft given by
+`include/GriffSkirts.h` `gDraft`, `GriffAndroid.cpp` `DraftSkirts`) the map's view draws the same for the draft, with the engine's own
+`DrawUnitSkirt` (at least `ui_FootprintMinThickness` wide) and the rules of its `DrawBuildDragAdjacencyHighlights`: the skirt of each
+building the orders will build in FAF's blue unless Shift is held (`DrawAllUnitSkirts`); of each structure in view in FAF's green, as
+far out as the picked building's mesh is drawn, bright green where a plan, a line's place or the aim in the colour of a free place gains
+adjacency from it (FAF's `gamemain.lua` `OnDetectAdjacencyBonus`), the first of them that no structure before it in the camera's list
+lit, and only that one (`include/GriffSkirts.h` `Light`, tested in `tests/wx/GriffSkirtsTests.cpp`); and of each plan, a line's place
+and the aim in its colour, green, red, or that bright green. The ghosts keep their colours there, FAF's own as a plan's: FAF's overlay
+gives a build drag's mesh the bright green after the frame's meshes are drawn (`WRenViewport::Render`: the mesh passes, then the view's
+overlay at 0x007F95EA), and the next frame's preview update, at the frame's head, gives the mesh its place's colour again
+(`CUIWorldView::Func1`, `UpdateDragPreview`'s store at 0x008533DB), so only the skirt shows the bright green. On the emulator
+(2026-11-17, a land factory beside a power generator, real fingers) FAF's ghost from its build mode and the newest plan in its place showed
+the same pixels about the factory, and within its skirt the ghost's and a plan's, the newest's or an older one's, stayed the same when the
+generator went, while the skirts' edges went from bright green to green. Where FAF's build mode is armed (its keys, hotbuild, the
+tick's clicks), its own overlay draws instead. The skirt's edge is what a tap on a plan is within: just
+past it a tap or a rest places a building against the plan. In 0.15.0 a finger was on a plan within the box of its ground and 1.5 mm
+past it, and the screen showed neither, while the ground reaches past the ghost's mesh (a factory's 1.5 world units each way): a tap or
+a rest meant to place a building against a plan took the plan away (on the emulator a rest beside a factory's plan with power
+generators picked: the factory's plan went), and a rest there showed no aim. On the emulator (2026-11-16, at the phone's size and HUD 1.6, real fingers) the draft opened with a factory's and two
+power generators' skirts in green; a factory's plan below the factory lit both skirts bright; with power generators picked a rest just
+past the plan's edge showed the aim red over its ground, and the lift said "Taken" and left the plan; a rest below the power
+generators showed the aim green and lit the lower one bright, and its lift placed the plan; after the tick the next draft showed both
+ordered buildings' skirts in blue. The tick and the cross are
+FAF's order buttons (`griffhud.lua`: the orders panel's empty slot at the HUD's factor, as large as its order buttons, with FAF's tick of the
+skin's map options, `temp_textures/checkmark.dds`, and its Cancel, `orders-panel/no-parking_bmp.dds`, both of the faction's skin; FAF's
+glow while a finger holds one), 12 of FAF's pixels above the construction panel, the tick 12 left of the column at the right (FAF's
+avatars), where `griff.lua` reads them each frame, and against the map's edges where FAF shows neither.
+
+The cross is Griff's Esc (the decision of 2026-11-17 on the user's verdict on 0.15.0, that a button was missing to put away what was
+chosen, the building being placed and the selection, as Esc and the right button do on the PC). It shows while the draft is open and
+wherever a PC player's Esc would act in a game (FAF's `eschandler.lua` `HandleEsc`: an armed command mode, else the selection), in its
+place beside the tick's, also where the tick does not show, and a tap puts away one of them, in this order (`include/GriffTap.h`
+`EscapeFor`, tested): the draft goes, with nothing ordered (one of two plans or more comes back by the undo's button); else the armed command mode ends (`EndCommandMode`, FAF's build mode of its
+keys or hotbuild too); else the selection goes (`SelectUnits(nil)`). With none of them it does not show. The program finds each frame
+after its paint whether there is any (`EscapeNow`: the draft, `UI_GetCommandMode`, the session's selection), by which FAF's UI draws
+the cross (`FafreGriffEscapes`) and the activity lays the view that takes its finger (`Game.griffEscapes`); the tap goes by what there
+is when it comes (`EscapeTask`). The mode and the selection are not put away while the program's clicks run, as for two fingers' tap,
+which stays as it was. FAF's own UI has nothing for this (lua.nx2, FAF 3835): Esc is a key only (`defaultKeyMap.lua` `Esc` = `escape`,
+`keyactions.lua` to `uimain.lua` `EscapeHandler` and `HandleEsc`; FAF's alternative key map makes it Stop); its top bar has the menu,
+diplomacy and pause (`tabs.lua`); its orders panel's buttons end only their own order's mode when tapped again (`orders.lua`
+`StandardOrderBehavior`), and Stop is an order to the units; nothing else calls `HandleEsc` or `SelectUnits(nil)` from a control
+(`borders.lua` splits the map, `gamemain.lua` begins a film). On the emulator (2026-11-17, real fingers, the phone's size, HUD 1.6)
+with nothing selected no cross showed; with four engineers selected it showed where it stands in the draft, and its tap let them go
+and it went; with the orders panel's Move armed its tap ended the mode and kept the four; in a draft with a plan its tap dropped the
+draft and kept them.
+
+The tick (`DraftCommitTask`): "No plan yet" without plans; "N plans were not ordered" at once, the
 draft kept, where the program knows no map's view to click on (`griff.lua`'s report of it failed); the builders are the selected engineers,
 else the draft's that still live ("No engineer" without), selected for the clicks (`griff.lua` `CommitBegin`) and the selection put back
 after (`CommitEnd`); plans FAF's check refuses now are left out ("N plans were on buildings", "All plans are on buildings" when none is
@@ -367,12 +442,12 @@ idle task would come before the frame); the camera goes back after the last (`Lo
 The program's clicks, the tick's and the undo's (`ClickStepTask`, which both use), have FAF's mode, the selection, Shift, the cursor and the
 camera to themselves:
 - They wait while a finger's pan, box or panel drag holds FAF's dragger, which would take the cursor's moves they aim with and end between
-  them (a box's release selects): they begin after its lift, from the frame after it. The pill says *Undo…* meanwhile. A tick tapped then,
+  them (a box's release selects): they begin after its lift, from the frame after it. The undo's button says *Undo...* meanwhile. A tick tapped then,
   or while the undo's clicks run or it waits for the sim, comes after them, after an undo that waits as well (its record is a gesture's from
   before the tick, whose orders would replace it); the cross takes a waiting tick back.
 - As they begin the camera stops (`griff.lua` `StopCamera`: a glide, a flight) and no glide starts while they run, and a line of buildings a
   finger draws on FAF's ghost is given up, as its own cancel does: FAF's build drag holds the cursor as the others do.
-- While they run the fingers rest: no gesture starts (`Game.griffClicking`), the rail and the undo's pill take no tap. A gesture they came
+- While they run the fingers rest: no gesture starts (`Game.griffClicking`), the rail and the undo's button take no tap. A gesture they came
   into is given up (`TouchInput`, by the runs begun, `Game.griffClickRuns`): nothing more of it goes to the game, also once they are over,
   where a tap would give the tick's builders another order; its fingers rest until they lift, and only what showed of it goes (a stroke
   says Cancelled, the draft's line, move, aim or box goes as a second finger gives it up). The tasks that would act between them do nothing
@@ -384,19 +459,20 @@ camera to themselves:
   a frame: a frame whose paint takes long has come.
 
 Picking another building keeps the plans, a
-change of selection does not end the draft, and an order mode armed while plans wait (the orders panel, a key) ends at once with "First ✓
-or ✕" (`griff.lua`'s start behaviour), while an empty draft ends and lets the mode be. The free map's cross (`griffplace::CrossAt`: how far the
+change of selection does not end the draft, and an order mode armed while plans wait (the orders panel, a key) ends at once with "Tick or
+cross the draft first" (`griff.lua`'s start behaviour), while an empty draft ends and lets the mode be. The free map's cross (`griffplace::CrossAt`: how far the
 free map reaches from the view's middle up, left and right) gives its place and the stroke's label's bounds.
 
 The handle: `fafre/griff.lua`, started by the hook of `ui/game/gamemain.lua`, reports each frame of the session's UI the map's view and,
 apart from it, where the selection's units are on the screen, with their size (`view:Project`, blueprint sizes; the mobile units, or all of
 a selection without any, such as factories): an error in the selection's walk stops that walk and the handle for the game, never the map's
-view, which the clicks, the plans and the pins go by. The program places it above the units, else below, right, left, 2 mm from their blueprint box (`include/GriffPlace.h`, tested in
+view, which the clicks and the plans go by. While the player hides FAF's UI the selection is not reported, and there is no handle. The program places it above the units, else below, right, left, 2 mm from their blueprint box (`include/GriffPlace.h`, tested in
 `tests/wx/GriffPlaceTests.cpp`), on the free map: the main map's view less what covers it, which one walk over the UI's controls each frame finds: the controls that
 can be seen at the map's depth or above (the HUD is drawn after the map's picture; below the map's depth are what holds it and the
 paused game's tint of the whole screen), the minimap, FAF's panels, also those that let a click through to the map beneath (the
 unit view, the map's sibling at its depth, and the multifunction panel do), and the app's own pieces (`Game.setGriffCovers`, `Covers`:
-the rail's buttons, the draft's tick and cross and the undo's pill, each while it shows). Only layouts that FAF has worked out count: the walk reads what a layout holds and evaluates none, as an
+the undo's button's place a moment after it went; FAF's UI holds the rail, the undo's button and the draft's tick and cross themselves,
+which the walk finds, and passes by what is drawn on a map, such as Griff's pieces of `griffmap.lua`). Only layouts that FAF has worked out count: the walk reads what a layout holds and evaluates none, as an
 evaluation before FAF lays a control out fails and leaves 0 in the layout's cache, where nothing clears it. So the walk runs after the
 frame is drawn, which works out what FAF's Lua changed in the frame (the unit view places its panel anew in each). A group out of view or under a panel gets the handle on the free map towards the view's middle, far enough from the edges that its
 arrow at the group stays on the screen. Where that way is covered up to the middle, as by FAF's announcement in the screen's middle,
@@ -404,11 +480,15 @@ which stays up while a game is paused at its start, or by a window there, the ha
 that is as far from the edges, of two as near the one below (`FreeMap::NearestDiscFree`: rows 2 pixels apart outward from the middle,
 exactly on each row, so that it finds a place however little room the map leaves for it across); only where the free map has no room
 for the handle at all is there none. The activity reads the handle each frame of the screen's (`Game.griff`)
-and draws it (`GriffHandle`): where a stroke began while the stroke is drawn, and none once the frames are not read, at the game's end or
-under a dialog that takes the fingers, also while a stroke is still drawn. On the emulator a frame's placement took 0.2 to 1.1 ms (the
+and keeps it (`GriffHandle`): where a stroke began while the stroke is drawn, and none once the frames are not read, at the game's end or
+under a dialog that takes the fingers, also while a stroke is still drawn. FAF's UI draws it as the activity keeps it (`griffmap.lua`):
+the brackets FAF draws about a selected unit (`selection/selection_brackets_player.dds`) as large as an order button, with the
+selection's count in FAF's font, white with a shadow, as FAF writes on its buttons, faint while *Box* is lit (a box may start under it);
+away from its group, FAF's arrow of a ping off the screen (`ping_edge/ping_edge_blue_*`), on the handle's edge towards the group. A
+finger is on it within half an order button and 1.5 mm of its middle. On the emulator a frame's placement took 0.2 to 1.1 ms (the
 worst frame of each 10 s, one unit selected).
 
-#### The undo and the pins
+#### The undo
 
 What a gesture orders is watched (buildstage/griff-v3-spec.md, T3.1 and T3.2), from a tap's click, a rest's right click on a panel, a
 route's first waypoint or the draft's tick to the task after their input. The program keeps the queues of the selected units as FAF's UI
@@ -447,10 +527,10 @@ beat no read came after was there unless the unit did it in between, which the p
 `PendingOf`, tested). A frame that took long brings several beats, and where the one that brought the replacement's beat brought the
 beat before it too and the game ticked in it, the last read may be a tick old: the unit may have done what it shows since
 (`include/GriffUndo.h` `Stale`, tested, from the game's tick at the read and as the replacement showed it landed; a paused game makes
-no tick; where the frame brought beats after the replacement's too it may say so of a read that was not old). A gesture that ordered is the record the pill takes
-back, one level: the next one's replaces it, and any other order ends it, as only the last order counts: FAF's ghost from a build key or
+no tick; where the frame brought beats after the replacement's too it may say so of a read that was not old). A gesture that ordered is the record the undo's
+button takes back, one level: the next one's replaces it, and any other order ends it, as only the last order counts: FAF's ghost from a build key or
 a template, the keyboard's hotkeys, the construction panel's own queue (a factory's units, an upgrade, an enhancement), none a
-gesture's to take back (`include/GriffUndo.h` `Takeable`); the pill goes with the record. FAF's assist-to-upgrade (its options
+gesture's to take back (`include/GriffUndo.h` `Takeable`); the button goes with the record. FAF's assist-to-upgrade (its options
 `assist_to_upgrade` and `assist_to_upgrade_radar`) orders an extractor's or a radar's upgrade a frame or more after a Guard on it
 (`OnGuardUpgrade`'s `UpgradeUnit`, which unpauses a paused one first and waits five of the game's ticks), the upgrade of that one unit
 with Clear, which no upgrade of the player's has (the construction panel's, the upgrade key's, hotbuild's and the build mode keys' go
@@ -459,23 +539,46 @@ joins the record, which notes it, nor does one of the target of a Guard the undo
 the player's own upgrade of that unit ends the record as any other order. The tap ladder's
 attack-move in place of a move belongs to the move's record.
 
-The pill (`UndoPill`, the mockup's drawUndo; `Undo` holds its time) stands for 3 s after the order in the rail's row (the user's decision
-of 2026-11-13), the bar's last view: a gap right of *Attack*, as high as the rail's buttons, 34 mm wide at most but ending the handle's
-reach (7 mm) before the screen's middle, which stays free for a handle that finds no place beside its group and goes towards the view's
-middle (`include/GriffPlace.h`), and never narrower than it is high (`Rail.pillLeft`, `Rail.pillWidth`, tested;
-`GameActivity.placePill`), 18 mm on the emulator at the phone's size and 31 mm less a camera cutout's inset on the S22 Ultra. It is
-fully rounded in the panel colour, edged in the mark colour, with a back arrow 4 mm from its left, *Undo* right of its middle and at its
-bottom a bar of the time it has left. It is a view of its own, so a finger
-on it is exactly its own, never the map's, and its place is the rail's, never where a tap for the next order goes. Its cover stays 600 ms
-after it went, where it last stood (`Covers.Lingering`, tested): a tap meant for it whose finger was on its way as its time ran out lands
-on nothing, never on the map beneath (the program checks a tap's place at its click, a settle after the finger's down: on the emulator 88
-to 188 ms, and taps 74 to 389 ms late were covered, one 542 ms late not). A dialog over the game takes it away.
+The record offers its undo only where that saves work (Griff v4, the user's rule of 2026-11-14; `include/GriffUndo.h` `SavesWork`,
+tested): where an order of the gesture's replaced a queue of one of its units that held, as the gesture began, a building to give back
+or two orders or more that come back (a route, a patrol, a line of reclaims), and for the draft's tick always. Orders to idle units, or to
+units with one plain move or one assist, offer none, as a Stop or the next order does as much: such an order ends the record before it,
+as any order does, and the activity hears record 0. A factory's own builds and what the orders panel has no mode for count for nothing,
+as no click brings them back; an attack-move's script and its AggressiveMove are one order.
+
+Two records are Griff's own, of what a stray gesture throws away that a PC player only throws away by deliberate keys (Esc, Ctrl
+and a number), and order nothing (the user's choice of 2026-11-18): a draft of two plans or more that the cross or two fingers' tap
+dropped (`include/GriffUndo.h` `DropSavesWork`, tested; a second thumb that brushes the glass in quick taps is two fingers' tap), and a
+control group a rest stored over other units it held, where the store took out a unit that lived (`StoreSavesWork`, tested: not a
+store on an empty slot, nor one of the group's units and more, nor *Plus*'s append, which takes none out). While FAF's option *Steal
+from other control groups* is On (Off by default), a store takes the stored units out of their other groups without a word, and
+so would the undo's (`selection.lua` `AddSelectionSet`): the hook of `controlgroups.lua` reports every store then as *Plus*'s
+append, and none offers an undo. Their undo comes at the tap, with nothing clicked: the draft is open again as it was, its plans
+where they stood and its builders with it, and an order mode armed since the drop ends, as none stays armed while plans wait
+(`DraftBack`), with nothing for the sim; the group holds again those of its units that live, by FAF's `AddSelectionSet`, as Ctrl
+and the number store a selection, whose callbacks show its control and, as for any store, send the sim FAF's
+`OnControlGroupAssign`, a tutorial's note that orders nothing (`griff.lua` `GroupBack`; with none alive *Not undone*, and the
+group stays as the store left it). They are records as a gesture's are: one level, the next replaces one, any order ends it, the
+button offers it for its 3 s. So that the undo never undoes what came after, a draft that opens ends a dropped draft's record
+(`OpeningEndsRecord`), and the hook's next store on a group's slot that changes the group ends that group's record, where a
+store of the very units keeps it (`OutcomeOfStore`, both tested). A store by a keyboard's Ctrl and number goes past the hook and
+ends nothing: the undo would then put the record's units back over it.
+
+The undo's button (Griff v4) is FAF's UI's (`griffhud.lua`): a button of FAF's orders panel (its empty slot's frame,
+`orders/basic-empty_bmp.dds`, at the HUD's factor as its order buttons) with *Undo* in FAF's font, white with a shadow, as FAF writes
+on its order buttons, and at its bottom FAF's avatar bar of the time it has left (`avatar/health-bar.dds` of the faction's skin on its
+back, as the commander's avatar shows its health); *Undo...* while it waits. It stands for 3 s after the order (`Undo` holds its time)
+right of the rail, 12 of FAF's pixels after *Groups*. The activity lays a view of its own over it where FAF's UI reports it, so a finger
+on it is exactly its own, never the map's. Its cover stays 600 ms after it went, where it last stood (`Covers.Lingering`, tested): a tap
+meant for it whose finger was on its way as its time ran out lands on nothing, never on the map beneath (the program checks a tap's place
+at its click, a settle after the finger's down: on the emulator 88 to 188 ms, and taps 74 to 389 ms late were covered, one 542 ms late
+not). A dialog over the game takes it away.
 A tap on it takes the record back with a PC player's inputs (`include/GriffUndo.h`, tested in `tests/wx/GriffUndoTests.cpp`), once the
 sim has taken the gesture: the undo waits until none of the record's units has an edit of its queues that the sim has not taken yet (the
 engine's `UserCommandQueue::issueQueue`), however long that takes (a network game takes an order its lag later, a paused game once it
 resumes), so that it plans on the queues the sim holds, never on the UI's own; meanwhile the
-fingers are free and the pill says *Undo…*, also past its 3 s, as it does while a finger's pan or box the undo waits for still goes on.
-An order meanwhile ends the record as ever, and so does the game's end: the toast says *Not undone*. Then, for each queue an order of the
+fingers are free and the button says *Undo...*, also past its 3 s, as it does while a finger's pan or box the undo waits for still goes on.
+An order meanwhile ends the record as ever, and so does the game's end: a hint says *Not undone*. Then, for each queue an order of the
 gesture's went into:
 
 | What the gesture did to a unit | Its way back |
@@ -509,7 +612,7 @@ nor `DeleteCommand`: the program reads the queues in the engine, where each comm
 Shift+Ctrl right click on its waypoint, which strips it by the engine's own id, for every army (the second player of a LAN game took its
 orders out so).
 
-What cannot come back or go is counted, and the toast says *Undone in part*: an order its orders panel has no mode for (a transport's, a
+What cannot come back or go is counted, and a hint says *Undone in part*: an order its orders panel has no mode for (a transport's, a
 missile's, an enhancement the gesture's order took, a factory's builds), one on an entity that is gone, a building whose name the order did
 not carry, an order of the gesture's that FAF draws no waypoint for (a script other than the attack-move's, a dive; the script FAF's
 attack-move gives beside its AggressiveMove where it stays behind an order the unit kept, its queue's last command until that is done, at
@@ -526,11 +629,11 @@ it warns once), each Guard the undo gives back on a structure FAF's capping may 
 An upgrade FAF's assist-to-upgrade orders only after the undo said it took all of the gesture back (a paused extractor's, in a paused
 game, where the sim takes the undo meanwhile and the five game ticks wait for the game to resume) makes it in part after all: the
 program keeps the Guards of each undo for the game's next six ticks after it finished, which a paused game holds (`gUndone`,
-`include/GriffUndo.h` `Undones`, tested), and an upgrade of one of their targets makes that undo's word in part then, a toast later,
-also where more undos finished meanwhile; it neither ends nor joins any record (the activity's pill and pointer stay as they are), nor
+`include/GriffUndo.h` `Undones`, tested), and an upgrade of one of their targets makes that undo's word in part then, a hint later,
+also where more undos finished meanwhile; it neither ends nor joins any record (the activity's undo and pointer stay as they are), nor
 does one for a Guard an undo gave back, the unit's own order's again. None of them outlives the game. An undo that had something to take out or give back and made
 no release and no click, as where its clicks ended before their first step, says *Not undone*: nothing was clicked, so the record holds as
-it was and the pill offers it again for its 3 s, as it does where the program knows no map's view to click on (`griff.lua`'s report of it
+it was and the button offers it again for its 3 s, as it does where the program knows no map's view to click on (`griff.lua`'s report of it
 failed). The clicks come one a task, as the tick's (`ClickStepTask`, which both use), the tick's first where those run, after the lift of
 a finger whose drag holds FAF's dragger; while they run the camera holds still and the fingers rest, as for the tick's, and clicks that
 wait more than 2 s for a frame end as the tick's: in part, or not undone where none of their steps acted. A click comes a frame after the cursor went to its place, where FAF's cursor is found right, at the pixel that
@@ -547,48 +650,53 @@ finger had pressed 22 ms). After them the selection and the camera are as they w
 next tap climbs no ladder from the order taken back. The sim takes the undo's inputs a network delay later, as a player's, after the
 gesture's.
 
-The pins (`include/GriffPins.h`, tested in `tests/wx/GriffPinsTests.cpp`; the mockup's drawPins): at the place of each order of a watched
-gesture a drop, its tip at the place, its sides out to 1.1 mm and up 2.4 mm into a circle of 1.5 mm whose middle is 3 mm above the tip, in
-its kind's colour (a move the own colour, an attack and an attack-move the attack colour, a patrol the patrol colour, a building, an assist,
-a repair and a reclaim the build colour), edged in the background colour, for 1.5 s, fading over its last 0.4 s; 64 at most, a new one in
-the oldest's place. The program projects them through the map's camera after each frame's paint and shows those whose tip is on the free map
-(FAF's panels stand over the map's picture); `GriffLayer` draws them under the handle. FAF's own blip at an order stays, and FAF draws the
-orders' lines.
+No pins (Griff v4): FAF's own feedback blip marks the place of every order its UI gives (`commandmode.lua` `OnCommandIssued`,
+`AddCommandFeedbackByType`: a move's marker, a crosshair, a building's mesh), Griff's included; 0.14.0's pins at the same places were a
+copy of it.
 
 #### The rail, the control groups and the keyboard
 
-The rail (buildstage/griff-v3-spec.md T3.5, the mockup's drawRail) is a row at the top left, the user's decision of 2026-11-13 in place
-of the mockup's column at the left edge, where FAF's panels at the HUD's factor left buttons of 3.3 mm: *Box*, *Plus* and *Attack* side
-by side, 1.5 mm apart, from 2.5 mm past the screen's left (and a camera cutout's inset, the bar's padding), an H under FAF's top panels
-there (138 of FAF's lines; H, the mockup's unit of FAF's panels: a mm, less on screens under 73 mm, 0.7 mm at least), and the undo's
-pill after them. Below them the band at the left edge ends at FAF's unit view, which stands highest where FAF made no orders panel (a
-replay; 140 of its lines under the view and the view's own 114, `unitview_mini.lua`'s PositionWindow) while a selection shows the
-construction panel, 20 lines lower in a game (120 under it), and at the picture's bottom without the construction panel. The buttons are
-as high as that smallest band less an H at its top and bottom, at most the mockup's 11 mm and never under 9 mm, a finger's (Android's
-48 dp on the S22 Ultra) (`HudScale.railBandMm`, `Rail.side`, tested; `GameActivity.placeRail`): so the row fits every state of the HUD
-and keeps its size as FAF's panels come and go. At 1.6 on 768 lines they are 11 mm on a 73 mm screen (the S22 Ultra's smallest band is
-11.4 mm), the row's bottom 1.4 mm over the unit view in a replay and 4.4 mm in a game; on the emulator at the phone's size (65.3 mm)
-10.2 mm, 0.9 and 3.6 mm over it. A screen under 70 mm gets the most factor its lines allow (1.67 at 768 lines), where the band of a
-replay is under 9 mm: there the row reaches 0.2 mm into the unit view's top (65.3 mm), in a game it keeps 2.6 mm. Each button is a
-`RailButton`, rounded 1.2 mm, its label in the mockup's font M (2.5 mm), whole, *Attack*'s in the attack colour, in one of three looks
-(`Rail.look`, tested): idle in the button colour with the line's edge; held, while a finger is on it, in the button-on colour with the
-ring's edge; lit for the next action in the button-on colour with the mark's edge and "1×" in font XS, 2.2 mm from its right and 2 mm
-from its top, clear of the label. The moment after a lift, which still counts, looks idle. What keeps clear of the rail takes its views'
-places as they are: the covers (`Covers`), and with them the handle's free map.
+The rail (buildstage/griff-v3-spec.md T3.5; Griff v4) is FAF's UI's (`fafre/griffhud.lua`): a row at the top left, the user's decision of
+2026-11-13, of *Box*, *Plus* and *Groups*, made as FAF's orders panel makes its buttons and as large: each the orders panel's empty slot
+(`/game/orders/basic-empty_bmp.dds`, as FAF's order buttons 73 of the picture's pixels at 1.6, 7.0 mm on the S22 Ultra, where 0.14.0's
+buttons were 11 mm) with an icon of FAF's own: *Box* the construction panel's icon of the selection (`construction-tab_btn/units-select_icon_bmp.dds`,
+which FAF's mouse tooltips show for Select), *Plus* Shift's + in FAF's font, white with a shadow, as `orders.lua` writes on its
+buttons, *Groups* the icons it shows and hides: three of the groups' strategic icons in one's own colour (`griffgroups.lua`'s art, at a
+selected land unit's size; one alone in red would read as a stop sign), each icon's glyph as wide as FAF's order icons are. They follow the
+faction's skin where it has them (UEF's and Aeon's; Cybran and Seraphim take UEF's, as FAF's mouse tooltips do), lazily, as the session sets
+the player's skin only at its first update (`gamemain.lua` `OnFirstUpdate`). Held, a button shows FAF's glow over an order button under the
+mouse (`orders/glow-02_bmp.dds`), pulsing from nothing up to 0.4 and back at 1.2 a second as `orders.lua` CreateOrderGlow does; lit for
+the next action, the edge of FAF's art of a selected order (`orders/move_btn_up_sel.dds`, its frame cut out of its middle, so the edge is
+FAF's soft one in its own colour, not the faction's text colour); *Groups* is lit while Griff's group icons show. A finger coming onto
+*Box* or *Plus* gives FAF's press sound of an order button. Checked side by side in the four factions' skins (2026-11-15, switched in a
+game by `uiutil.lua` SetCurrentSkin): the frames, the glow and the lit edge are FAF's common art, the same in all of them; *Box*'s glyph is
+UEF's or Aeon's, and the draft's tick is each skin's own. The row stands 145 of FAF's lines down (an H under the multifunction panel's 138) and 10 in, its buttons 2 apart as FAF's
+orders grid has them, the undo's button after it. It covers less of the map than 0.14.0's (three buttons of 7 mm and one of the same
+size, against three of 11 mm and a pill of up to 34 mm): FAF's overlay filters' list, which lay across 0.14.0's row, now opens beside it.
+Side by side with FAF's orders panel on the emulator at the phone's size and HUD 1.6, frame and size are the same (68 of the screen's
+pixels, the views laid over *Box* and *Plus* as large).
+
+FAF's orders panel has Stop and the attack-move (`orders.lua`: `AttackMove` in slot 1, `AttackMoveBehavior`), so the rail has neither:
+0.14.0's *Attack* went (the user's rule: no copy of what the game has, checked in 3835's lua.nx2 before anything was added). *Box* (FAF
+selects by the mouse's drag), *Plus* (Shift is a key) and the undo have no counterpart in FAF's UI, nor has *Groups*, which shows and hides
+Griff's group icons (`griffhud.lua` `GroupsShown`, which `griffgroups.lua` asks each frame: "The groups"). The activity lays a view of its own over *Box* and *Plus* where FAF's
+UI reports them (`Game.griffHudPlaces`; FAF's UI draws them as the activity says each looks, `Game.setGriffHud`, `Rail.look`, tested), as a
+thumb may hold *Plus* while another finger taps; *Groups* is FAF's click's, a tap toggles it. What keeps clear of the rail is FAF's UI's
+walk: the handle's free map finds its buttons as FAF's controls.
 
 Nothing of Griff's covers what the player opened of FAF's (2026-11-14). FAF's overlay filters' list, which the arrow of the multifunction
 panel's military button opens right of the panel (from 356 of the picture's pixels across and 160 down at 1.6, 18 rows down the screen),
 lies across the rail's row; the Menu's list (699 to 947 across at 0.85), the map's options and a question box, which FAF puts in the
-middle, lie under the pill's right end. So the hooks of the files that make them tell `fafre/opened.lua` each one as it is made: FAF's
+middle, lie under where 0.14.0's undo pill ended. So the hooks of the files that make them tell `fafre/opened.lua` each one as it is made: FAF's
 windows (`maui/window.lua`: the chat, its options, the minimap), its popups (`ui/controls/popups/popup.lua`: each question box, whose shadow
 over the whole screen takes every press outside it and closes it, so that its box is the screen's), the dropouts of its multifunction
 panel (`ui/game/multifunction.lua`: the overlay filters, the map's options and the team colours, one background each) and the content
 of its tabs (`ui/game/tabs.lua`: the Menu, the diplomacy). `fafre/griff.lua` reports the boxes of those that show (not destroyed, neither
 they nor what holds them hidden) where they changed (`FafreGriffOpened`), and the activity reads them each frame (`Game.griffOpened`,
-`Opened`, tested): each of the rail's buttons, the undo's pill and the draft's tick and cross that one lies under, by more than an edge,
-steps aside until it has gone. It stays unseen in its place (`View.INVISIBLE`), so it takes no finger, the program hears no cover of it
-and the pieces beside it stand where they did; the pill's time runs on, and its cover that stays after it went goes at once
-(`Covers.Lingering.forget`, tested). On the emulator at the phone's size by real fingers: as the list grew over the row after an order,
+`Opened`, tested): each of the rail's buttons and the undo's button, in FAF's UI (`griffhud.lua`), and the draft's tick and cross that one
+lies under, by more than an edge, steps aside until it has gone. It stays unseen in its place (`View.INVISIBLE`), so it takes no finger, the program hears no cover of it
+and the pieces beside it stand where they did; the undo's time runs on, and its cover that stays after it went goes at once
+(`Covers.Lingering.forget`, tested). On the emulator at the phone's size by real fingers (0.14.0's row, with its *Attack* and its pill): as the list grew over the row after an order,
 *Plus*, *Attack* and the pill stepped aside and *Box* stayed; a tap where *Attack* stands was FAF's click on the list (its *Build
 Preview* unchecked), and the pieces came back as the list folded away (it opened to 356 to 567 across and 160 to 656 down); with the
 Menu open the pill that an order 0.45 s before had brought stepped aside and the rail stayed; a question box (the Menu's *Restart Game*) took all three buttons away until its *No*. Not
@@ -597,7 +705,7 @@ template menu, and what a mod opens by other means. A dialog with a factor of it
 fingers, which puts the rail away anyway.
 
 FAF's minimap and chat window, for a player who has not placed them (the hooks of `ui/game/minimap.lua` and `chat.lua`), have homes
-that cover none of FAF's panels and none of Griff's pieces: the rail's row with the pill at its widest, the group slots, the draft's tick
+that cover none of FAF's panels and none of Griff's pieces: the rail's row with 0.14.0's undo pill at its widest, the group slots, the draft's tick
 and cross, and the handle's reach (7 mm) about the view's middle, where the handle goes when no place beside its group is free (above).
 Measured on the phone's picture (1647x768 at 1.6, the covers that the handle's free map counts) in a skirmish and a replay, with
 nothing and with a unit selected, the largest room clear of all of them lies right of the middle: below the score panel (93 of FAF's lines down
@@ -606,9 +714,9 @@ construction panel (338), left of the avatars' idle list where it opens (868) an
 from 576 to 744 of FAF's pixels across and 166 to 328 down (921 to 1190 and 265 to 524 of the picture's): as high as that room is
 below the score panel of a game of up to seven armies and of a replay of up to four, and about as wide, since a map is square: 168 x
 162 of FAF's pixels (26 x 25 mm on the S22 Ultra), where FAF's own window is 227 x 210. The chat window goes from 472 to 662 across and
-72 to 186 down (755 to 1059 and 115 to 297), above the handle's reach between the pill at its widest and the score panel, under FAF's
+72 to 186 down (755 to 1059 and 115 to 297), above the handle's reach between 0.14.0's undo pill at its widest and the score panel, under FAF's
 tabs; open, its bottom lies over the minimap's top. FAF's drag handles at the windows' corners reach a little past them: the
-minimap's lower right one under the draft's cross, the chat's lower left one under the pill's end and its upper left one 2 of the
+minimap's lower right one under the draft's cross, the chat's lower left one under 0.14.0's pill's end and its upper left one 2 of the
 picture's lines into the bottom of FAF's tabs. The chat's lower left one's box, drawn clear but for its corner, reaches 7 of the
 picture's lines into the handle's reach (713 to 837 and 159 to 309), which the free map counts: with the chat open and no place beside
 the group free, the handle stands 8 lines below the middle (2026-11-14, on 3835 and 3841 alike). Where the phone's keyboard is up for the chat, it covers all of the screen but its top,
@@ -622,33 +730,33 @@ FAF 3841 made its chat anew (`ui/game/chat/`; the hook of `chat/chatinterface.lu
 its window, `DefaultRect` (8 to 430 across and 460 to 720 down), from which its reset button sets the window too, lay at 1.6 below the
 picture, 736 of its 768 lines down. Its window has a title, *Chat dialog*, which at the old home its title buttons cut: its home is the
 old one 6 of FAF's pixels further left and 2 further right, 466 to 664 across and 72 to 186 down (745 to 1062 and 115 to 297 of the
-picture's), 5.6 lines right of the pill at its widest. Measured as above on 3841 at the phone's size (the covers of 32 walks in a
+picture's), 5.6 lines right of 0.14.0's pill at its widest. Measured as above on 3841 at the phone's size (the covers of 32 walks in a
 skirmish, with nothing and with the commander selected, under the Menu and the overlay filters' list): FAF's panels stand where they
 stood on 3835, and the window covers none of them, none of Griff's pieces and not the handle's reach. Drawn with its drag handles it
-takes 703 to 1097 and 102 to 309: its upper left handle 6 lines into the bottom of FAF's tabs, its lower left one under the pill's end
+takes 703 to 1097 and 102 to 309: its upper left handle 6 lines into the bottom of FAF's tabs, its lower left one under 0.14.0's pill's end
 and 7 lines into the handle's reach as above, its right ones 4 lines short of the score panel. Its reset button brings it back there
 (dragged down to 201, then back at 115) and FAF's reset makes its lines anew. Open with the minimap, the minimap's top lies over the
 chat's lower right corner, its camera button: 3841 makes the chat before the minimap, where 3835's chat stood over the minimap.
 
 The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
-2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.
-Each is 7 x 5.1 H, 5.5 H apart, 2.5 H from the screen's right (the mockup's column 10 H wide, an H from the edge, the slots 1.5 H into
-it), with its number at 28 % of its width and its count at 68 %, in the mockup's font XS; H is 48/7.3 of FAF's pixels, as a build
-icon's 48 are 7.3 H in the mockup, so the slots grow with FAF's panels (73x53 of the picture's pixels at 1.6, as FAF's own groups). A
-group's slot is faf-on with the own colour's edge, an empty one faf-btn with faf-edge's and its number muted. FAF's own controls of the
-three are made invisible and take no events; its other groups (4 to 0, which a keyboard's Ctrl makes) stand below the slots as
-FAF lays them out, and the bracket closes under the last. FAF does not tell its panel when a group's units die: the slots look each
-second, as FAF's own controls do.
+2 and 3 always show in FAF's own column of control groups (Griff v4): a group's slot is FAF's own control for it (`CreateGroup`: the
+control group's frame `avatar/avatar-control-group_bmp.dds` of the faction's skin, its best unit's icon and its number, 73x54 of the
+picture's pixels at 1.6), an empty one the same frame with its number alone, dimmed (0.45). FAF's other groups (4 to 0, which a
+keyboard's Ctrl makes) stand below them as FAF lays them out (`controlgroups_mini.lua` LayoutGroups: 10 into the panel and 15 from its
+right, each 8 over the one before), and the bracket closes under the last. FAF does not tell its panel when a group's units die, and its
+own check each second takes its control away: the slots look each second too, and the column is laid out anew where a slot's control
+changed, never each second, which would open a panel the player folded away (its arrow).
 
 | On a slot | FAF's input |
 |---|---|
 | Tap | FAF's left press: the group is the selection (`ApplySelectionSet`); with *Plus* (Shift) it joins the selection |
 | Two taps | FAF's double click (the tap ladder clicks a second tap on FAF's UI where the first went, and the message layer makes it its double click): the group again, whose second selection soon after the first moves the camera to it as the player's option `selection_sets_double_tap_behavior` says |
-| Tap on an empty slot | Nothing; the toast says *Empty group: rest to store* |
-| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. The toast says *Group N stored*, and the phone buzzes once for it (the mockup's one buzz): as the rest's ring came, and the store adds none; with *Box* counting the rest rang for nothing (above), so the store buzzes, as does one that no rest made, a mouse's right press (`TouchInput.storeBuzzes`, tested; on the emulator one buzz each, with *Box* lit 28 ms after the lift, without it 303 ms after the finger's down). With nothing selected *Nothing selected*, and the group stays as it was |
+| Tap on an empty slot | Where FAF's selection set of the group still holds a unit that lives (`selectionSets`, `ValidateUnitsList`), FAF's number key: `ApplySelectionSet`, whose callback makes FAF's control anew, with *Plus* (Shift) `AppendSetToSelection`. FAF's check each second takes its control away once the units it was handed are gone, while the set may hold others: a grouped factory that was upgraded joins the group so with FAF's default options (`AddUnitToSelectionSet`, which tells no callback), and its slot showed empty while the PC's number key still selected it. Else nothing, and a hint says *Empty group: rest to store* |
+| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append); where that put other units in place of those it held that live, the undo's button gives them back (The undo). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. A hint says *Group N stored*, and the phone buzzes once for it (the mockup's one buzz): as the rest's ring came, and the store adds none; with *Box* counting the rest rang for nothing (above), so the store buzzes, as does one that no rest made, a mouse's right press (`TouchInput.storeBuzzes`, tested; on the emulator one buzz each, with *Box* lit 28 ms after the lift, without it 303 ms after the finger's down). With nothing selected a hint *Nothing selected*, and the group stays as it was |
 
-The words come from the hook through `FafreGriffToast` (`GriffAndroid.cpp`) as the draft's do. A group is the UI's: nothing of it
-orders, so a tap or a rest on a slot neither ends the undo's record nor takes the pill away, and the handle follows the selection it
+The words are hints, where FAF prints its messages (`griff.lua` `Hint`); the buzz of a group stored comes from the hook through
+`FafreGriffGroupStored` (`GriffAndroid.cpp`). A group is the UI's: nothing of it orders, so a tap or a rest on a slot neither ends the
+undo's record nor takes its button away, but for the group's records a store makes or ends (The undo), and the handle follows the selection it
 makes as any other. The rest is the panels' one rest time, not the mockup's 400 ms for groups. The mouse scheme keeps FAF's own groups
 panel and its right press, as a PC's; the scheme is the game's, read when its activity starts (`FafreGriffWanted`).
 
@@ -675,6 +783,78 @@ FAF's order, and a rest after an order goes to the best idle unit left. Where th
 the round too, where FAF starts it over, and after a double tap the round goes on from the unit after it, as FAF's index does for a
 mouse that stays.
 
+#### The groups
+
+Supreme Commander 2's groups on a console (Griff v4, the user's wish on 0.14.0): the units one gesture ordered together, and the units
+one factory order made, are a group, which one round icon shows in the world at their middle. Only one's own units are in groups (the
+focus army's mobile units that live), and nothing of a group orders. The program keeps them (`native/src/host/GriffAndroid.cpp`;
+`include/GriffGroups.h` `Book`, tested in `tests/wx/GriffGroupsTests.cpp`): what a watched gesture orders (its taps, strokes and rests,
+a tap on FAF's orders panel included; the orders `griffundo::Takeable` counts) takes its units out of their groups into the gesture's;
+the units a factory makes of one kind while its queue does not run empty, as FAF's construction panel shows one entry with its count,
+are the group of that run until a gesture orders them (`griffgroups::Runs`, tested: a unit counts for the run when it is finished, a
+kind of its own begins a run, a repeating queue never runs empty, and a queue the sync shows empty a frame before its last unit is
+finished still gives that unit to the run). A unit leaves its group when another gesture orders it, when it dies or is no longer one's
+own, and a group of fewer than two units is none. The draft's tick, the undo and the keyboard's keys make no group: they are no gesture's. An undo that takes a gesture back whole
+puts its units back in the groups they were in before it (`Book::Undone`, tested), where no other gesture has taken them since.
+
+The icon is FAF's strategic icon art (`fafre/griffgroups.lua`): the experimentals' round icon
+(`strategicicons/icon_experimental_generic_rest.dds`, its `_selected` while all of the group is selected, as the game draws a selected
+unit's icon) in the colour the game gives one's own icons (the army's, or FAF's team colour), with the group's count in FAF's font,
+white with a shadow, written smaller where it would be wider than 0.8 of the icon, as a count of 100 or more is. Its disc is 20 of the picture's pixels at FAF's `strat_icon_scale` 1, as large as FAF's largest unit icon (a
+selected land unit's; 16 at rest). It shows where the game draws strategic icons (not with FAF's icons off) and from the zoom on at
+which the game draws one of the group's units as its icon (`CWldSession::RenderStrategicIcons`: the mesh's `IconFadeInZoom`, at the
+latest 0.89 of the farthest zoom; `griffgroups::DrawsIcon`, tested): zoomed in, where the units are meshes, it has gone. It is a picture
+on the map's view that takes no event, as FAF's reclaim labels are, so a pan, rest or stroke over it is the map's. *Groups* on the rail
+shows and hides the icons (shown as a game begins, not kept in the prefs); hidden, there is no icon to tap.
+
+| On a group's icon | FAF's input |
+|---|---|
+| Tap | The group is the selection (`griff.lua` `SelectGroup`: `SelectUnits`); with *Plus* it joins the selection (`AddSelectUnits`); with *Box* it joins it or, where all of it is selected, leaves it, as *Box*'s tap does with one's own unit. FAF's UI and an armed command mode come first; then the program asks what FAF's cursor is over, and an icon takes the tap within the tap help's reach of its disc, but with troops selected (the selection that takes orders) only within FAF's pick for them, 2 mm, and not where FAF's cursor is over a unit that is not one's own, which the tap orders on (`griffgroups::IconReach`, `IconTakesTap`, `IconAt`, tested). On the emulator, zoomed out with engineers selected, a tap 34 pixels from the middle of a group's icon (beyond 2 mm of its disc, within the tap help's reach) moved the engineers there, and a tap on the disc selected the group; *Box* and a tap on a selected group's icon took it out of the selection, and again put it back |
+| Two taps | The tap ladder's second rung (`TouchInput.STEP_GROUP_AGAIN`, tested): the group again, and the camera goes to it as for FAF's control group selected twice, by the player's option `selection_sets_double_tap_behavior` (`selection.lua` `DoubleTapBehavior`'s steps, which `SelectGroup` takes since that function is local to its file) |
+
+Checked in FAF 3835's `lua.nx2` before it was added: FAF shows its control groups and selection sets only in its panel
+(`controlgroups.lua`, `selection.lua`), and nothing it draws in the world (`reclaim.lua`'s labels, `unittext.lua`, `notifyoverlay.lua`,
+`OffScreenIndicator.lua`, the casting mouse) stands for a group. On the emulator at the phone's size and HUD 1.6 (2026-11-15, a skirmish
+whose units cheats made): two moves gave two icons of 10; a tap on one selected its 10 units, two taps on the other selected them and
+brought the camera down to them, where the icons had gone; *Groups* hid and showed them; a factory's four tanks of one order showed an
+icon of 4. The groups' work in each frame, Lua and program, timed over 200 calls with 10 icons over 180 grouped units (255 in the
+game): 0.23 ms with the icons shown, 0.15 ms hidden (the program's part 0.03 ms); the emulator's frames, about 70 ms with those units,
+took as long with the icons as without within the measure's spread (medians 67.6 and 67.1 ms over 20 s each).
+
+#### Past the map's edges
+
+At the phone's HUD factor FAF's panels cover much of the view along its edges, and the engine held the camera so that the map's edges
+stayed under them: scrolled to its bottom, the map's last third lay under the construction panel (the user's verdict on 0.14.0). The
+camera's clamp (`CameraImpl::ClampTargetPos`, the engine's, past which FAF's Lua cannot move the camera) now lets the main map's camera
+come so near each edge that the edge comes out from under the panels into the view clear of them, at any zoom: the build-time patch
+`native/patches/src/moho/render/camera/CameraImpl.cpp.patch`, its rules `include/CameraClear.h`, tested in
+`tests/wx/CameraClearTests.cpp`. The program measures what the panels cover (`GriffAndroid.cpp` `MeasureMargins`, one walk over FAF's
+controls each 30 frames): the controls over the map that overlap by more than 0.4 % of the view's height each way are one panel; a panel
+standing at an edge (within 1 %) counts for the edge it reaches in from least, so a panel in a corner, as the construction panel, counts
+for the edge it lies along; one covering more than half of the view from each edge it stands at counts for none (a dialog's shadow), nor
+does one sliding in from more than 2 % past an edge, nor what the player opened (`fafre/opened.lua`: windows, dialogs, dropouts, the
+tabs' content). Of all that showed in a game the larger margin at each edge stays: the panels come and go with the selection, and a
+margin that shrank would pull the camera back from an edge it went to. The clamp takes the ground under the corners of the view clear of
+the margins, as the camera's last frame showed it, on the plane of its focus, and lets each edge come in as far as the nearest of those
+corners towards it; a corner that shows no ground (above the horizon, as a camera turned far up could show it) bounds no edge, so each
+edge goes by the corners towards it that show ground alone and keeps the engine's span where none does (`cameraclear::Allowed`; the
+whole measure, `ClearSpans`, tested on a synthetic camera's rays: its corners, a zoom other than the frame's, a focus below the target);
+never less far than the engine's own clamp lets it, and the minimap's camera keeps the engine's. Zooming and panning are the engine's as
+before.
+
+Measured on the emulator at the phone's size and HUD 1.6 (2026-11-15, Seton's Clutch, hover tanks along the four edges as markers): the
+margins came to 33.7 % of the width on the left (the unit view), 19.4 % of the height at the top (the score panel), 7.4 % on the right
+(the avatars) and 29.6 % at the bottom (the construction panel with the orders panel). Scrolled as far as it goes, the bottom edge lay
+just above the construction panel, at the play's zoom and zoomed out; the top edge below the top panels; the left edge right of the unit
+view. On the right the engine's own clamp already lets the view go past the edge (its span is the zoom's, narrower than the phone's
+wide picture), so the right edge comes in further than the avatars need, as FA does on a wide screen. Only Griff measures the margins:
+the mouse scheme keeps the engine's clamp. The ground is taken on the plane of the focus, so where an edge's land lies much higher or
+lower than the focus it comes out from under a panel a little short of or past the panel's line. Again on Open Palms, whose edges are
+land and snow (2026-11-15, at HUD 1.67, the largest factor on the phone's screen, and at 1.0), scrolled as far as it goes: at 1.67 the
+south edge lay just above the construction panel, the west edge at the unit view's right side and the north edge just below the top
+panels; at 1.0 the south edge lay above the construction panel, and the engine's own clamp let the view go past the west and north
+edges further than the smaller panels need.
+
 ### The game's panels now
 
 Measured by the census at 1.6 on the phone's size; mm at 10.5 pixels to the millimetre. "Reach" is what tap help adds
@@ -695,7 +875,7 @@ where nothing larger that takes events is in the way.
 | Idle avatars | `ui/game/avatars.lua:237` | 86x80 | 7.6 | |
 | Idle list's rows | `ui/game/avatars.lua:533` | 137x80 | 7.6 | |
 | The idle avatars' expand arrow | `ui/game/avatars.lua:256` | 16x48 | 1.5 | reach |
-| Control groups | `ui/game/controlgroups.lua:83` | 73x54 | 5.1 | Griff's slots 73x53 |
+| Control groups | `ui/game/controlgroups.lua:83` | 73x54 | 5.1 | Griff's slots 1 to 3 are FAF's own controls, and an empty one their frame |
 | Collapse arrows of every panel | `tabs.lua:441`, `economy.lua:82`, `multifunction.lua:209`, `score.lua:91`, `avatars.lua:54` | 28x41 | 2.7 | reach, at the screen's edge |
 | Score panel's rows and small icons | `ui/game/score.lua:280`, `:315` | 480x22, 22x22 | 2.1 | reach; tooltips and the display's switch |
 

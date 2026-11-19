@@ -105,22 +105,6 @@ public class HudScaleTest {
     }
 
     @Test
-    public void theRailsBandEndsWhereTheUnitViewStandsInAReplay() {
-        // FAF's unit view 20 of its lines higher than in a game, an H under the panel and over the view: on the S22 Ultra
-        // (1 mm) and on the emulator at the phone's size (65.3 / 73 mm).
-        assertEquals(140.8 * 73 / 768 - 2, HudScale.railBandMm(1.6, 768, S22_ULTRA_MM), 1e-9);
-        assertEquals(140.8 * 65.3 / 768 - 2 * 65.3 / 73, HudScale.railBandMm(1.6, 768, 65.3), 1e-9);
-    }
-
-    @Test
-    public void theMockupsHIsAMillimetreOnAScreenOf73MmAndLessOnASmallerOne() {
-        assertEquals(1, HudScale.millimetresH(73), 0);
-        assertEquals(1, HudScale.millimetresH(80), 0);
-        assertEquals(65.3 / 73, HudScale.millimetresH(65.3), 1e-9);
-        assertEquals(0.7, HudScale.millimetresH(40), 0);
-    }
-
-    @Test
     public void theRoomIsTheSameOnTheGlassAtEveryPictureTheAppOffers() {
         double mmAt768 = HudScale.barRoomPixels(HudScale.factor(768, S22_ULTRA_MM), 768) * S22_ULTRA_MM / 768;
         for (int lines : new int[] {900, 1080, 1440}) {

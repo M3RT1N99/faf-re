@@ -1,0 +1,93 @@
+diff --git a/src/moho/render/camera/CameraImpl.cpp b/src/moho/render/camera/CameraImpl.cpp
+index e3c50d0..0455592 100644
+--- a/src/moho/render/camera/CameraImpl.cpp
++++ b/src/moho/render/camera/CameraImpl.cpp
+@@ -17,6 +17,8 @@
+ #include <stdexcept>
+ #include <typeinfo>
+ 
++#include <CameraClear.h>
++
+ #include "gpg/core/containers/FastVector.h"
+ #include "gpg/core/reflection/Reflection.h"
+ #include "lua/LuaObject.h"
+@@ -1443,13 +1445,53 @@ void moho::CameraImpl::SetupHermite()
+   mHermiteZoomEndDelta = zoomDelta;
+ }
+ 
++namespace
++{
++  /**
++   * Android client build (android/TOUCH_UI.md, "Past the map's edges"): how near the world camera's focus may come to the
++   * map's edges at `zoom`, where the game's panels cover the view along them (cameraclear::gWorldCamera, which the app
++   * measures): the engine's own spans, or less, so that each edge can come out from under the panels into the view clear of
++   * them. The ground under that view's corners is where the camera's last frame showed it, on the plane of its focus, from
++   * the target that the clamp holds, at `zoom`. The target lies on the view's middle at a height of its own, and the focus
++   * is where the view shows the ground there (ClampFocusPos), as over the sea, below a target the land left higher. A camera
++   * turned, or turning back after each drag (CameraRevertRotation), shows other ground under the corners, by which it goes
++   * as well. The minimap's camera and any other keep the engine's spans. The rules, with their tests:
++   * cameraclear::ClearSpans; here what the camera knows, its last frame's rays through the view and its zoom.
++   */
++  [[nodiscard]] cameraclear::Spans
++  ClearSpans(const moho::CameraImpl& camera, const float zoom, const float spanX, const float spanZ)
++  {
++    const cameraclear::Spans own{spanX, spanX, spanZ, spanZ};
++    if (std::strcmp(camera.mName.c_str(), "WorldCamera") != 0) {
++      return own;
++    }
++    const moho::GeomCamera3& view = camera.mCam;
++    const float width = view.viewport.r[3].z;
++    const float height = view.viewport.r[3].w;
++    if (!(width > 0.0f && height > 0.0f)) {
++      return own;
++    }
++    // The view's width at the focus as the frame drew it.
++    const float drawnZoom = 2.0f * camera.mZoom * std::tan(camera.mFarFov * 0.5f);
++    const auto through = [&view, width, height](const float partX, const float partY) {
++      const moho::GeomLine3 ray =
++        view.Unproject(Wm3::Vector2f(view.viewport.r[3].x + partX * width, view.viewport.r[3].y + partY * height));
++      return cameraclear::Ray{ray.pos.x, ray.pos.y, ray.pos.z, ray.dir.x, ray.dir.y, ray.dir.z};
++    };
++    return cameraclear::ClearSpans(
++      cameraclear::gWorldCamera, zoom, drawnZoom, camera.mTargetLocation.y, camera.mOffset.y, spanX, spanZ, through
++    );
++  }
++} // namespace
++
+ /**
+  * Address: 0x007A9320 (FUN_007A9320, Moho::CameraImpl::ClampTargetPos)
+  * Mangled: ?ClampTargetPos@CameraImpl@Moho@@QAEXXZ
+  *
+  * What it does:
+  * Clamps target X/Z to map or playable-rect bounds using zoom-proportional
+- * extents.
++ * extents. Android client build: the world camera's, less where the game's
++ * panels would cover the map's edges (ClearSpans).
+  */
+ void moho::CameraImpl::ClampTargetPos()
+ {
+@@ -1495,8 +1537,10 @@ void moho::CameraImpl::ClampTargetPos()
+   }
+ 
+   const float halfSpanX = (clampedZoom / maxZoom) * (static_cast<float>(maxX - minX) * 0.5f);
+-  const float maxTargetX = static_cast<float>(maxX) - halfSpanX;
+-  const float minTargetX = static_cast<float>(minX) + halfSpanX;
++  const float halfSpanZ = (clampedZoom / maxZoom) * (static_cast<float>(maxZ - minZ) * 0.5f);
++  const cameraclear::Spans spans = ClearSpans(*this, clampedZoom, halfSpanX, halfSpanZ);
++  const float maxTargetX = static_cast<float>(maxX) - spans.maxX;
++  const float minTargetX = static_cast<float>(minX) + spans.minX;
+ 
+   float targetX = mTargetLocation.x;
+   if (maxTargetX <= targetX) {
+@@ -1507,9 +1551,8 @@ void moho::CameraImpl::ClampTargetPos()
+   }
+   mTargetLocation.x = targetX;
+ 
+-  const float halfSpanZ = (clampedZoom / maxZoom) * (static_cast<float>(maxZ - minZ) * 0.5f);
+-  const float maxTargetZ = static_cast<float>(maxZ) - halfSpanZ;
+-  const float minTargetZ = static_cast<float>(minZ) + halfSpanZ;
++  const float maxTargetZ = static_cast<float>(maxZ) - spans.maxZ;
++  const float minTargetZ = static_cast<float>(minZ) + spans.minZ;
+ 
+   float targetZ = mTargetLocation.z;
+   if (maxTargetZ <= targetZ) {

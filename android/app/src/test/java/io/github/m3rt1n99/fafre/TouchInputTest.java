@@ -149,6 +149,21 @@ public class TouchInputTest {
             events.add("griff tap");
         }
 
+        /** Griff: how many of the handle's rests the program was asked about, and the last one's number. */
+        int handleRests;
+        int lastHandleRest;
+
+        @Override
+        public void handleRest(int rest) {
+            ++handleRests;
+            lastHandleRest = rest;
+        }
+
+        @Override
+        public void distribute() {
+            events.add("distribute");
+        }
+
         @Override
         public void route(float[] xs, float[] ys, int count, int railNow, boolean patrol) {
             StringBuilder route = new StringBuilder(patrol ? "patrol" : "route");
@@ -202,8 +217,23 @@ public class TouchInputTest {
         }
 
         @Override
+        public void griffDragGiveUp(float x, float y) {
+            events.add("griff drag given up " + (int) x + " " + (int) y);
+        }
+
+        @Override
         public void restTap(float x, float y, int railNow) {
             events.add("rest tap " + (int) x + " " + (int) y + " rail " + railNow);
+        }
+
+        @Override
+        public void griffRest(float x, float y) {
+            events.add("griff rest " + (int) x + " " + (int) y);
+        }
+
+        @Override
+        public void griffRestGone() {
+            events.add("rest gone");
         }
 
         @Override
@@ -284,6 +314,16 @@ public class TouchInputTest {
             events.add("draft box " + (phase == TouchInput.DRAFT_ABORT ? "abort" : phase(phase, x0, y0) + " to " + (int) x1 + " " + (int) y1));
         }
 
+        /** Griff's draft: where its rests asked whether they are on FAF's UI, and the last one's number. */
+        final List<String> draftRests = new ArrayList<>();
+        int lastDraftRest;
+
+        @Override
+        public void draftRest(float x, float y, int rest) {
+            draftRests.add((int) x + " " + (int) y);
+            lastDraftRest = rest;
+        }
+
         @Override
         public void draftDrop() {
             events.add("draft drop");
@@ -337,6 +377,8 @@ public class TouchInputTest {
                     return "all mobile";
                 case TouchInput.STEP_TYPE_IN_VIEW:
                     return "type in view";
+                case TouchInput.STEP_GROUP_AGAIN:
+                    return "group again";
                 default:
                     return "step " + step;
             }
@@ -522,7 +564,95 @@ public class TouchInputTest {
         moveFirst(200, 100, 1400);
         assertFalse("the box goes on without it", mouse.ringShown);
         up(0, 1410);
-        expect("move 100 50", "held", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100", "griff drag end 200 100");
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
+               "griff drag end 200 100");
+    }
+
+    @Test
+    public void griffARestedDragTheSystemTakesIsGivenUpNotEnded() {
+        // FAF's formation is ordered as its right button goes up: a drag no finger lifted gives it up, as a route is given up.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        touch.formation(mouse.lastDrag);
+        touch.cancel();
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
+               "griff drag given up 200 100");
+        // What is left of the finger gives nothing.
+        moveFirst(260, 100, 1500);
+        up(0, 1600);
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
+               "griff drag given up 200 100");
+    }
+
+    @Test
+    public void griffANewFirstFingerGivesARestedDragUp() {
+        // A first finger while a gesture is live: the one before never lifted, and orders nothing.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        touch.formation(mouse.lastDrag);
+        mouse.events.clear();
+        touch.down(5, 400, 300, 1500, true);
+        assertEquals("griff drag given up 200 100", mouse.events.get(0));
+        for (String event : mouse.events) {
+            assertFalse(mouse.events.toString(), event.startsWith("griff drag end"));
+        }
+    }
+
+    @Test
+    public void griffASecondFingerGivesFafsFormationUp() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        // The program says that it made FAF's formation of the drag (Game.SAID_FORMATION).
+        touch.formation(mouse.lastDrag);
+        mouse.events.clear();
+        down(1, 400, 100, 1500);
+        expect("griff drag given up 200 100", "given up");
+        // Both fingers rest until they lift: no pinch, no order.
+        moveBoth(260, 100, 450, 100);
+        up(1, 1600);
+        up(0, 1700);
+        expect("griff drag given up 200 100", "given up");
+    }
+
+    @Test
+    public void griffASecondFingerLeavesABoxAlone() {
+        // A rested drag the program made a box of, or one it has not said is a formation yet: the box goes on, and its lift ends it.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        mouse.events.clear();
+        down(1, 400, 100, 1500);
+        moveBoth(220, 100, 420, 100);
+        up(1, 1600);
+        up(0, 1700);
+        for (String event : mouse.events) {
+            assertFalse(mouse.events.toString(), event.startsWith("griff drag given up") || event.startsWith("pinch"));
+        }
+        assertTrue(mouse.events.toString(), mouse.events.contains("griff drag end 220 100"));
+    }
+
+    @Test
+    public void griffTheFormationsWordIsForOneDragAlone() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        int earlier = mouse.lastDrag;
+        up(0, 1500);
+        down(0, 300, 50, 2000);
+        timerRuns();
+        moveFirst(400, 100, 2400);
+        touch.formation(earlier);
+        mouse.events.clear();
+        down(1, 600, 100, 2500);
+        assertTrue(mouse.events.toString(), mouse.events.isEmpty());
     }
 
     @Test
@@ -536,7 +666,51 @@ public class TouchInputTest {
         assertEquals("the ring follows the finger", 103, mouse.ringX, 0);
         up(0, 1600);
         assertFalse(mouse.ringShown);
-        expect("move 100 50", "held", "rest tap 100 50 rail 2", "rail used 2");
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 2", "rail used 2");
+    }
+
+    @Test
+    public void griffARestTellsTheProgramWhereTheFingerCameDownAsItsRingShows() {
+        // The program marks a waypoint there or makes the rest the right button's, for the drag or the lift that follows.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(104, 52);
+        expect("move 100 50");
+        timerRuns();
+        assertTrue(mouse.ringShown);
+        expect("move 100 50", "held", "griff rest 100 50");
+    }
+
+    @Test
+    public void griffARestTheSystemTookIsGoneForTheProgram() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.cancel();
+        assertFalse(mouse.ringShown);
+        expect("move 100 50", "held", "griff rest 100 50", "rest gone");
+        // Once: the finger that the system took lifts with nothing more, and the next gesture's tap has no rest of its own.
+        up(0, 1500);
+        mouse.events.clear();
+        down(0, 300, 50, 3000);
+        up(0, 3000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 300 50", "smart tap 300 50 rail 0");
+    }
+
+    @Test
+    public void griffARestsDragOrLiftTakesItsRestWithIt() {
+        // The program reads what the rest found with the drag or the lift: no word that it went.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        up(0, 1500);
+        down(0, 300, 50, 3000);
+        timerRuns();
+        up(0, 3600);
+        for (String event : mouse.events) {
+            assertFalse(event, event.equals("rest gone"));
+        }
     }
 
     @Test
@@ -573,7 +747,7 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         timerRuns();
         up(0, 1600);
-        expect("move 100 50", "held", "rest tap 100 50 rail 0");
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 0");
         assertFalse("its ring buzzed", touch.storeBuzzes());
         assertTrue("for one store: a mouse's after it buzzes", touch.storeBuzzes());
     }
@@ -588,7 +762,7 @@ public class TouchInputTest {
         assertFalse(mouse.ringShown);
         up(1, 1450);
         up(0, 1460);
-        expect("move 100 50", "held", "move 200 50");
+        expect("move 100 50", "held", "griff rest 100 50", "rest gone", "move 200 50");
     }
 
     @Test
@@ -609,17 +783,17 @@ public class TouchInputTest {
         timerRuns();
         moveFirst(200, 100);
         up(0, 1600);
-        expect("move 100 50", "held", "griff drag 100 50 now 200 100 rested rail 2", "move 200 100", "rail used 2",
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 2", "move 200 100", "rail used 2",
                "griff drag end 200 100");
     }
 
     @Test
     public void griffATapIsFafsClickByWhatItLandsOnAndUsesTheRail() {
         griff();
-        mouse.rail = TouchInput.RAIL_QUEUE | TouchInput.RAIL_ATTACK;
+        mouse.rail = TouchInput.RAIL_QUEUE;
         down(0, 100, 50, 1000);
         up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
-        expect("move 100 50", "smart tap 100 50 rail 6", "rail used 6");
+        expect("move 100 50", "smart tap 100 50 rail 2", "rail used 2");
         assertEquals(List.of("100 50"), mouse.downs);
     }
 
@@ -665,6 +839,18 @@ public class TouchInputTest {
         tap(130, 60, 1600, 0);
         expect("move 100 50", "smart tap 100 50 rail 0", "move 130 60", "smart tap 130 60 rail 0 attack move at 100 50",
                "move 130 60", "smart tap 130 60 rail 0");
+    }
+
+    @Test
+    public void griffTheLadderOnAGroupsIconSelectsItAgainWithTheCamera() {
+        // As a control group's double click: the second tap near the first, wherever it lands, takes the first tap's group.
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_GROUP);
+        tap(120, 55, 1300, 0);
+        // The camera to the group is the ladder's top: the next tap is a tap again.
+        tap(120, 55, 1600, 0);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 120 55", "smart tap 120 55 rail 0 group again at 100 50",
+               "move 120 55", "smart tap 120 55 rail 0");
     }
 
     @Test
@@ -828,6 +1014,72 @@ public class TouchInputTest {
         assertTrue(mouse.events.toString(), mouse.events.get(0).startsWith("route "));
     }
 
+    /** A tap on one's own unit at 100 50, which raised the handle at 160 50: a finger on the handle within 350 ms may climb. */
+    private void tapRaisingTheHandle(long down) {
+        tap(100, 50, down, TouchInput.TAP_OWN);
+        mouse.griffX = 160;
+        mouse.griffY = 50;
+        mouse.events.clear();
+    }
+
+    @Test
+    public void griffARestOnTheHandleRightAfterATapIsTheHandlesNotTheMaps() {
+        // The ladder may climb, so the handle left the finger to it; but only a quick lift climbs. Its rest is the handle's,
+        // never a rest at the handle's place, whose right button would be a move or a formation there: where the program does
+        // not say that its lift distributes, no ring, and its lift within the slop is the handle's tap.
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        timerRuns();
+        assertEquals("the handle's rest asks whether its lift distributes", 1, mouse.handleRests);
+        moveFirst(158, 52, 1700);
+        assertFalse("no ring", mouse.ringShown);
+        up(0, 1800);
+        expect("move 150 50", "griff tap");
+    }
+
+    @Test
+    public void griffARestOnTheHandleRightAfterATapGivesFafsDistributeOrdersWhereTheProgramSays() {
+        // The handle's rest of the finger the ladder had: where the program says that its lift distributes, the ring and the
+        // label show, and the lift is FAF's Distribute orders, as after the ladder's time.
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        timerRuns();
+        touch.distributes(mouse.lastHandleRest);
+        assertTrue("the ring", mouse.ringShown);
+        assertEquals(Stroke.DISTRIBUTE, mouse.shownMode);
+        up(0, 1800);
+        expect("move 150 50", "held", "distribute");
+    }
+
+    @Test
+    public void griffADragFromTheHandleRightAfterATapIsItsStrokeNotAPan() {
+        // From where the finger came down, as a stroke from the handle; the moves before it left the slop count.
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        strokeFirst(150, 50, 450, 50);
+        up(0, 1800);
+        expect("move 150 50", "route 300 50, 450 50 rail 0");
+        // A quick one that lifts 60 ms after it left the slop counts where it was then, not where it came down: a route.
+        tapRaisingTheHandle(3000);
+        down(0, 150, 50, 3300);
+        moveFirst(240, 50, 3340);
+        up(0, 3400);
+        expect("move 150 50", "route 240 50 rail 0");
+    }
+
+    @Test
+    public void griffAQuickLiftOnTheHandleRightAfterATapClimbsTheLadder() {
+        griff();
+        tapRaisingTheHandle(1000);
+        down(0, 150, 50, 1300);
+        moveFirst(160, 52, 1320);
+        up(0, 1300 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 150 50", "smart tap 150 50 rail 0 type in view at 100 50");
+    }
+
     @Test
     public void griffATwoFingerTapLetsTheSelectionGo() {
         griff();
@@ -848,7 +1100,7 @@ public class TouchInputTest {
         up(1, 1360);
         up(0, 1370);
         assertFalse(mouse.events.contains("deselect"));
-        // 1.4 mm apart more still taps; 1.5 mm pinches.
+        // Their distance 1.4 mm longer still taps; 1.6 mm longer pinches, though each finger moved 0.8 mm about a still middle.
         down(0, 100, 50, 2000);
         down(1, 200, 50, 2050);
         moveBoth(93, 50, 207, 50);
@@ -863,6 +1115,37 @@ public class TouchInputTest {
         up(0, 3110);
         assertFalse(mouse.events.contains("deselect"));
         assertTrue(mouse.events.toString(), mouse.events.contains("pinch start 150 50 116"));
+    }
+
+    @Test
+    public void griffTwoFingersThatTwistAboutAStillMiddlePinchAndAreNoTap() {
+        // Each finger 2 mm one way, about a middle that stays, their distance 0.4 mm longer: no tap of two, which would let the
+        // selection go, but a pinch, which moves nothing; a finger counts from where it was as the second came down.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(104, 51, 1030);
+        down(1, 300, 50, 1050);
+        moveBoth(104, 41, 300, 60);
+        expect("move 100 50", "move 300 50");
+        moveBoth(104, 31, 300, 70);
+        up(1, 1150);
+        up(0, 1160);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+        assertEquals("pinch start 202 50 200", mouse.events.get(2));
+    }
+
+    @Test
+    public void griffTwoFingersAgainAfterAPinchAreNoTapOfTwo() {
+        // A pinch, one finger up and down again beside the other within 350 ms of the first down: the camera moved, no tap.
+        griff();
+        down(0, 100, 100, 1000);
+        down(1, 300, 100, 1020);
+        moveBoth(80, 100, 320, 100);
+        up(1, 1080);
+        down(2, 300, 100, 1100);
+        up(2, 1200);
+        up(0, 1210);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
     }
 
     @Test
@@ -928,7 +1211,7 @@ public class TouchInputTest {
         down(0, 100, 100, 1000);
         moveFirst(150, 100, 1100);
         // The program says that it made a pan of the drag (Game.SAID_PAN).
-        touch.panned(mouse.lastDrag);
+        touch.panned(mouse.lastDrag, 1150);
         down(1, 400, 100, 1200);
         moveBoth(130, 100, 420, 100);
         expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "griff drag end 150 100", "move 400 100",
@@ -952,25 +1235,178 @@ public class TouchInputTest {
 
     @Test
     public void griffTheProgramsWordIsForOneDragAlone() {
-        // A pan, its word in time; then a drag on a panel, which no word makes a pan, nor a late word for the pan before.
+        // A pan, its word in time; then a drag on a panel, which no word makes a pan, nor a late word for the pan before: the
+        // second finger waits, and a third is beyond the two a gesture uses.
         griff();
         down(0, 100, 100, 1000);
         moveFirst(150, 100, 1100);
         int pan = mouse.lastDrag;
-        touch.panned(pan);
+        touch.panned(pan, 1150);
         up(0, 1200);
         down(0, 600, 100, 2000);
         moveFirst(650, 100, 2100);
         mouse.events.clear();
         down(1, 900, 100, 2200);
-        touch.panned(pan);
+        touch.panned(pan, 2210);
         down(2, 900, 120, 2250);
         moveBoth(630, 100, 920, 100);
         expect("move 630 100");
-        // Its own word does.
-        touch.panned(mouse.lastDrag);
-        down(3, 900, 100, 2300);
-        assertEquals("griff drag end 630 100", mouse.events.get(1));
+        // Its own word does, and takes the second finger where it is now.
+        touch.panned(mouse.lastDrag, 2300);
+        expect("move 630 100", "griff drag end 630 100", "move 920 100");
+    }
+
+    @Test
+    public void griffASecondFingerBeforeThePansWordIsTakenAtTheWord() {
+        // It landed before the program said that the drag is a pan, one program frame and a post after the drag began: the
+        // word makes two fingers of it, which pinch, as of a finger after the word. Their quick lift is no tap of two: the first
+        // finger had travelled.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1030);
+        down(1, 400, 100, 1060);
+        touch.move(1, 410, 100);
+        touch.moved(1070);
+        touch.panned(mouse.lastDrag, 1090);
+        moveBoth(130, 100, 430, 100);
+        up(1, 1150);
+        up(0, 1160);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 150 100", "griff drag end 150 100",
+               "move 410 100", "pinch start 280 100 300", "pinch start 130 100 0", "pinch end");
+        // Two that stay and lift within 350 ms of the first finger's down.
+        mouse.events.clear();
+        down(0, 100, 100, 3000);
+        moveFirst(150, 100, 3030);
+        down(1, 400, 100, 3060);
+        touch.panned(mouse.lastDrag, 3090);
+        up(1, 3150);
+        up(0, 3160);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+        // With no word, on a panel's drag or a box, it waits for its lift and is no gesture's: the drag goes on to its own lift.
+        mouse.events.clear();
+        down(0, 100, 100, 2000);
+        moveFirst(150, 100, 2030);
+        down(1, 400, 100, 2060);
+        up(1, 2100);
+        moveFirst(170, 100, 2110);
+        up(0, 2200);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 170 100", "griff drag end 170 100");
+    }
+
+    @Test
+    public void griffASecondFingerThatWaitedForTheWordAndWentIsNoGestures() {
+        // It lifted before the program said that the drag is a pan, or Android took it for a palm: the word makes no two fingers
+        // of it, and the first finger's pan goes on to its own lift.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1030);
+        down(1, 400, 100, 1060);
+        up(1, 1080);
+        touch.panned(mouse.lastDrag, 1090);
+        moveFirst(170, 100, 1100);
+        up(0, 1200);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 170 100", "griff drag end 170 100");
+        mouse.events.clear();
+        down(0, 100, 100, 2000);
+        moveFirst(150, 100, 2030);
+        down(1, 400, 100, 2060);
+        touch.forget(1, 2070);
+        --fingers;
+        touch.panned(mouse.lastDrag, 2090);
+        moveFirst(170, 100, 2100);
+        up(0, 2200);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "move 170 100", "griff drag end 170 100");
+    }
+
+    @Test
+    public void griffTheProgramsWordAfterItsClicksBeganGivesTheGestureUp() {
+        // The clicks of the tick or the undo began after the first finger came down: the program's word on its rest or its drag
+        // gives the gesture up, and nothing more of it goes to the game.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        // The handle's rest: its stroke goes, Cancelled, with no ring.
+        down(0, 100, 50, 1000);
+        timerRuns();
+        mouse.clicksBegin();
+        touch.distributes(mouse.lastHandleRest);
+        assertFalse(mouse.ringShown);
+        up(0, 1500);
+        expect("given up");
+        // The draft's rest on FAF's UI: no panel's rest.
+        mouse.clicking = false;
+        mouse.drafting = true;
+        mouse.events.clear();
+        down(0, 400, 50, 2000);
+        timerRuns();
+        mouse.clicksBegin();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        assertFalse(mouse.ringShown);
+        up(0, 2500);
+        expect("move 400 50");
+        // A second finger that waited for the word on a pan: no two fingers, nor a pinch.
+        mouse.clicking = false;
+        mouse.drafting = false;
+        mouse.events.clear();
+        down(0, 400, 100, 3000);
+        moveFirst(450, 100, 3030);
+        down(1, 700, 100, 3060);
+        mouse.clicksBegin();
+        touch.panned(mouse.lastDrag, 3090);
+        moveBoth(430, 100, 720, 100);
+        up(1, 3150);
+        up(0, 3160);
+        expect("move 400 100", "griff drag 400 100 now 450 100 rail 0", "move 450 100");
+        // One that waited for the word on FAF's formation: nothing more either.
+        mouse.clicking = false;
+        mouse.events.clear();
+        down(0, 400, 100, 4000);
+        timerRuns();
+        moveFirst(500, 150, 4400);
+        down(1, 700, 100, 4420);
+        mouse.clicksBegin();
+        touch.formation(mouse.lastDrag);
+        up(1, 4500);
+        up(0, 4600);
+        expect("move 400 100", "held", "griff rest 400 100", "griff drag 400 100 now 500 150 rested rail 0", "move 500 150");
+    }
+
+    @Test
+    public void griffASecondFingerBeforeTheFormationsWordGivesItUpAtTheWord() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        down(1, 400, 100, 1420);
+        mouse.events.clear();
+        touch.formation(mouse.lastDrag);
+        expect("griff drag given up 200 100", "given up");
+        // Both rest until they lift: no pinch, no order.
+        moveBoth(260, 100, 450, 100);
+        up(1, 1600);
+        up(0, 1700);
+        expect("griff drag given up 200 100", "given up");
+    }
+
+    @Test
+    public void griffTwoFingersAfterAPanAreNoTapOfTwo() {
+        // The first finger panned: with the second still beside it, their quick lift lets nothing go, nor drops the draft.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1040);
+        touch.panned(mouse.lastDrag, 1090);
+        down(1, 400, 100, 1150);
+        up(1, 1250);
+        up(0, 1300);
+        assertFalse(mouse.events.toString(), mouse.events.contains("deselect"));
+        mouse.drafting = true;
+        down(0, 100, 100, 2000);
+        moveFirst(150, 100, 2040);
+        touch.panned(mouse.lastDrag, 2090);
+        down(1, 400, 100, 2150);
+        up(1, 2250);
+        up(0, 2300);
+        assertFalse(mouse.events.toString(), mouse.events.contains("draft drop"));
     }
 
     @Test
@@ -1001,7 +1437,7 @@ public class TouchInputTest {
         timerRuns();
         assertTrue("a ring: Box came after the down", mouse.ringShown);
         up(0, 4600);
-        expect("move 300 50", "rest tap 300 50 rail 1", "move 400 50", "held", "rest tap 400 50 rail 0");
+        expect("move 300 50", "rest tap 300 50 rail 1", "move 400 50", "held", "griff rest 400 50", "rest tap 400 50 rail 0");
     }
 
     @Test
@@ -1042,7 +1478,7 @@ public class TouchInputTest {
         griff();
         mouse.griffX = 100;
         mouse.griffY = 50;
-        mouse.rail = TouchInput.RAIL_ATTACK;
+        mouse.rail = TouchInput.RAIL_QUEUE;
         down(0, 100, 50, 1000);
         strokeFirst(100, 50, 160, 50);
         strokeFirst(160, 50, 160, 300);
@@ -1050,8 +1486,8 @@ public class TouchInputTest {
         // Its points are a mm apart: the corner stays within one.
         List<float[]> route = places(mouse.events.get(0));
         assertTrue(mouse.events.get(0), Math.hypot(route.get(0)[0] - 160, route.get(0)[1] - 50) <= 10);
-        assertTrue(mouse.events.get(0), mouse.events.get(0).endsWith("160 300 rail 4"));
-        assertEquals("rail used 4", mouse.events.get(1));
+        assertTrue(mouse.events.get(0), mouse.events.get(0).endsWith("160 300 rail 2"));
+        assertEquals("rail used 2", mouse.events.get(1));
     }
 
     @Test
@@ -1064,6 +1500,104 @@ public class TouchInputTest {
         up(0, 1100);
         // 1.8 mm is still a tap on it.
         expect("griff tap");
+    }
+
+    @Test
+    public void griffTheHandlesRestThatTheProgramSaysDistributesLiftsAsFafsDistributeOrders() {
+        // FAF's key action G: the program says it deals a queue out for this selection (CanDistribute), and the ring and the
+        // label show, the label alone, no route; a wobble within the slop keeps them, the ring with the finger.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 50, 1000);
+        assertEquals("the handle's rest", TouchInput.REST_MILLISECONDS, mouse.timer);
+        timerRuns();
+        assertEquals("the program asked", 1, mouse.handleRests);
+        assertFalse("nothing shows until it says", mouse.ringShown);
+        touch.distributes(mouse.lastHandleRest);
+        assertTrue(mouse.ringShown);
+        assertEquals(Stroke.DISTRIBUTE, mouse.shownMode);
+        assertEquals("the label alone", 0, mouse.shownWaypoints);
+        moveFirst(110, 55, 1400);
+        moveFirst(116, 57, 1410);
+        assertEquals(Stroke.DISTRIBUTE, mouse.shownMode);
+        assertEquals("the ring follows the finger", 116, mouse.ringX, 0);
+        up(0, 1500);
+        expect("held", "distribute");
+        assertFalse(mouse.ringShown);
+        assertEquals(0, mouse.shown);
+        // A word for an earlier rest counts for nothing, and a second finger makes two fingers: the ring goes.
+        down(0, 100, 50, 3000);
+        int earlier = mouse.lastHandleRest;
+        timerRuns();
+        touch.distributes(earlier);
+        assertFalse(mouse.ringShown);
+        touch.distributes(mouse.lastHandleRest);
+        assertTrue(mouse.ringShown);
+        down(1, 300, 50, 3400);
+        assertFalse(mouse.ringShown);
+        up(1, 3450);
+        up(0, 3460);
+        expect("held", "distribute", "held", "move 300 50");
+    }
+
+    @Test
+    public void griffTheHandlesRestThatTheProgramDoesNotSayDistributesShowsNothingAndLiftsAsTheHandlesTap() {
+        // So a slow tap on the handle never deals the units' queues out: the camera flies to the group, as for a quick one.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        assertEquals(1, mouse.handleRests);
+        assertFalse(mouse.ringShown);
+        up(0, 1700);
+        expect("griff tap");
+        // A word after the lift counts for nothing.
+        touch.distributes(mouse.lastHandleRest);
+        assertFalse(mouse.ringShown);
+        expect("griff tap");
+    }
+
+    @Test
+    public void griffAMovePastTheSlopAfterTheDistributeLabelIsTheStrokeWhichALoopBackGivesUp() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.distributes(mouse.lastHandleRest);
+        strokeFirst(100, 50, 300, 50);
+        assertFalse("the ring went", mouse.ringShown);
+        assertEquals("the route's label", Stroke.ROUTE, mouse.shownMode);
+        strokeFirst(300, 50, 110, 50);
+        assertEquals(Stroke.CANCEL, mouse.shownMode);
+        up(0, 2000);
+        expect("held", "given up");
+        // Past the slop before the rest's time: no rest is asked.
+        mouse.events.clear();
+        down(0, 100, 50, 3000);
+        strokeFirst(100, 50, 400, 50);
+        up(0, 3500);
+        assertEquals(1, mouse.handleRests);
+        expect("route 250 50, 400 50 rail 0");
+    }
+
+    @Test
+    public void griffTheHandlesWordThatComesAfterTheFingerLeftTheSlopCountsForNothing() {
+        // The finger rested on the handle, then drew past the slop before the program said that its lift distributes: the stroke
+        // is the route, with no ring and no label.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        strokeFirst(100, 50, 300, 50);
+        touch.distributes(mouse.lastHandleRest);
+        assertFalse(mouse.ringShown);
+        assertEquals("the route's label", Stroke.ROUTE, mouse.shownMode);
+        up(0, 1500);
+        expect("route 300 50 rail 0");
     }
 
     @Test
@@ -1116,6 +1650,26 @@ public class TouchInputTest {
         up(0, 1500);
         expect("given up");
         assertEquals(0, mouse.shown);
+    }
+
+    @Test
+    public void griffATwoFingerTapWhoseFirstFingerIsOnTheHandleLetsTheSelectionGo() {
+        // The first finger had not left the handle: no stroke was given up, and the two are two fingers, as anywhere else.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 50, 1000);
+        down(1, 300, 50, 1020);
+        assertEquals("the stroke went", 0, mouse.shown);
+        up(1, 1120);
+        up(0, 1130);
+        expect("move 300 50", "deselect");
+        // They pinch where they move.
+        mouse.events.clear();
+        down(0, 100, 50, 2000);
+        down(1, 300, 50, 2020);
+        moveBoth(80, 50, 320, 50);
+        assertTrue(mouse.events.toString(), mouse.events.contains("pinch start 200 50 240"));
     }
 
     @Test
@@ -1981,12 +2535,78 @@ public class TouchInputTest {
     public void griffDraftARestOnNoPlanAimsAndItsLiftPlacesWhereTheFingerSettled() {
         draft(new int[] {1, 400, 50, 0});
         down(0, 100, 50, 1000);
-        assertEquals("the mockup's REST_LOUPE", 400, mouse.timer);
+        // Griff's rest asks whether the finger is on FAF's UI; on the map the mockup's REST_LOUPE, 400 ms, is the aim's.
+        assertEquals(TouchInput.REST_MILLISECONDS, mouse.timer);
+        timerRuns();
+        assertEquals(List.of("100 50"), mouse.draftRests);
+        assertEquals("the mockup's REST_LOUPE", 400 - TouchInput.REST_MILLISECONDS, mouse.timer);
         timerRuns();
         moveFirst(104, 52, 1410);
         moveFirst(130, 60, 1500);
         up(0, 1520);
         expect("move 100 50", "draft aim show 100 50", "held", "draft aim show 104 52", "draft aim show 130 60", "draft aim end 104 52");
+    }
+
+    @Test
+    public void griffDraftARestOnFafsUiIsThePanelsRestAsOutsideTheDraft() {
+        // At Griff's 300 ms the program says the finger is on FAF's UI: the ring and the panel's rest, whose lift is FAF's right
+        // click there; no aim and no loupe, which are the map's, 100 ms later.
+        draft(new int[] {1, 400, 50, 0});
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        assertTrue("its ring", mouse.ringShown);
+        assertEquals("no aim to come", -1, mouse.timer);
+        up(0, 1500);
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 0");
+        // With Box no ring, as outside the draft, and its lift is Box's on the panel.
+        mouse.events.clear();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 2000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        assertFalse(mouse.ringShown);
+        up(0, 2500);
+        expect("move 100 50", "rest tap 100 50 rail 1");
+        // A word that comes as the aim began counts for nothing: the aim's lift on FAF's UI is the right click there (the
+        // program's, DraftAimEndTask).
+        mouse.events.clear();
+        mouse.rail = 0;
+        down(0, 100, 50, 3000);
+        timerRuns();
+        int late = mouse.lastDraftRest;
+        timerRuns();
+        touch.draftRestOnUi(late);
+        up(0, 3600);
+        expect("move 100 50", "draft aim show 100 50", "held", "draft aim end 100 50");
+    }
+
+    @Test
+    public void griffDraftARestOnFafsUiLeavesALitPlusForTheTick() {
+        // As the draft's tap there: the panel's right click takes no Plus, which stays lit for the tick, whose plans it appends to
+        // the builders' queues; nor does the rest's slide, the panel's drag.
+        draft(new int[] {1, 400, 50, 0});
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        up(0, 1500);
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 0");
+        mouse.events.clear();
+        down(0, 100, 50, 2000);
+        timerRuns();
+        touch.draftRestOnUi(mouse.lastDraftRest);
+        moveFirst(160, 50, 2400);
+        up(0, 2500);
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 160 50 rested rail 0", "move 160 50",
+               "griff drag end 160 50");
+        // The next rest outside the draft is the rail's as ever.
+        mouse.drafting = false;
+        mouse.events.clear();
+        down(0, 100, 50, 3000);
+        timerRuns();
+        up(0, 3500);
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 2", "rail used 2");
     }
 
     @Test
@@ -2123,7 +2743,7 @@ public class TouchInputTest {
         moveFirst(460, 300);
         assertFalse(mouse.ringShown);
         up(0, 2600);
-        expect("move 400 300", "held");
+        expect("move 400 300", "held", "griff rest 400 300", "rest gone");
         // A rest that clicks began before: no ring, nothing to feel.
         mouse.events.clear();
         down(0, 400, 300, 2800);
@@ -2320,6 +2940,7 @@ public class TouchInputTest {
         up(0, 1510);
         mouse.events.clear();
         down(0, 200, 50, 2000);
+        timerRuns();
         timerRuns();
         down(1, 350, 50, 2450);
         assertEquals(List.of("move 200 50", "draft aim show 200 50", "held", "draft aim abort", "move 350 50"), mouse.events);

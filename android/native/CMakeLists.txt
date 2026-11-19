@@ -386,9 +386,11 @@ target_link_options(faf_movie_tests PRIVATE -Wl,--gc-sections)
 # on the emulator and on Linux hosts alike (CI's arm64 runner).
 add_executable(faf_griff_tests
   tests/griff/Main.cpp
+  tests/griff/CameraClearTests.cpp
   tests/griff/GriffDraftTests.cpp
-  tests/griff/GriffPinsTests.cpp
+  tests/griff/GriffGroupsTests.cpp
   tests/griff/GriffPlaceTests.cpp
+  tests/griff/GriffSkirtsTests.cpp
   tests/griff/GriffTapTests.cpp
   tests/griff/GriffUndoTests.cpp
   tests/griff/ListDragTests.cpp

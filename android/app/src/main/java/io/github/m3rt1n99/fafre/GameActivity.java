@@ -58,8 +58,8 @@ import java.util.Locale;
  * and what a game on a phone needs around it: the whole screen, the picture's own size (PictureSize), the UI package
  * for fingers and the HUD's factor (android/TOUCH_UI.md), Back as Esc, the multicast lock that finds LAN games, the
  * audio focus that the game's sound follows. The program keeps running while the activity is in the back
- * (android/native/src/app/GameMainAndroid.cpp), without its sound. The touch scheme Griff and the bar are not on this activity yet; {@link LegacyGameActivity} has
- * them on the earlier host.
+ * (android/native/src/app/GameMainAndroid.cpp), without its sound. The touch scheme Griff and the bar are not on this
+ * activity yet: android-client's GameActivity has them on the earlier host.
  */
 public final class GameActivity extends SDLActivity {
     /**

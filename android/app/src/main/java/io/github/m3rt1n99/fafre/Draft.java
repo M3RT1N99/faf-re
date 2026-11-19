@@ -4,8 +4,9 @@ package io.github.m3rt1n99.fafre;
  * The touch scheme Griff's draft as the screen shows it (buildstage/griff-v3-spec.md, T2): buildings planned on the map before
  * anything is ordered. The program holds the plans at world places (android/native/include/GriffDraft.h) and gives each frame
  * where they are on the picture ({@link Game#griffDraft}); here, in the screen's pixels: whether the draft is open and whether
- * its building stands on a deposit, each plan's place, the box its ground takes and its flags, the line a finger would add, the
- * plan a resting finger would place, and where the tick and the cross stand. And which plan a finger is on.
+ * its building stands on a deposit, each plan's place, the box its ground takes and its flags, the line a finger would add and
+ * the plan a resting finger would place. And which plan a finger is on. FAF's UI draws them (griffmap.lua), the tick and the
+ * cross too (griffhud.lua).
  */
 final class Draft {
     /** How many numbers {@link Game#griffDraft} gives at most. */
@@ -22,13 +23,11 @@ final class Draft {
     // The program's numbers (GriffAndroid.cpp PublishDraft): a head, then each place's.
     private static final int OPEN = 0;
     private static final int PICKS_DEPOSIT = 1;
-    private static final int CONSTRUCTION_TOP = 2;
-    private static final int COLUMN_LEFT = 3;
-    private static final int PLAN_COUNT = 4;
-    private static final int LINE_COUNT = 5;
-    private static final int AIM_COUNT = 6;
-    private static final int RESTS_ON_MAP = 7;
-    private static final int HEAD = 8;
+    private static final int PLAN_COUNT = 2;
+    private static final int LINE_COUNT = 3;
+    private static final int AIM_COUNT = 4;
+    private static final int RESTS_ON_MAP = 5;
+    private static final int HEAD = 6;
     private static final int ITEM = 8;
     private static final int ID = 0;
     private static final int X = 1;
@@ -50,8 +49,6 @@ final class Draft {
     private int mShownCount;
     private boolean mOpen;
     private boolean mPicksDeposit;
-    private float mConstructionTop = -1;
-    private float mColumnLeft = -1;
     private int mPlans;
     private int mLine;
     private int mAim;
@@ -72,8 +69,6 @@ final class Draft {
         mOpen = count > OPEN && values[OPEN] != 0;
         if (!mOpen || count < HEAD) {
             mPicksDeposit = false;
-            mConstructionTop = -1;
-            mColumnLeft = -1;
             mPlans = 0;
             mLine = 0;
             mAim = 0;
@@ -82,8 +77,6 @@ final class Draft {
         }
         mPicksDeposit = values[PICKS_DEPOSIT] != 0;
         mRestsOnMap = values[RESTS_ON_MAP] != 0;
-        mConstructionTop = values[CONSTRUCTION_TOP] < 0 ? -1 : screen.y(values[CONSTRUCTION_TOP]);
-        mColumnLeft = values[COLUMN_LEFT] < 0 ? -1 : screen.x(values[COLUMN_LEFT]);
         int room = (count - HEAD) / ITEM;
         mPlans = Math.max(0, Math.min((int) values[PLAN_COUNT], room));
         mLine = Math.max(0, Math.min((int) values[LINE_COUNT], room - mPlans));
@@ -122,16 +115,6 @@ final class Draft {
     /** Whether the building of the next plans stands on a deposit: a box with Box gives each free deposit in it a plan. */
     boolean picksDeposit() {
         return mPicksDeposit;
-    }
-
-    /** The top of FAF's construction panel, which the tick and the cross stand above; below 0 where it is not shown. */
-    float constructionTop() {
-        return mConstructionTop;
-    }
-
-    /** The left of the column at the right (FAF's avatars), which the tick stands left of; below 0 where it is not shown. */
-    float columnLeft() {
-        return mColumnLeft;
     }
 
     int plans() {
@@ -193,21 +176,22 @@ final class Draft {
     }
 
     /**
-     * The plan a finger here is on, the newest first (the mockup's planAt): within its box, at least `least` each way from its
-     * middle, and `reach` beyond; only one whose middle is on the free map, as a finger on a panel over a plan is on the panel.
-     * Its number, or 0.
+     * The plan a finger here is on, the newest first (the mockup's planAt): within its box, the ground it takes, whose edge the
+     * map shows as FAF's build mode does, at least `least` each way from its middle; nothing beyond, where a tap or a rest
+     * places a building against it. Only one whose middle is on the free map, as a finger on a panel over a plan is on the
+     * panel. Its number, or 0.
      */
-    int planAt(float fingerX, float fingerY, float reach, float least) {
+    int planAt(float fingerX, float fingerY, float least) {
         for (int plan = mPlans - 1; plan >= 0; --plan) {
             if (!has(plan, FREE)) {
                 continue;
             }
             float middleX = x(plan);
             float middleY = y(plan);
-            float left = Math.min(left(plan), middleX - least) - reach;
-            float right = Math.max(right(plan), middleX + least) + reach;
-            float top = Math.min(top(plan), middleY - least) - reach;
-            float bottom = Math.max(bottom(plan), middleY + least) + reach;
+            float left = Math.min(left(plan), middleX - least);
+            float right = Math.max(right(plan), middleX + least);
+            float top = Math.min(top(plan), middleY - least);
+            float bottom = Math.max(bottom(plan), middleY + least);
             if (fingerX >= left && fingerX <= right && fingerY >= top && fingerY <= bottom) {
                 return id(plan);
             }

@@ -6,8 +6,14 @@
 // camera moves as the UI moves it (griff.lua: its glide, its flight to the group, the pinch), not the simulation. They come
 // to the program's thread as tasks, in the order of the rest of the input (GameHost.cpp). The draft holds buildings planned
 // at world places (include/GriffDraft.h) until the tick orders them by FAF's build mode and a mouse's click per plan. What a
-// gesture orders is watched (griff.lua), for the pins at its places (include/GriffPins.h) and the pill that takes it back
-// (include/GriffUndo.h), with FAF's own inputs again.
+// gesture orders is watched (griff.lua), for the undo that takes it back where that saves work (include/GriffUndo.h), with
+// FAF's own inputs again; FAF's own feedback blip marks each order's place. All Griff shows lives in FAF's UI, in FAF's look:
+// the rail's buttons, the undo's and the draft's tick and cross as FAF's order buttons, the hints where FAF prints its
+// messages, the waypoint a resting finger marked (fafre/griffhud.lua); the handle, a resting finger's ring, a stroke, the
+// draft's plans as FAF's build preview ghosts, Box's box and the loupe's frame (fafre/griffmap.lua, GriffShown.cpp); the
+// groups' icons (fafre/griffgroups.lua). While the draft is open the map's view draws the ground each building takes as FAF's
+// build mode does (include/GriffSkirts.h, DraftSkirts). The activity keeps the fingers and says how the buttons look
+// (FafreGriffHud).
 
 #include <jni.h>
 
@@ -32,12 +38,15 @@
 #include <Windows.h>
 #include <Win32AndroidHost.h>
 
+#include <CameraClear.h>
 #include <GriffDraft.h>
-#include <GriffPins.h>
+#include <GriffGroups.h>
 #include <GriffPlace.h>
+#include <GriffSkirts.h>
 #include <GriffTap.h>
 #include <GriffUndo.h>
 
+#include "GriffShown.h"
 #include "HostClicks.h"
 #include "MenuFingers.h"
 #include "TaskPlaces.h"
@@ -46,6 +55,12 @@
 #include "moho/command/UserCommandQueue.h"
 #include "moho/console/CConCommand.h"
 #include "moho/lua/CScrLuaBinder.h"
+#include "moho/render/camera/CameraImpl.h"
+#include "moho/resource/blueprints/RMeshBlueprint.h"
+#include "moho/resource/blueprints/RUnitBlueprint.h"
+#include "moho/sim/CFormation.h"
+#include "moho/sim/CWldSession.h"
+#include "moho/sim/UserArmy.h"
 #include "moho/ui/UiPrivate.h"
 #include "moho/unit/core/UserUnit.h"
 
@@ -55,12 +70,13 @@ namespace moho
   [[nodiscard]] bool UI_GamePlaying() noexcept;
   [[nodiscard]] bool UI_TapTarget(float x, float y, float reach, float smallSide, float* targetX, float* targetY);
   void UI_CancelBuildDrag();
+  // src/moho/sim/CWldSessionRender.cpp's: the size of the strategic icons (FAF's option strat_icon_scale).
+  extern float ui_StrategicIconScale;
 } // namespace moho
 
 namespace
 {
   using griffplace::Box;
-  using grifftap::kRailAttack;
   using grifftap::kRailBox;
   using grifftap::kRailQueue;
   using hosttask::Coordinate;
@@ -74,6 +90,7 @@ namespace
   constexpr int kStepAttackMove = 3;
   constexpr int kStepAllMobile = 4;
   constexpr int kStepTypeInView = 5;
+  constexpr int kStepGroupAgain = 6;
 
   // TouchInput's TAP_: what a tap was, for its ladder.
   constexpr int kTapUi = 1;
@@ -81,33 +98,42 @@ namespace
   constexpr int kTapGround = 3;
   constexpr int kTapEmpty = 4;
   constexpr int kTapOther = 5;
+  constexpr int kTapGroup = 6;
 
-  // Stroke's END_ that the program decides; griff.lua's StrokeKind answers the others.
+  // Stroke's END_ that the program decides, and its flag for FAF's attack-move armed; griff.lua's StrokeKind answers the others.
   constexpr int kEndPanel = 8;
   constexpr int kEndMinimap = 9;
+  constexpr int kEndAttackMove = 64;
 
   // Game's SAID_.
   constexpr int kSaidTap = 1;
-  constexpr int kSaidRouteGivenUp = 2;
-  constexpr int kSaidToast = 3;
+  constexpr int kSaidGroupStored = 3;
   constexpr int kSaidCommitted = 4;
   constexpr int kSaidPan = 5;
   constexpr int kSaidOrdered = 6;
   constexpr int kSaidUndone = 7;
+  constexpr int kSaidFormation = 8;
+  constexpr int kSaidDraftRest = 9;
+  constexpr int kSaidDistributes = 10;
 
   /// Game.GRIFF_VALUES: what Game.griff gives of the handle.
   constexpr int kHandleValues = 11;
 
-  // Game's TOAST_: what the draft says, the activity's words. The control groups' (10 to 12) come from their hook as they are.
-  constexpr int kToastNoFreeResource = 1;
-  constexpr int kToastTaken = 2;
-  constexpr int kToastFull = 3;
-  constexpr int kToastNoPlan = 4;
-  constexpr int kToastNoEngineer = 5;
-  constexpr int kToastAllOnBuildings = 6;
-  constexpr int kToastSomeOnBuildings = 7;
-  constexpr int kToastFirstTickOrCross = 8;
-  constexpr int kToastNotOrdered = 9;
+  // Game's HINT_: griff.lua's Hint words them where FAF prints its own messages. The control groups' (10 to 12) come from
+  // their hook, the stroke's Cancelled from the activity.
+  constexpr int kHintNoFreeResource = 1;
+  constexpr int kHintTaken = 2;
+  constexpr int kHintFull = 3;
+  constexpr int kHintNoPlan = 4;
+  constexpr int kHintNoEngineer = 5;
+  constexpr int kHintAllOnBuildings = 6;
+  constexpr int kHintSomeOnBuildings = 7;
+  constexpr int kHintFirstTickOrCross = 8;
+  constexpr int kHintNotOrdered = 9;
+  constexpr int kHintCancelled = 13;
+  constexpr int kHintUndoneInPart = 14;
+  constexpr int kHintNotUndone = 15;
+  constexpr int kHintNotDeleted = 16;
 
   // Game's DRAFT_: a draft gesture's phase.
   constexpr int kDraftShow = 0;
@@ -120,6 +146,17 @@ namespace
   constexpr int kUnitUnder = 4;
   constexpr int kTroopsSelected = 8;
   constexpr int kMoveOrder = 16;
+  constexpr int kMobileSelected = 32;
+
+  /// What a rest and a drag on the ground give with mobile units selected: FAF's formation, the right button's drag (true,
+  /// Griff v4), or a selection box, as with nothing selected (false). The user has not decided which yet (2026-11-15): this
+  /// is the one place that chooses. A selection without mobile units (factories alone) boxes either way, and the rest's lift
+  /// is FAF's right click there either way.
+  constexpr bool kRestDragGivesFormation = true;
+
+  /// The ring of the handle's rest whose lift gives FAF's Distribute orders (Game.REST_, grifftap::RestLook): its drag is the
+  /// handle's route, a move, so the formation's.
+  constexpr grifftap::RestLook kRestDistribute = grifftap::RestLook::kFormation;
 
   // griff.lua's yes and no for Ask, whose 0 is no answer.
   constexpr int kYes = 2;
@@ -129,6 +166,7 @@ namespace
   constexpr char kTroops[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').Troops()";
   constexpr char kStrokeKind[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StrokeKind()";
   constexpr char kStartAttackMove[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StartAttackMove()";
+  constexpr char kAttackMoveArmed[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').AttackMoveArmed()";
   constexpr char kOffersPatrol[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').OffersPatrol()";
   constexpr char kStartPatrol[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StartPatrol()";
   constexpr char kEndCommandMode[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').EndCommandMode()";
@@ -138,6 +176,7 @@ namespace
   constexpr char kPinchEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').PinchEnd()";
   constexpr char kTypeInView[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').SelectTypeInView()";
   constexpr char kDraftEnded[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').DraftEnded()";
+  constexpr char kDraftBack[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').DraftBack()";
   constexpr char kCommitBegin[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').CommitBegin()";
   constexpr char kCommitEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').CommitEnd()";
   constexpr char kLookBack[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').LookBack()";
@@ -147,6 +186,8 @@ namespace
   /// not the base), select_all_onscreen.
   constexpr char kAllOfType[] = "UI_ExpandCurrentSelection";
   constexpr char kAllMobile[] = "UI_SelectByCategory +inview MOBILE";
+  /// FAF's key action spreadattack, G (its shift_spreadattack, Shift-G, has the same): Distribute orders (keyactions.lua).
+  constexpr char kDistributeOrders[] = "UI_Lua import(\"/lua/ui/game/hotkeys/distribute-queue.lua\").DistributeOrders(true)";
 
   /// Shift's and Ctrl's keys, as the keyboard's left ones (KeysAndroid.cpp).
   constexpr UINT kShiftScanCode = 0x2A;
@@ -172,9 +213,9 @@ namespace
   /// How far from a finger the draft looks for a free deposit for an extractor (the mockup's snap).
   std::atomic<float> gDepositReach{0};
 
-  /// The app's own pieces over the picture (Game.setGriffCovers): the rail's buttons, the draft's tick and cross, the undo's
-  /// pill while it shows. A finger on one is the activity's: the handle keeps clear of them, and nothing of the game's lies
-  /// under them for a gesture, as under FAF's panels.
+  /// The app's own pieces over the picture (Game.setGriffCovers): the draft's tick and cross, and the place of the undo's
+  /// button a moment after it went (FAF's UI holds the button itself, and the rail's). A finger on one is the activity's: the
+  /// handle keeps clear of them, and nothing of the game's lies under them for a gesture, as under FAF's panels.
   std::mutex gCoversMutex;
   std::vector<Box> gCovers;
 
@@ -247,6 +288,22 @@ namespace
     return view != nullptr && !view->IsMiniMap();
   }
 
+  /// Whether a press here comes to a Checkbox of FAF's, which acts on the press (grifftap::DragPressesNothing): the control
+  /// under it or a parent whose Lua object has Checkbox's ToggleCheck (maui/checkbox.lua), its class's as FAF's Lua finds it.
+  [[nodiscard]] bool PressComesToCheckbox(const float x, const float y)
+  {
+    moho::CMauiControl* const root = InputRoot();
+    return root != nullptr
+        && grifftap::DragPressesNothing(
+             moho::CMauiControl::GetTopmostControl(root, x, y), [](moho::CMauiControl* const control) { return control->GetParent(); },
+             [](moho::CMauiControl* const control) {
+               LuaPlus::LuaObject toggle;
+               control->FindScript(&toggle, "ToggleCheck");
+               return toggle.IsFunction();
+             }
+           );
+  }
+
   /// Whether FAF's Lua has armed a command mode, which the next click on the map gives. Only with the session's UI up.
   [[nodiscard]] bool CommandModeArmed()
   {
@@ -280,6 +337,15 @@ namespace
     moho::CON_Execute(command);
   }
 
+  /// A hint of Griff's (Game's HINT_, with its number where it counts), where FAF prints its own messages (griff.lua Hint), while
+  /// the session's UI is up. On the program's thread.
+  void Hint(const int kind, const int number = 0)
+  {
+    if (moho::UI_GamePlaying()) {
+      CallGriff("Hint(%d, %d)", kind, number, 0);
+    }
+  }
+
   // --- The handle -------------------------------------------------------------------------------
 
   /// A control's box as its layout last worked it out; false where it has not since it last changed. Only FAF's own use
@@ -309,8 +375,10 @@ namespace
   /// The HUD is drawn after the map's picture (WRenViewport::Render), so what covers the map is told apart by depth: the
   /// controls at the map's depth or above, such as the unit view, a sibling of the map at its depth, wherever the walk meets
   /// them (FAF makes the map anew when it splits and joins the view, which puts it after the unit view); not what holds the
-  /// map or tints the whole screen at a depth below it, as the paused game's glow does. With it, the main map in `mainMap`.
-  [[nodiscard]] griffplace::FreeMap FreeMapOver(const Box& view, moho::CUIWorldView** const mainMap = nullptr)
+  /// map or tints the whole screen at a depth below it, as the paused game's glow does. With it, the main map in `mainMap`,
+  /// and what of FAF's UI covers it in `fafs`, without the app's pieces.
+  [[nodiscard]] griffplace::FreeMap
+  FreeMapOver(const Box& view, moho::CUIWorldView** const mainMap = nullptr, std::vector<Box>* const fafs = nullptr)
   {
     if (mainMap != nullptr) {
       *mainMap = nullptr;
@@ -367,6 +435,9 @@ namespace
       if (over.depth >= mapDepth) {
         covers.push_back(over.box);
       }
+    }
+    if (fafs != nullptr) {
+      *fafs = covers;
     }
     {
       const std::lock_guard<std::mutex> lock(gCoversMutex);
@@ -436,8 +507,6 @@ namespace
   };
 
   Selection gSelection;
-  /// Whether this game's free map has been worked out: without a selection it is worked out once, for a toast's place.
-  bool gFreeKnown = false;
 
   // --- The draft: plans at world places --------------------------------------------------------
 
@@ -447,18 +516,16 @@ namespace
   /// The blueprints of the draft's buildings by their ids, for FAF's own check of a place.
   std::unordered_map<std::string, moho::RUnitBlueprint*> gDraftBlueprints;
   /// What a finger shows of what it would add: the line from the newest plan, each place with whether it is free; and the plan
-  /// a finger that rests would place, of the picked building.
+  /// a finger that rests would place, of the picked building, and whether its ground is taken there, where it shows as FAF's
+  /// ghost does over ground its check refuses.
   std::vector<std::pair<griffdraft::Place, bool>> gDraftLine;
   bool gAimShown = false;
   griffdraft::Place gAim;
+  bool gAimTaken = false;
   /// The finger that rests is on the map, not on FAF's UI: the loupe is for the map.
   bool gAimOnMap = false;
   /// The world place under the finger where the draft's move began.
   griffdraft::Place gMoveFrom;
-  /// Where FAF's construction panel's top and the left of the column at the right (its avatars) are, for the tick and the
-  /// cross (griff.lua); below 0 where not known.
-  float gConstructionTop = -1;
-  float gColumnLeft = -1;
 
   // --- Clicks at world places: the tick's plans, the undo's orders given again ---------------------------------------
 
@@ -548,15 +615,7 @@ namespace
   std::uint32_t gClicksAfterFrame = 0;
   std::atomic<std::int64_t> gClicksWaitSince{0};
 
-  // --- What a gesture ordered: its pins and its undo ----------------------------------------------------------------------
-
-  /// The pins of the orders of Griff's gestures, at world places, and what the activity reads of them (Game.griffOrders), as
-  /// the last frame drew them: the head (the pins' count), then each pin.
-  griffpins::Pins gPins;
-  std::mutex gOrdersShownMutex;
-  constexpr std::size_t kOrdersHead = 1;
-  constexpr std::size_t kOrdersItem = 4;
-  std::vector<float> gOrdersShown{0};
+  // --- What a gesture ordered: its undo ---------------------------------------------------------------------------------
 
   /// One of a unit's command queues as a gesture began, and what the gesture's orders did to it: its orders then (as FAF's UI
   /// held them, each command by its own id) and those of them the sim had not taken yet (`unsynced`), its newest edit as last
@@ -594,35 +653,52 @@ namespace
   };
 
   /// The gesture whose orders are watched (WatchOrders to EndWatch), by its number (0: none): the selection's units as it
-  /// began (none for the tap ladder's attack-move, which `joins` the move's record and notes its orders there), whether its
-  /// orders went to units it knew no queue of (not selected as it began), the units its Guards went to, the upgrades FAF
-  /// ordered them for those Guards (AssistsUpgrade), and whether it ordered at all.
+  /// began (none for the tap ladder's attack-move, which `joins` the move's record and notes its orders there), whether it is
+  /// the draft's tick, whose orders always offer their undo, whether its orders went to units it knew no queue of (not
+  /// selected as it began), the units its Guards went to, the upgrades FAF ordered them for those Guards (AssistsUpgrade),
+  /// whether it ordered at all, and the groups its orders took units from (GroupOrdered).
   struct Watch
   {
     int number = 0;
     bool joins = false;
+    bool tick = false;
     std::unordered_map<int, Stored> stored;
     bool unknown = false;
     std::unordered_set<int> guarded;
     int upgrades = 0;
     bool any = false;
+    std::vector<griffgroups::Earlier> earlier;
   };
 
   Watch gWatch;
   int gWatches = 0;
 
-  /// The last gesture that ordered, which the undo's pill takes back: its number (0: none), whether the pill asked for its
+  /// What a record's undo puts back: a gesture's orders, or what a gesture of Griff's own threw away (Offer).
+  using griffundo::Kept;
+
+  /// The last gesture that ordered where its undo saves work (SavesWork), which the undo's button takes back: its number (0:
+  /// none), whether the button asked for its
   /// undo, which comes once the sim took the gesture and no clicks run, its units as it began with what its orders did to
   /// their queues, whether it ordered units it knew no queue of, the units its Guards went to and the upgrades FAF ordered
-  /// for them. One level: the next gesture's replaces it, and any other order ends it.
+  /// for them; the watches it holds (the tap ladder's attack-move joins the move's) and the groups their orders took units
+  /// from, where an undo that takes all of it back puts them again (griffgroups::Book::Undone). One level: the next
+  /// gesture's replaces it, and any other order ends it. A record of Griff's own holds what its gesture threw away instead
+  /// (`kept`): the draft as it was, with its buildings' blueprints; a control group's number and the units it held.
   struct Record
   {
     int number = 0;
+    Kept kept = Kept::kOrders;
     bool asked = false;
     std::unordered_map<int, Stored> stored;
     bool unknown = false;
     std::unordered_set<int> guarded;
     int upgrades = 0;
+    std::vector<std::uint32_t> gestures;
+    std::vector<griffgroups::Earlier> earlier;
+    griffdraft::Draft draft;
+    std::unordered_map<std::string, moho::RUnitBlueprint*> blueprints;
+    int group = 0;
+    std::vector<int> held;
   };
 
   Record gRecord;
@@ -670,7 +746,7 @@ namespace
   constexpr float kPlanOnDeposit = 2;
   constexpr float kPlanTaken = 4;
   constexpr float kPlanFree = 8;
-  constexpr std::size_t kDraftHead = 8;
+  constexpr std::size_t kDraftHead = 6;
   constexpr std::size_t kDraftItem = 8;
 
   /// A map's view and its place on the picture: plans are projected through its camera, a finger's place unprojected.
@@ -838,16 +914,15 @@ namespace
     shown.insert(shown.end(), {id, x, screenY, left, top, right, bottom, flags});
   }
 
-  /// The draft as this frame drew it, for the activity (Game.griffDraft): whether it is open, whether its building stands on
-  /// a deposit, the tick's and the cross's anchors, how many plans, line places and aims follow, whether a resting finger is
-  /// on the map, then each, on the picture.
+  /// The draft as this frame drew it, for the activity (Game.griffDraft), which knows a finger on a plan by it: whether it is
+  /// open, whether its building stands on a deposit, how many plans, line places and aims follow, whether a resting finger is
+  /// on the map, then each, on the picture. FAF's UI draws them (fafre/griffmap.lua, FafreGriffPlans).
   void PublishDraft(const griffplace::FreeMap& free, moho::CUIWorldView* const mainMap)
   {
     std::vector<float> shown{0};
     MapView map;
     if (gDraft.Open()) {
-      shown = {1, gDraft.Picked().deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f, gConstructionTop, gColumnLeft, 0, 0, 0,
-               gAimOnMap ? 1.0f : 0.0f};
+      shown = {1, gDraft.Picked().deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f, 0, 0, 0, gAimOnMap ? 1.0f : 0.0f};
     }
     if (gDraft.Open() && MapOf(mainMap, map)) {
       const std::vector<griffdraft::Plan>& plans = gDraft.Plans();
@@ -864,68 +939,280 @@ namespace
           shown.back() += kPlanFree;
         }
       }
-      shown[4] = static_cast<float>((shown.size() - kDraftHead) / kDraftItem);
+      shown[2] = static_cast<float>((shown.size() - kDraftHead) / kDraftItem);
       const std::size_t lineFrom = shown.size();
       if (const griffdraft::Plan* const start = gDraft.LineStart(); start != nullptr) {
         for (const auto& [place, groundFree] : gDraftLine) {
           Show(shown, map, gDraft.BuildingOf(*start), place, 0, groundFree ? 0 : kPlanTaken);
         }
       }
-      shown[5] = static_cast<float>((shown.size() - lineFrom) / kDraftItem);
+      shown[3] = static_cast<float>((shown.size() - lineFrom) / kDraftItem);
       if (gAimShown) {
         const std::size_t aimFrom = shown.size();
-        Show(shown, map, gDraft.Picked(), gAim, 0, 0);
-        shown[6] = shown.size() > aimFrom ? 1.0f : 0.0f;
+        Show(shown, map, gDraft.Picked(), gAim, 0, gAimTaken ? kPlanTaken : 0);
+        shown[4] = shown.size() > aimFrom ? 1.0f : 0.0f;
       }
     }
     const std::lock_guard<std::mutex> lock(gDraftShownMutex);
     gDraftShown = std::move(shown);
   }
 
+  // Game.PLAN_ flags of a place FafreGriffPlans gives griffmap.lua, which draws it as the ghost of FAF's build preview.
+  constexpr int kGhostNewest = 1;
+  constexpr int kGhostTaken = 2;
+  constexpr int kGhostLine = 4;
+  constexpr int kGhostAim = 8;
+
+  /// What the draft shows, while it is open: each plan, the line a finger draws from the newest and the plan a resting finger
+  /// would place, each `visit`ed with its building, its world place and its flags: the newest, on ground that is taken (another
+  /// plan's, or FAF's check), a line's, the aim.
+  template <typename Visit>
+  void EachShown(Visit&& visit)
+  {
+    const std::vector<griffdraft::Plan>& plans = gDraft.Plans();
+    for (std::size_t at = 0; at < plans.size(); ++at) {
+      const griffdraft::Plan& plan = plans[at];
+      const int flags = (at + 1 == plans.size() ? kGhostNewest : 0) + (gDraft.Taken(plan, GroundFree) ? kGhostTaken : 0);
+      visit(gDraft.BuildingOf(plan), griffdraft::Place{plan.x, plan.z}, flags);
+    }
+    if (const griffdraft::Plan* const start = gDraft.LineStart(); start != nullptr) {
+      for (const auto& [place, groundFree] : gDraftLine) {
+        visit(gDraft.BuildingOf(*start), place, kGhostLine + (groundFree ? 0 : kGhostTaken));
+      }
+    }
+    if (gAimShown) {
+      visit(gDraft.Picked(), gAim, kGhostAim + (gAimTaken ? kGhostTaken : 0));
+    }
+  }
+
+  constexpr char kPlansHelp[] = "FafreGriffPlans(places, ids) - Griff's draft for its ghosts: x, y, z and flags of each plan, line "
+                                "place and aim into places, their buildings' ids into ids; how many";
+  constexpr char kGhostHelp[] = "FafreGriffGhost(blueprintId) - the mesh of a building of Griff's draft and its scale, for its ghost";
+
+  /// The draft as griffmap.lua draws it, each frame of the session's UI: what it shows (EachShown), at its place in the world
+  /// (on the ground or the water over it), its building's id apart, and its flags. Nothing without a draft.
+  int Plans(lua_State* const lua)
+  {
+    int count = 0;
+    if (gDraft.Open() && lua_istable(lua, 1) && lua_istable(lua, 2)) {
+      EachShown([lua, &count](const griffdraft::Building& building, const griffdraft::Place& at, const int flags) {
+        ++count;
+        const float values[] = {at.x, SurfaceAt(at.x, at.z), at.z, static_cast<float>(flags)};
+        for (int value = 0; value < 4; ++value) {
+          lua_pushnumber(lua, values[value]);
+          lua_rawseti(lua, 1, 4 * (count - 1) + value + 1);
+        }
+        lua_pushstring(lua, building.id.c_str());
+        lua_rawseti(lua, 2, count);
+      });
+    }
+    lua_pushnumber(lua, static_cast<lua_Number>(count));
+    return 1;
+  }
+
+  /// A blueprint of the draft's by its building's id; none for a building the draft does not hold.
+  [[nodiscard]] moho::RUnitBlueprint* DraftBlueprint(const std::string& id)
+  {
+    const auto blueprint = gDraftBlueprints.find(id);
+    return blueprint != gDraftBlueprints.end() ? blueprint->second : nullptr;
+  }
+
+  /// A building's mesh, as FAF's build preview takes it (CBuildDragPreview): none where it has no level of detail.
+  [[nodiscard]] moho::RMeshBlueprint* MeshOf(const moho::RUnitBlueprint* const blueprint)
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr || session->mRules == nullptr || blueprint == nullptr) {
+      return nullptr;
+    }
+    moho::RMeshBlueprint* const mesh = session->mRules->GetMeshBlueprint(blueprint->Display.MeshBlueprint);
+    return mesh != nullptr && mesh->mLods.begin() != mesh->mLods.end() ? mesh : nullptr;
+  }
+
+  /// A building of the draft's for its ghost: the mesh of its top level of detail and the building's scale, as FAF's build
+  /// preview takes them; nothing for a building the draft does not hold.
+  int Ghost(lua_State* const lua)
+  {
+    const char* const id = lua_tostring(lua, 1);
+    moho::RUnitBlueprint* const blueprint = id != nullptr ? DraftBlueprint(id) : nullptr;
+    moho::RMeshBlueprint* const mesh = MeshOf(blueprint);
+    if (mesh == nullptr) {
+      return 0;
+    }
+    lua_pushstring(lua, mesh->mLods.begin()->mMeshName.c_str());
+    lua_pushnumber(lua, blueprint->Display.UniformScale);
+    return 2;
+  }
+
+  /// The draft for the build mode's skirts as the map's view draws (griffskirts::gDraft): the picked building's mesh and what
+  /// the draft shows (EachShown), each in FAF's build preview's colour for the ground it takes or for ground that is taken.
+  bool DraftSkirts(griffskirts::Draft& skirts)
+  {
+    if (!gDraft.Open()) {
+      return false;
+    }
+    skirts.mesh = MeshOf(DraftBlueprint(gDraft.Picked().id));
+    EachShown([&skirts](const griffdraft::Building& building, const griffdraft::Place& at, const int flags) {
+      if (const moho::RUnitBlueprint* const blueprint = DraftBlueprint(building.id); blueprint != nullptr) {
+        const std::uint32_t color = (flags & kGhostTaken) != 0 ? griffskirts::kRefused : griffskirts::kFree;
+        skirts.buildings.push_back(griffskirts::Building{blueprint, at.x, SurfaceAt(at.x, at.z), at.z, color});
+      }
+    });
+    return true;
+  }
+
+  /// The map's view asks for the draft's skirts from the program's start; without a draft it gets none.
+  [[maybe_unused]] const bool gSkirtsAsked = (griffskirts::gDraft = &DraftSkirts, true);
+
+  constexpr char kWaypointHelp[] = "FafreGriffWaypoint(x, y, z, units) - as FAF's command graph draws an order of so many "
+                                   "units at this world place on the main map: its waypoint's half side and its order line's "
+                                   "width, in world units";
+
+  /// What FAF's command graph draws at a world place for an order of `units` selected units, one waypoint after another,
+  /// so that Griff's stroke shows its route as FAF will once it is ordered (fafre/griffmap.lua): the waypoint's half side
+  /// (UICommandGraph's waypoint draw: the root of its busier lane's units, each order line counting for no more than
+  /// ui_CommandGraphMaxNodeUnits, FAF's 1, over the camera's perspective width there, its viewport's row 2, within
+  /// ui_MinWaypointSize and ui_MaxWaypointSize of those widths, at a selected waypoint's scale of 1) and the order line's width
+  /// (DrawCommandOrderline: the root of the count up to 10, commandwaypoint.lua's CalculateWaypointLineWidth, and two of those
+  /// widths, by ui_WaypointLineScale). Nothing without the main map.
+  int Waypoint(lua_State* const lua)
+  {
+    MapView map;
+    if (!MainMap(map)) {
+      return 0;
+    }
+    const Wm3::Vector3f place{static_cast<float>(lua_tonumber(lua, 1)), static_cast<float>(lua_tonumber(lua, 2)),
+                              static_cast<float>(lua_tonumber(lua, 3))};
+    const float units = (std::max)(1.0f, static_cast<float>(lua_tonumber(lua, 4)));
+    const float laneUnits = (std::min)(units, static_cast<float>(moho::ui_CommandGraphMaxNodeUnits));
+    const float width = map.view->GetCamera()->CameraGetView().viewport.ProjectViewportWidthRow2(place);
+    if (!(width > 0)) {
+      return 0;
+    }
+    lua_pushnumber(lua, std::clamp(std::sqrt(laneUnits) / width, moho::ui_MinWaypointSize, moho::ui_MaxWaypointSize) * width);
+    lua_pushnumber(lua, ((std::min)(std::sqrt(units), 10.0f) + 2 * width) * moho::ui_WaypointLineScale);
+    return 2;
+  }
+
+  moho::CScrLuaBinder gPlansBinder(moho::SCR_UserLuaInitSet(), "FafreGriffPlans", &Plans, nullptr, "<global>", kPlansHelp);
+  moho::CScrLuaBinder gGhostBinder(moho::SCR_UserLuaInitSet(), "FafreGriffGhost", &Ghost, nullptr, "<global>", kGhostHelp);
+  moho::CScrLuaBinder
+    gWaypointBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWaypoint", &Waypoint, nullptr, "<global>", kWaypointHelp);
+
   void ClickStepTask(WPARAM);
   void TryUndo();
   void DraftCommitTask(WPARAM plus);
+  void ForgetRest();
+  void ForgetGroups();
   [[nodiscard]] bool ClicksRun();
   void ReadTaken(std::unordered_map<int, Stored>& stored);
   void DropRecord();
+  void EndRecord();
+  [[nodiscard]] bool Outwaited(std::int64_t since, std::int64_t now);
 
   /// A tick that waits until no clicks run and no finger's drag holds FAF's dragger (DraftCommitTask): whether Plus counted
   /// for it, plus one; 0: none.
   WPARAM gCommitAsked = 0;
 
-  /// What the activity reads of the orders (Game.griffOrders) as this frame drew them: how many pins, then each pin whose tip
-  /// is on the free map (`free`, where it was worked out: FAF's panels stand over the map's picture): its tip on the picture,
-  /// its kind and how much of it shows.
-  void PublishOrders(const griffplace::FreeMap* const free, moho::CUIWorldView* const mainMap)
+  /// FAF's Distribute orders that waits for a frame drawn with the cursor at the group's middle (DistributeTask): where the
+  /// cursor is, the frame it waits after, and since when (0: none waits). Meanwhile Griff holds the cursor, and the pointer's
+  /// leave that the handle's lift asked for waits (hostclicks::GriffHoldsCursor).
+  struct Distributing
   {
-    std::vector<float> shown{0};
-    const std::int64_t now = Now();
-    const std::vector<griffpins::Pin> live = gPins.Live(now);
-    MapView map;
-    if (!live.empty() && (MapOf(mainMap, map) || MainMap(map))) {
-      for (const griffpins::Pin& pin : live) {
-        float x = 0;
-        float y = 0;
-        if (Project(map, pin.x, pin.y, pin.z, x, y) && (free == nullptr || free->Free(x, y))) {
-          shown.insert(shown.end(), {x, y, static_cast<float>(pin.kind), griffpins::Alpha(now - pin.born)});
-        }
-      }
-      shown[kOrdersHead - 1] = static_cast<float>((shown.size() - kOrdersHead) / kOrdersItem);
-    }
-    const std::lock_guard<std::mutex> lock(gOrdersShownMutex);
-    gOrdersShown = std::move(shown);
+    POINT cursor{};
+    std::uint32_t afterFrame = 0;
+    std::int64_t since = 0;
+  };
+
+  Distributing gDistributing;
+  void DistributeAfterFrame();
+
+  /// No Distribute orders waits for its frame any more: the pointer's leave that waited for it comes now.
+  void StopDistributing()
+  {
+    gDistributing = Distributing{};
+    hostclicks::CursorFreed();
   }
 
+  /// How FAF's panels along the view's edges are told (cameraclear::Rules), the pixels as parts of the view's height: the
+  /// pieces of a panel overlap by more than 0.4 % (3 of the phone's 768 lines, where FAF's unit view lies 2 of them on its
+  /// orders panel); a panel stands at an edge within 1 %, its brackets reach 2 % past it, and a panel covers at most half of
+  /// the view.
+  constexpr float kPanelOverlap = 0.004f;
+  constexpr float kPanelTouch = 0.01f;
+  constexpr float kPanelPast = 0.02f;
+  constexpr float kPanelMost = 0.5f;
+  /// Frames between the measures of the panels' margins, each a walk over the UI of its own: they change only as panels come.
+  constexpr std::uint32_t kMarginFrames = 30;
+  std::uint32_t gMarginsFrame = 0;
+
+  /// What the game's panels along the main map's view's edges cover of it, for the world camera's clamp, which lets each edge
+  /// of the map come out from under them (include/CameraClear.h, the camera's patch): the panels that FAF's controls over the
+  /// map (FreeMapOver's) make up and that stand at an edge of the view, not what the player opened (fafre/opened.lua: windows,
+  /// dialogs, the multifunction panel's dropouts, the tabs' content), and of all that showed in this game the larger margin
+  /// at each edge. The panels come and go with the selection, and a margin that shrank would pull the camera back from an
+  /// edge it went to.
+  void MeasureMargins(const Box& view, const std::vector<Box>& fafs)
+  {
+    std::vector<float> opened;
+    {
+      const std::lock_guard<std::mutex> lock(gOpenedMutex);
+      opened = gOpened;
+    }
+    const auto inOpened = [&opened](const Box& box) {
+      for (std::size_t at = 0; at + 3 < opened.size(); at += 4) {
+        if (box.left >= opened[at] && box.top >= opened[at + 1] && box.right <= opened[at + 2] && box.bottom <= opened[at + 3]) {
+          return true;
+        }
+      }
+      return false;
+    };
+    std::vector<cameraclear::Rect> pieces;
+    for (const Box& box : fafs) {
+      if (!inOpened(box)) {
+        pieces.push_back(cameraclear::Rect{box.left, box.top, box.right, box.bottom});
+      }
+    }
+    const float height = view.bottom - view.top;
+    const cameraclear::Rules rules{kPanelOverlap * height, kPanelTouch * height, kPanelPast * height, kPanelMost};
+    const cameraclear::Margins now =
+      cameraclear::Measure(pieces, cameraclear::Rect{view.left, view.top, view.right, view.bottom}, rules);
+    cameraclear::gWorldCamera = cameraclear::Larger(cameraclear::gWorldCamera, now);
+    gMarginsFrame = gFrame;
+  }
+
+  // --- Griff's Esc: the cross -------------------------------------------------------------------------
+
+  /// Whether units are selected, as FAF's GetSelectedUnits has them.
+  [[nodiscard]] bool Selected()
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr) {
+      return false;
+    }
+    msvc8::vector<moho::UserUnit*> units;
+    session->GetSelectionUnits(units);
+    return !units.empty();
+  }
+
+  /// What Griff's Esc, the cross, puts away now (grifftap::EscapeFor): the draft, an armed command mode, the selection.
+  [[nodiscard]] grifftap::Escape EscapeNow()
+  {
+    return grifftap::EscapeFor(gDraft.Open(), CommandModeArmed(), Selected());
+  }
+
+  /// Whether the cross shows, as each frame's work after its paint finds Esc (EscapeNow): griffhud.lua draws it by this
+  /// (FafreGriffEscapes) and the activity lays the view that takes its finger (Game.griffEscapes).
+  std::atomic<bool> gEscapes{false};
 
   /// The handle for the reported selection, and the free map's cross, after the frame's drawing: FAF's Lua changes layouts
   /// in its frame, after which they are not known until the drawing works them out (unitview.lua places its panel anew each
-  /// frame), and the free map reads only what is worked out (LaidOutBox). Without a selection the cross stays as it was: FAF's
-  /// panels at the map's middle hardly change, and the walk costs a frame up to a ms; it runs while pins show, which keep to
-  /// the free map. While a draft is open there is no handle (the mockup's: no stroke starts), and the draft is shown each
-  /// frame, as the camera moves its plans, as are the orders' pins; without the map's view its plans have no place on the
-  /// picture, and none shows rather than where an earlier frame drew them. What the sim holds of the queues a gesture's orders
-  /// replaced is read until their replacement landed. An undo the pill asked for and a tick that wait for the sim, clicks or a
-  /// finger's drag come now, the undo first, which was asked for the gesture before the tick.
+  /// frame), and the free map reads only what is worked out (LaidOutBox). Without a selection there is no handle and no walk,
+  /// which costs a frame up to a ms, but each kMarginFrames frames one for the panels' margins (MeasureMargins). While a draft
+  /// is open there is no handle (the mockup's: no stroke starts), and the draft is shown each frame, as the camera moves its
+  /// plans; without the map's view its plans have no place on the picture, and none shows rather than where an earlier frame
+  /// drew them. What the sim holds of the queues a gesture's orders replaced is read until their replacement landed. An undo
+  /// the button asked for and a tick that wait for the sim, clicks or a finger's drag come now, the undo first, which was asked
+  /// for the gesture before the tick.
   void PlaceTask(const WPARAM)
   {
     // The clicks' next step once a frame after the one it waits after is drawn: this task comes after each frame's paint, and
@@ -937,6 +1224,9 @@ namespace
     }
     const Selection selection = gSelection;
     try {
+      if (gDistributing.since != 0 && gFrame != gDistributing.afterFrame) {
+        DistributeAfterFrame();
+      }
       ReadTaken(gWatch.stored);
       ReadTaken(gRecord.stored);
       if (gRecord.asked) {
@@ -945,9 +1235,14 @@ namespace
       if (gCommitAsked != 0) {
         DraftCommitTask(gCommitAsked - 1);
       }
+      gEscapes = moho::UI_GamePlaying() && EscapeNow() != grifftap::Escape::kNothing;
       const bool drafting = gDraft.Open();
-      const bool pinned = !gPins.Live(Now()).empty();
-      if (!selection.viewKnown || (!drafting && selection.count <= 0 && gFreeKnown && !pinned)) {
+      if (selection.viewKnown && gFrame - gMarginsFrame >= kMarginFrames) {
+        std::vector<Box> panels;
+        (void)FreeMapOver(selection.view, nullptr, &panels);
+        MeasureMargins(selection.view, panels);
+      }
+      if (!selection.viewKnown || (!drafting && selection.count <= 0)) {
         if (selection.count <= 0 || drafting) {
           const std::lock_guard<std::mutex> lock(gHandleMutex);
           gHandle = Handle{};
@@ -955,7 +1250,6 @@ namespace
         if (drafting) {
           PublishDraft(griffplace::FreeMap{}, nullptr);
         }
-        PublishOrders(nullptr, nullptr);
         return;
       }
       moho::CUIWorldView* mainMap = nullptr;
@@ -967,13 +1261,12 @@ namespace
       if (drafting) {
         PublishDraft(free, mainMap);
       }
-      PublishOrders(&free, mainMap);
-      gFreeKnown = true;
       const std::lock_guard<std::mutex> lock(gHandleMutex);
       gHandle = handle;
       gFree = cross;
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
+      gEscapes = false;
       const std::lock_guard<std::mutex> lock(gHandleMutex);
       gHandle = Handle{};
     }
@@ -1069,24 +1362,23 @@ namespace
       ExecuteTolerance(gPlayersTolerance);
     }
     gToleranceSet = false;
-    gFreeKnown = false;
     ForgetDraft();
-    gConstructionTop = -1;
-    gColumnLeft = -1;
+    gEscapes = false;
     {
       const std::lock_guard<std::mutex> lock(gOpenedMutex);
       gOpened.clear();
     }
-    // The orders of this game: no watch, record, pin or pill any more; an undo the pill asked for that waits is not done.
+    // A rest's mark and its Shift go with the game, as does a Distribute orders that waits for a frame.
+    ForgetRest();
+    StopDistributing();
+    // The orders of this game: no watch, record or undo button any more; an undo the button asked for that waits is not done.
     gWatch = Watch{};
     DropRecord();
     gUndone.Clear();
     gGuardsWithCtrl.clear();
-    gPins.Clear();
-    {
-      const std::lock_guard<std::mutex> lock(gOrdersShownMutex);
-      gOrdersShown = {0};
-    }
+    // Its groups, and the camera's room past the map's edges, which the next game measures anew.
+    ForgetGroups();
+    cameraclear::gWorldCamera = cameraclear::Margins{};
     // Clicks that wait for a frame get none any more: their next step ends them, Shift too.
     if (gClicking) {
       gClicksWait = false;
@@ -1102,8 +1394,6 @@ namespace
   constexpr char kDraftPlansHelp[] = "FafreGriffDraftPlans() - how many plans Griff's draft holds; -1 without a draft";
   constexpr char kDraftRefusedHelp[] = "FafreGriffDraftRefused() - an order mode was refused while the draft has plans: the app says so";
   constexpr char kDraftEndHelp[] = "FafreGriffDraftEnd() - Griff's empty draft ends, as an order mode is armed";
-  constexpr char kDraftAnchorsHelp[] =
-    "FafreGriffDraftAnchors(constructionTop, columnLeft) - where the draft's tick and cross stand, in the picture's pixels";
 
   /// What goes into a console command when the draft is ticked (StartBuild): FAF's ids are letters, digits and underscores.
   [[nodiscard]] bool PlainId(const char* const id)
@@ -1158,8 +1448,21 @@ namespace
     return blueprint;
   }
 
+  /// The draft is open with this building picked: the next frame shows it, but a finger that comes before needs to know at once.
+  void ShowDraftOpen(const griffdraft::Building& picked)
+  {
+    const float deposit = picked.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f;
+    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+    if (gDraftShown.empty() || gDraftShown[0] == 0) {
+      gDraftShown = {1, deposit, 0, 0, 0, 0};
+    } else {
+      gDraftShown[1] = deposit;
+    }
+  }
+
   /// A building of FAF's construction panel goes into the draft (griff.lua BuildIconClicked), not while the program's clicks
-  /// run, whose draft it is.
+  /// run, whose draft it is. A draft that opens ends the record of one dropped, whose undo would take its place
+  /// (griffundo::OpeningEndsRecord).
   int PickForDraft(lua_State* const lua)
   {
     const char* const id = lua_tostring(lua, 1);
@@ -1173,15 +1476,12 @@ namespace
       gpg::Warnf("Griff: no blueprint %s for the draft", id);
       return 0;
     }
+    if (griffundo::OpeningEndsRecord(gDraft.Open(), gRecord.kept)) {
+      EndRecord();
+    }
     gDraftBlueprints[building.id] = blueprint;
     gDraft.Pick(building);
-    // The next frame shows it; a finger that comes before needs to know at once whether the draft is open.
-    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
-    if (gDraftShown.empty() || gDraftShown[0] == 0) {
-      gDraftShown = {1, building.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f, gConstructionTop, gColumnLeft, 0, 0, 0, 0};
-    } else {
-      gDraftShown[1] = building.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f;
-    }
+    ShowDraftOpen(building);
     return 0;
   }
 
@@ -1193,7 +1493,7 @@ namespace
 
   int DraftRefused(lua_State*)
   {
-    Say(kSaidToast, kToastFirstTickOrCross, 0);
+    Hint(kHintFirstTickOrCross);
     return 0;
   }
 
@@ -1205,11 +1505,13 @@ namespace
     return 0;
   }
 
-  int DraftAnchors(lua_State* const lua)
+  constexpr char kEscapesHelp[] = "FafreGriffEscapes() - whether Griff's Esc, the cross, shows: the draft, an armed command mode "
+                                  "or the selection to put away";
+
+  int Escapes(lua_State* const lua)
   {
-    gConstructionTop = static_cast<float>(lua_tonumber(lua, 1));
-    gColumnLeft = static_cast<float>(lua_tonumber(lua, 2));
-    return 0;
+    lua_pushboolean(lua, gEscapes.load() ? 1 : 0);
+    return 1;
   }
 
   moho::CScrLuaBinder gWantedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWanted", &Wanted, nullptr, "<global>", kWantedHelp);
@@ -1223,22 +1525,50 @@ namespace
   moho::CScrLuaBinder
     gDraftRefusedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftRefused", &DraftRefused, nullptr, "<global>", kDraftRefusedHelp);
   moho::CScrLuaBinder gDraftEndBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftEnd", &DraftEnd, nullptr, "<global>", kDraftEndHelp);
-  moho::CScrLuaBinder
-    gDraftAnchorsBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftAnchors", &DraftAnchors, nullptr, "<global>", kDraftAnchorsHelp);
+  moho::CScrLuaBinder gEscapesBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEscapes", &Escapes, nullptr, "<global>", kEscapesHelp);
 
-  // --- What Griff's control groups say (the hook of FAF's controlgroups.lua) ----------------------------------------------
+  // --- Griff's pieces in FAF's UI (fafre/griffhud.lua) ----------------------------------------------------------------------
 
-  constexpr char kToastHelp[] = "FafreGriffToast(kind, number) - a word of Griff's control groups for the app to say (Game's TOAST_)";
+  constexpr char kHudHelp[] =
+    "FafreGriffHud() - how the activity has Griff's rail, undo button and draft's tick and cross: looks, undo, undoLeft";
+  constexpr char kHudPlacesHelp[] = "FafreGriffHudPlaces(left, top, right, bottom, aside, ...) - where griffhud.lua drew Box, "
+                                   "Plus, the undo's button and the draft's tick and cross";
 
-  /// A tap on an empty slot, a rest with nothing selected, a group stored with its number: the activity says it as the draft's
-  /// words.
-  int Toast(lua_State* const lua)
+  /// How the activity has the rail's Box and Plus (Rail.look, two bits each, Box's first: idle, held, lit), a finger on the
+  /// draft's tick, its cross and the undo's button (Game.HUD_HELD_), and the undo's button (Game's HUD_UNDO_: none, offered
+  /// with the part of its time left, waiting for its undo), for griffhud.lua, which draws them (Game.setGriffHud).
+  std::atomic<int> gHudLooks{0};
+  std::atomic<int> gUndoShown{0};
+  std::atomic<float> gUndoLeft{0};
+
+  /// Where griffhud.lua drew what a finger takes on the activity's side, Box, Plus, the undo's button, the draft's tick and its
+  /// cross: left, top, right and bottom in the picture's pixels and 1 where something the player opened of FAF's lies over it,
+  /// or FAF's UI is hidden, for each (Game.griffHudPlaces); all 0 until it said.
+  constexpr std::size_t kHudPlaces = 25;
+  std::mutex gHudPlacesMutex;
+  std::array<float, kHudPlaces> gHudPlaces{};
+
+  int Hud(lua_State* const lua)
   {
-    Say(kSaidToast, static_cast<int>(lua_tonumber(lua, 1)), static_cast<int>(lua_tonumber(lua, 2)));
+    lua_pushnumber(lua, static_cast<lua_Number>(gHudLooks.load()));
+    lua_pushnumber(lua, static_cast<lua_Number>(gUndoShown.load()));
+    lua_pushnumber(lua, static_cast<lua_Number>(gUndoLeft.load()));
+    return 3;
+  }
+
+  int HudPlaces(lua_State* const lua)
+  {
+    std::array<float, kHudPlaces> places{};
+    for (std::size_t at = 0; at < kHudPlaces && static_cast<int>(at) < lua_gettop(lua); ++at) {
+      places[at] = static_cast<float>(lua_tonumber(lua, static_cast<int>(at) + 1));
+    }
+    const std::lock_guard<std::mutex> lock(gHudPlacesMutex);
+    gHudPlaces = places;
     return 0;
   }
 
-  moho::CScrLuaBinder gToastBinder(moho::SCR_UserLuaInitSet(), "FafreGriffToast", &Toast, nullptr, "<global>", kToastHelp);
+  moho::CScrLuaBinder gHudBinder(moho::SCR_UserLuaInitSet(), "FafreGriffHud", &Hud, nullptr, "<global>", kHudHelp);
+  moho::CScrLuaBinder gHudPlacesBinder(moho::SCR_UserLuaInitSet(), "FafreGriffHudPlaces", &HudPlaces, nullptr, "<global>", kHudPlacesHelp);
 
   // --- What the player opened of FAF's (fafre/opened.lua) ------------------------------------------------------------------
 
@@ -1553,15 +1883,196 @@ namespace
     return list + "}";
   }
 
+  // --- The groups: Supreme Commander 2's, of the units a gesture ordered or a factory order made ----------------------------
+
+  /// Each of one's own mobile units' group (include/GriffGroups.h): the gesture that ordered it last, or the run of the factory
+  /// that made it where no gesture has ordered it since.
+  griffgroups::Book gGroups;
+
+  /// The factories one's own orders gave builds to (FAF's BuildFactory), with their runs: the units one makes one after another
+  /// of one kind while its queue does not run empty, one group each (griffgroups::Runs).
+  griffgroups::Runs<moho::RUnitBlueprint> gRuns;
+
+  /// The group icons the last frame placed (FafreGriffGroups), each with its group's origin: a tap goes by them.
+  std::vector<griffgroups::Icon> gIcons;
+  std::vector<griffgroups::Origin> gIconOrigins;
+
+  /// The group the ladder's first tap selected by its icon, by that tap's number: its next rung selects it again and brings the
+  /// camera, wherever the icon has gone meanwhile.
+  int gGroupTap = 0;
+  griffgroups::Origin gGroupTapped;
+
+  /// The game is over: its groups go.
+  void ForgetGroups()
+  {
+    gGroups.Clear();
+    gRuns.Clear();
+    gIcons.clear();
+    gIconOrigins.clear();
+    gGroupTap = 0;
+  }
+
+  /// The side of a group's icon, in the strategic icons' pixels, which FAF's option strat_icon_scale scales: FAF's largest unit
+  /// icon's, a selected land unit's (its 16 at rest).
+  constexpr float kIconSide = 20;
+
+  /// One of the focus army's mobile units that lives: what a group holds.
+  [[nodiscard]] bool Groupable(const moho::UserUnit& unit)
+  {
+    const moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    const moho::RUnitBlueprint* const blueprint = unit.GetBlueprint();
+    return session != nullptr && unit.mArmy != nullptr && unit.mArmy == session->GetFocusArmy() && !unit.IsDead()
+        && blueprint != nullptr && blueprint->IsMobile();
+  }
+
+  /// A watched gesture's order went to these units: those of them that a group holds are the gesture's group, and where they
+  /// were before goes with the watch, for its undo (Book::Undone). The draft's tick makes no group: it is no gesture's.
+  void GroupOrdered(const std::vector<int>& units)
+  {
+    if (gWatch.tick) {
+      return;
+    }
+    std::vector<int> grouped;
+    for (const int id : units) {
+      if (const moho::UserUnit* const unit = UnitOf(id); unit != nullptr && Groupable(*unit)) {
+        grouped.push_back(id);
+      }
+    }
+    const std::vector<griffgroups::Earlier> moved = gGroups.Ordered(static_cast<std::uint32_t>(gWatch.number), grouped);
+    gWatch.earlier.insert(gWatch.earlier.end(), moved.begin(), moved.end());
+  }
+
+  /// Each frame: the units the factories finished go to their runs' groups, before a factory whose queue is empty ends its run
+  /// (griffgroups::Runs ends it once what the factory builds is finished); what the factories build now is noted; and the
+  /// units that died or are no longer one's own leave their groups.
+  void KeepGroups()
+  {
+    for (const int id : gRuns.Built()) {
+      moho::UserUnit* const unit = UnitOf(id);
+      if (unit != nullptr && !unit->IsDead() && unit->IsBeingBuilt()) {
+        continue;
+      }
+      const bool made = unit != nullptr && Groupable(*unit);
+      if (const std::uint32_t run = gRuns.Finished(id, made ? unit->GetBlueprint() : nullptr); run != 0) {
+        gGroups.Made(id, run);
+      }
+    }
+    for (const int id : gRuns.Factories()) {
+      moho::UserUnit* const factory = UnitOf(id);
+      if (factory == nullptr || factory->IsDead()) {
+        gRuns.Gone(id);
+        continue;
+      }
+      if (factory->mUnitVarDat.mCommands.empty()) {
+        gRuns.Emptied(id);
+      }
+      if (moho::UserUnit* const built = UnitOf(static_cast<int>(factory->mUnitVarDat.mFocusUnit));
+          built != nullptr && built->IsBeingBuilt()) {
+        gRuns.Building(id, IdOf(*built));
+      }
+    }
+    std::vector<int> gone;
+    for (const auto& [origin, units] : gGroups.UnitsByOrigin()) {
+      for (const int id : units) {
+        if (const moho::UserUnit* const unit = UnitOf(id); unit == nullptr || !Groupable(*unit)) {
+          gone.push_back(id);
+        }
+      }
+    }
+    for (const int id : gone) {
+      gGroups.Gone(id);
+    }
+  }
+
+  /// The colour the game draws one's own strategic icons in (CWldSession::RenderStrategicIcons): the army's, or FAF's team
+  /// colour where those are on; as a colour of FAF's UI, its hex digits.
+  [[nodiscard]] std::string IconColour(const moho::CWldSession& session, const moho::UserArmy& army)
+  {
+    const std::size_t index = static_cast<std::size_t>(army.mArmyIndex);
+    const bool team = session.mTeamColorMode && army.mArmyIndex >= 0 && index < moho::kTeamColorPaletteSize;
+    const std::uint32_t colour = team ? moho::teamcolors[index] : army.mVarDat.mPlayerColorBgra;
+    char text[16];
+    std::snprintf(text, sizeof text, "%08x", static_cast<unsigned>(colour));
+    return text;
+  }
+
+  constexpr char kGroupsHelp[] =
+    "FafreGriffGroups(places) - each frame: Griff's groups kept, and with `places` their icons, four numbers each into it (x, y, "
+    "count, all selected); answers how many, their side in the picture's pixels and the colour of one's own strategic icons";
+
+  /// Each frame of the session's UI (fafre/griffgroups.lua): the groups kept; then, with a table for them, the icons of the
+  /// groups the game draws strategic icons for, at their units' middle on the main map's view. The game draws them where it
+  /// draws any (CUIWorldView::Render: not while the camera turns or is free, nor with FAF's icons off) and for a unit from its
+  /// mesh's IconFadeInZoom on (griffgroups::DrawsIcon): a group's icon shows once one of its units shows as an icon, and goes
+  /// as the camera comes close. Without the table, as while Griff's Groups button hides them, there are none, for a tap either.
+  int Groups(lua_State* const lua)
+  {
+    KeepGroups();
+    gIcons.clear();
+    gIconOrigins.clear();
+    const auto answer = [lua](const std::size_t count, const float side, const std::string& colour) {
+      lua_pushnumber(lua, static_cast<lua_Number>(count));
+      lua_pushnumber(lua, side);
+      lua_pushstring(lua, colour.c_str());
+      return 3;
+    };
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    moho::UserArmy* const army = session != nullptr ? session->GetFocusArmy() : nullptr;
+    MapView map;
+    if (!lua_istable(lua, 1) || army == nullptr || !MainMap(map) || !map.view->mIconsVisible || !moho::ui_RenderIcons
+        || !moho::ui_NisRenderIcons) {
+      return answer(0, 0, "");
+    }
+    moho::CameraImpl* const camera = map.view->GetCamera();
+    const moho::VMatrix4& viewport = camera->CameraGetView().viewport;
+    const Wm3::Vector3f focus = camera->GetTargetPosition();
+    // The renderer's zoom: the view's width at the focus, with the camera's LOD scale (its viewport's row 1).
+    const float zoom = viewport.r[1].x * focus.x + viewport.r[1].y * focus.y + viewport.r[1].z * focus.z + viewport.r[1].w;
+    const float maxZoom = camera->GetMaxZoom();
+    const float side = kIconSide * moho::ui_StrategicIconScale;
+    int at = 1;
+    for (const auto& [origin, units] : gGroups.UnitsByOrigin()) {
+      if (units.size() < griffgroups::kGroupUnits) {
+        continue;
+      }
+      bool drawn = moho::ui_AlwaysRenderStrategicIcons;
+      bool selected = true;
+      float sumX = 0;
+      float sumY = 0;
+      float sumZ = 0;
+      // KeepGroups left the book only units that live.
+      for (const int id : units) {
+        moho::UserUnit* const unit = UnitOf(id);
+        const moho::RMeshBlueprint* const mesh = unit->mVariableData.mMeshBlueprint;
+        drawn = drawn || mesh == nullptr || griffgroups::DrawsIcon(zoom, mesh->mIconFadeInZoom, maxZoom);
+        selected = selected && session->mSelection.Find(unit) != session->mSelection.end();
+        const Wm3::Vec3f place = unit->GetInterpolatedPosition(session->mTimeSinceLastTick);
+        sumX += place.x;
+        sumY += place.y;
+        sumZ += place.z;
+      }
+      const float count = static_cast<float>(units.size());
+      float x = 0;
+      float y = 0;
+      if (!drawn || !Project(map, sumX / count, sumY / count, sumZ / count, x, y) || !map.box.Contains(x, y)) {
+        continue;
+      }
+      for (const float value : {x, y, count, selected ? 1.0f : 0.0f}) {
+        lua_pushnumber(lua, value);
+        lua_rawseti(lua, 1, at++);
+      }
+      gIcons.push_back(griffgroups::Icon{x, y, side / 2});
+      gIconOrigins.push_back(origin);
+    }
+    return answer(gIcons.size(), side, IconColour(*session, *army));
+  }
+
+  moho::CScrLuaBinder gGroupsBinder(moho::SCR_UserLuaInitSet(), "FafreGriffGroups", &Groups, nullptr, "<global>", kGroupsHelp);
+
   // --- The orders' binders: what griff.lua tells of the orders FAF's UI gives ---------------------------------------------
 
-  constexpr char kOrderedHelp[] = "FafreGriffOrdered(commandType, attackMove, clear, unitIds, placed, x, y, z, targetId) - "
-                                  "FAF's UI gave an order: a watched gesture's is pinned and its record's, any other ends that";
-
-  [[nodiscard]] float Number(lua_State* const lua, const int index)
-  {
-    return static_cast<float>(lua_tonumber(lua, index));
-  }
+  constexpr char kOrderedHelp[] = "FafreGriffOrdered(commandType, attackMove, clear, unitIds, targetId) - "
+                                  "FAF's UI gave an order: a watched gesture's is its record's, any other ends that";
 
   [[nodiscard]] int Whole(lua_State* const lua, const int index)
   {
@@ -1600,23 +2111,53 @@ namespace
 
   void FinishUndo();
 
-  /// The record goes: an undo the pill asked for it that waits is not done, and the activity hears so (SAID_UNDONE), never
-  /// that it just went.
+  /// The undo of record `number` is over and did what `said` says (UNDONE_): the activity hears it (SAID_UNDONE), and an undo
+  /// that did not take all of the gesture back says so where FAF prints its messages.
+  void SayUndone(const int number, const int said)
+  {
+    Say(kSaidUndone, number, said);
+    if (said == kUndoneInPart) {
+      Hint(kHintUndoneInPart);
+    } else if (said == kNotUndone) {
+      Hint(kHintNotUndone);
+    }
+  }
+
+  /// The record goes: an undo the button asked for it that waits is not done, and the activity hears so, never that it just
+  /// went.
   void DropRecord()
   {
     if (gRecord.number != 0 && gRecord.asked) {
-      Say(kSaidUndone, gRecord.number, kNotUndone);
+      SayUndone(gRecord.number, kNotUndone);
     }
     gRecord = Record{};
   }
 
-  /// The pill's record is gone: an order came that no gesture's watch counted, and only the last order counts.
+  /// The undo's record is gone: an order came that no gesture's watch counted, or one whose undo would save nothing, and only
+  /// the last order counts; or what a record of Griff's own keeps would undo what came after its gesture.
   void EndRecord()
   {
     if (gRecord.number != 0) {
       DropRecord();
       Say(kSaidOrdered, 0, 0);
     }
+  }
+
+  /// A record of Griff's own (Kept), which ordered nothing: the undo's button takes it back from now on, one level, as a
+  /// gesture's orders (EndWatch), and any order ends it as ever; an undo the button asked for the record it replaces is not
+  /// done.
+  void Offer(Record record)
+  {
+    DropRecord();
+    gRecord = std::move(record);
+    gRecord.number = ++gRecords;
+    Say(kSaidOrdered, gRecord.number, 0);
+  }
+
+  /// Whether the record is a gesture's orders, which the tap ladder's attack-move in place of a move joins.
+  [[nodiscard]] bool OrdersRecorded()
+  {
+    return gRecord.number != 0 && gRecord.kept == Kept::kOrders;
   }
 
   /// Whether FAF's capping may ring this unit for a Guard of engineers on it (capping.lua AssistToCap, 3835): a structure that
@@ -1666,23 +2207,22 @@ namespace
     std::vector<int> turned;
     const bool undone = gUndone.Upgraded(target, GameTick(), turned);
     for (const int number : turned) {
-      Say(kSaidUndone, number, kUndoneInPart);
+      SayUndone(number, kUndoneInPart);
     }
     return undone;
   }
 
   /// Of every order FAF's UI gives: a Guard given with Ctrl noted (gGuardsWithCtrl), its count for the clicks that run, with
-  /// the entity it targets. A watched gesture's that is one to take back (griffundo::Takeable) is pinned at its place and
-  /// noted in the queues of its units that it went into;
-  /// any other but the undo's own and FAF's upgrade for an assist ends the pill's record: FAF's ghost from a build key or a
-  /// template, the Keys keyboard's hotkeys, the construction panel's own queue.
+  /// the entity it targets. A watched gesture's that is one to take back (griffundo::Takeable) is noted in the queues of its
+  /// units that it went into; any other but the undo's own and FAF's upgrade for an assist ends the undo's record: FAF's
+  /// ghost from a build key or a template, the Keys keyboard's hotkeys, the construction panel's own queue.
   int Ordered(lua_State* const lua)
   {
     const std::string type = Text(lua, 1);
     const bool attackMove = Whole(lua, 2) != 0;
     const bool clear = Whole(lua, 3) != 0;
     const std::vector<int> units = EntityIdsOf(Text(lua, 4));
-    const int target = EntityIdOf(Text(lua, 9));
+    const int target = EntityIdOf(Text(lua, 5));
     // FAF's copy of an engineer's queue goes with a Guard given with Ctrl (OnGuardCopy, which reads the key as this does,
     // after it): the Guard's command, each unit's newest edit now, is noted for the undo's plan.
     if (type == "Guard" && target != griffundo::kNoTarget && moho::MAUI_KeyIsDown(moho::MKEY_CONTROL)) {
@@ -1703,10 +2243,14 @@ namespace
       ++gClicks.orders;
       gClicks.orderedTarget = target;
     }
-    if (gWatch.number != 0 && griffundo::Takeable(type, attackMove)) {
-      if (Whole(lua, 5) != 0) {
-        gPins.Add(Number(lua, 6), Number(lua, 7), Number(lua, 8), griffpins::KindOf(type, attackMove), Now());
+    // The factories given builds, whose units are their runs' groups (KeepGroups).
+    if (type == "BuildFactory") {
+      for (const int factory : units) {
+        gRuns.Ordered(factory);
       }
+    }
+    if (gWatch.number != 0 && griffundo::Takeable(type, attackMove)) {
+      GroupOrdered(units);
       std::unordered_map<int, Stored>& stored = gWatch.joins ? gRecord.stored : gWatch.stored;
       for (const int unit : units) {
         if (const auto kept = stored.find(unit); kept != stored.end()) {
@@ -1727,6 +2271,41 @@ namespace
 
   moho::CScrLuaBinder gOrderedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffOrdered", &Ordered, nullptr, "<global>", kOrderedHelp);
 
+  constexpr char kGroupStoredHelp[] = "FafreGriffGroupStored(group, appended, before, after) - a group of Griff's control groups "
+                                      "was stored, by Plus's append (or while FAF's option to steal from other control groups "
+                                      "is On) or not: the ids of the units it held before and of those now";
+
+  /// A group stored by a rest on its slot (the hook of FAF's controlgroups.lua, after its hint): the activity buzzes once.
+  /// Where the store took out units it held that lived, it is a record of Griff's own, whose undo gives the group those units
+  /// back (GroupBack); any other store that changed the group of such a record ends it, as its units would undo that store,
+  /// and one that changed nothing keeps it (griffundo::OutcomeOfStore).
+  int GroupStored(lua_State* const lua)
+  {
+    Say(kSaidGroupStored, 0, 0);
+    const int group = Whole(lua, 1);
+    const bool appended = Whole(lua, 2) != 0;
+    std::vector<int> before = EntityIdsOf(Text(lua, 3));
+    switch (griffundo::OutcomeOfStore(gRecord.kept, gRecord.group, group, appended, before, EntityIdsOf(Text(lua, 4)))) {
+      case griffundo::StoreOutcome::kOffer: {
+        Record stored;
+        stored.kept = Kept::kGroup;
+        stored.group = group;
+        stored.held = std::move(before);
+        Offer(std::move(stored));
+        break;
+      }
+      case griffundo::StoreOutcome::kEnd:
+        EndRecord();
+        break;
+      case griffundo::StoreOutcome::kKeep:
+        break;
+    }
+    return 0;
+  }
+
+  moho::CScrLuaBinder
+    gGroupStoredBinder(moho::SCR_UserLuaInitSet(), "FafreGriffGroupStored", &GroupStored, nullptr, "<global>", kGroupStoredHelp);
+
   /// Runs griff.lua's function, which answers by FafreGriffAnswer; 0 when it did not.
   [[nodiscard]] int Ask(const char* const command)
   {
@@ -1741,12 +2320,31 @@ namespace
     moho::CON_Execute((std::string(kGriffLua) + call).c_str());
   }
 
+  /// Whether the command mode armed is FAF's attack-move, as its orders panel's button arms it (griff.lua AttackMoveArmed).
+  [[nodiscard]] bool AttackMoveArmed()
+  {
+    return CommandModeArmed() && Ask(kAttackMoveArmed) == kYes;
+  }
+
   // --- The watch over a gesture's orders ------------------------------------------------------------------------------------
 
-  /// The watched gesture is over: if it ordered, it is the record the pill takes back from now on, one level, and the
-  /// activity hears of it (SAID_ORDERED); an undo the pill asked for the record it replaces is not done. The tap ladder's
-  /// attack-move adds to the move's record, whose time goes on, and noted its orders there; where that record ended
-  /// meanwhile, its units' queues are not known. A unit the gesture ordered whose queue was not known as it began (not
+  /// Whether a gesture's undo saves the player work (griffundo::SavesWork): the draft's tick does, and an order that replaced a
+  /// queue of one of its units that held a building or two orders or more, as the gesture began.
+  [[nodiscard]] bool SavesWork(const bool tick, const std::unordered_map<int, Stored>& stored)
+  {
+    return tick || std::any_of(stored.begin(), stored.end(), [](const auto& item) {
+             const Stored& kept = item.second;
+             return (kept.own.replaced && griffundo::SavesWork(kept.own.before))
+                 || (kept.route.replaced && griffundo::SavesWork(kept.route.before));
+           });
+  }
+
+  /// The watched gesture is over: if it ordered, and its undo saves work, it is the record the undo's button takes back from
+  /// now on, one level, and the activity hears of it (SAID_ORDERED); an undo the button asked for the record it replaces is
+  /// not done. An order whose undo would save nothing ends the record before it, as any order does, and offers none. The tap
+  /// ladder's attack-move adds to the move's record, whose time goes on, and noted its orders there; where that record ended
+  /// meanwhile or one of Griff's own took its place, or the move made none, it is an order like any other, whose queues as it
+  /// began are not known (its own were the move's). A unit the gesture ordered whose queue was not known as it began (not
   /// selected then) is not taken back.
   void EndWatch()
   {
@@ -1758,12 +2356,18 @@ namespace
     if (!watch.any) {
       return;
     }
-    if (!watch.joins || gRecord.number == 0) {
+    const bool joined = watch.joins && OrdersRecorded();
+    if (!joined && !SavesWork(watch.tick, watch.stored)) {
+      EndRecord();
+      return;
+    }
+    if (!joined) {
       DropRecord();
       gRecord.number = ++gRecords;
       gRecord.stored = std::move(watch.stored);
-      gRecord.unknown = watch.joins;
     }
+    gRecord.gestures.push_back(static_cast<std::uint32_t>(watch.number));
+    gRecord.earlier.insert(gRecord.earlier.end(), watch.earlier.begin(), watch.earlier.end());
     gRecord.unknown = gRecord.unknown || watch.unknown;
     gRecord.guarded.insert(watch.guarded.begin(), watch.guarded.end());
     gRecord.upgrades += watch.upgrades;
@@ -1782,7 +2386,7 @@ namespace
     }
     EndWatch();
     gWatch.number = ++gWatches;
-    gWatch.joins = join && gRecord.number != 0;
+    gWatch.joins = join && OrdersRecorded();
     if (!gWatch.joins) {
       gWatch.stored = StoreSelection();
     }
@@ -1808,16 +2412,18 @@ namespace
     }
   }
 
-  /// A first finger came down here: on the map or the minimap the camera's glide or flight stops, and FAF's reach for a unit
-  /// beside a tap is the mockup's for what is selected (with Box, which picks units, as without troops). Not while a command
-  /// mode is armed, which picks as FAF sets it: its reclaim mode reaches further for wrecks. Nothing while the program's clicks
-  /// run, which pick as they began; the down still comes, as the task that ends clicks that wait past their patience.
+  /// A first finger came down here: what a rest of the gesture before it found is over (RestTask); on the map or the minimap
+  /// the camera's glide or flight stops, and FAF's reach for a unit beside a tap is the mockup's for what is selected (with
+  /// Box, which picks units, as without troops). Not while a command mode is armed, which picks as FAF sets it: its reclaim
+  /// mode reaches further for wrecks. Nothing while the program's clicks run, which pick as they began; the down still comes,
+  /// as the task that ends clicks that wait past their patience.
   void DownTask(const WPARAM places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
     const bool box = Coordinate(places, 2) != 0;
     try {
+      ForgetRest();
       if (!moho::UI_GamePlaying() || ClicksRun()) {
         return;
       }
@@ -1940,18 +2546,50 @@ namespace
     Say(kSaidTap, tap.number, kind | used << 8);
   }
 
+  /// A group's units as the book holds them now, by its origin; none where it is no group any more.
+  [[nodiscard]] std::vector<int> GroupUnits(const griffgroups::Origin& origin)
+  {
+    const auto& groups = gGroups.UnitsByOrigin();
+    const auto group = groups.find(origin);
+    return group != groups.end() && group->second.size() >= griffgroups::kGroupUnits ? group->second : std::vector<int>{};
+  }
+
+  /// How a group's icon takes a tap (griff.lua SelectGroup): its units are the selection, or join it (Plus), or with Box join
+  /// it or, where all of them are selected, leave it, as Box's tap does with one's own unit.
+  enum class GroupTap
+  {
+    kSelect = 0,
+    kAdd = 1,
+    kToggle = 2,
+  };
+
+  /// A group by its icon (griff.lua SelectGroup), as `how` says, and with `camera` the camera goes to it as to a control group
+  /// selected twice. Nothing where it is no group any more.
+  void SelectGroup(const griffgroups::Origin& origin, const GroupTap how, const bool camera)
+  {
+    const std::vector<int> units = GroupUnits(origin);
+    if (!units.empty()) {
+      CallGriffLine(
+        "SelectGroup(" + UnitList(units) + ", " + std::to_string(static_cast<int>(how)) + ", " + (camera ? "true" : "false") + ")"
+      );
+    }
+  }
+
   /// A tap where the finger was and the cursor has rested (TouchInput): FAF's click by what it lands on. The UI's controls take
-  /// it, with the tap help; a command mode that FAF's orders panel armed takes it; Box adds one's own unit to the selection or
-  /// takes it out, and on anything else does nothing; with Attack it is an attack-move; one's own unit is selected, Plus adds it
-  /// (Shift's click); else the selection gets FAF's right click there, also on one's own unit with Plus or Attack and troops
-  /// selected: the order there, as the mockup has it. Near misses are FAF's own pick, within the reach DownTask set.
+  /// it, with the tap help; a command mode that FAF's orders panel armed takes it (its attack-move too); a group's icon selects
+  /// the group, which joins the selection with Plus, and Box adds or takes out as for one's own unit; Box adds one's own unit
+  /// to the selection or takes it out, and on anything else does nothing; one's own unit is selected, Plus adds it (Shift's
+  /// click); else the selection gets FAF's right click there, also on one's own unit with Plus and troops selected: the order
+  /// there, as the mockup has it. Near misses are FAF's own pick, within the reach DownTask set. A group's icon takes a tap
+  /// within the tap help's reach of its disc, but with troops selected only within FAF's pick for them, and not where FAF's
+  /// cursor is over a unit that is not one's own, which the tap orders on (griffgroups::IconReach, IconTakesTap).
   void TapByPlace(const Tap& tap)
   {
     const int x = tap.x;
     const int y = tap.y;
     const bool queue = (tap.rail & kRailQueue) != 0;
-    const bool attack = (tap.rail & kRailAttack) != 0;
-    // With Box counting, the UI's tap and an armed mode's are none of Box's: it stays lit, Plus and Attack go out.
+    const bool box = (tap.rail & kRailBox) != 0;
+    // With Box counting, the UI's tap and an armed mode's are none of Box's: it stays lit, Plus goes out.
     if (UiTap(x, y)) {
       ClickUi(queue, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_LEFT);
       AnswerTap(tap, kTapUi);
@@ -1965,20 +2603,26 @@ namespace
     // What the cursor is over, where it rested: the finger's place.
     const int kind = Ask(kTapKind);
     const bool own = (kind & kOwnUnit) != 0;
+    const bool troops = (kind & kTroopsSelected) != 0;
+    if (griffgroups::IconTakesTap(troops, (kind & kUnitUnder) != 0 && !own)) {
+      const float reach = griffgroups::IconReach(troops, gTapReach.load(), gNearReachWithTroops.load());
+      if (const int icon = griffgroups::IconAt(gIcons, static_cast<float>(x), static_cast<float>(y), reach); icon >= 0) {
+        gGroupTap = tap.number;
+        gGroupTapped = gIconOrigins[static_cast<std::size_t>(icon)];
+        SelectGroup(gGroupTapped, box ? GroupTap::kToggle : queue ? GroupTap::kAdd : GroupTap::kSelect, false);
+        AnswerTap(tap, kTapGroup, box ? grifftap::Outcome::kBoxToggled : grifftap::Outcome::kOther);
+        return;
+      }
+    }
     const bool selection = (kind & kSelection) != 0;
-    if ((tap.rail & kRailBox) != 0) {
+    if (box) {
       if (own) {
         ClickWith(true, WIN32ANDROID_BUTTON_LEFT, x, y);
       }
       AnswerTap(tap, kTapOther, own ? grifftap::Outcome::kBoxToggled : grifftap::Outcome::kBoxFoundNothing);
       return;
     }
-    if (attack && selection && ArmAttackMove()) {
-      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
-      AnswerTap(tap, kTapOther);
-      return;
-    }
-    if (own && !((queue || attack) && (kind & kTroopsSelected) != 0)) {
+    if (own && !(queue && troops)) {
       ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
       AnswerTap(tap, queue ? kTapOther : kTapOwn);
       return;
@@ -1987,7 +2631,7 @@ namespace
     int answer = kTapOther;
     if (!selection) {
       answer = (kind & kUnitUnder) != 0 ? kTapOther : kTapEmpty;
-    } else if ((kind & kMoveOrder) != 0 && !queue && !attack) {
+    } else if ((kind & kMoveOrder) != 0 && !queue) {
       answer = kTapGround;
     }
     AnswerTap(tap, answer);
@@ -1997,7 +2641,8 @@ namespace
   /// where the first went, which the message layer makes the game's double click; all of the selected unit's type in view (as
   /// the game's double click on the unit, which could not reach it where the panels its selection brought up cover it), then on
   /// the map; an attack-move at the first tap's place in place of its move (where FAF offers none, as for factories alone, a
-  /// right click again: the rally point); all one's own mobile units in view.
+  /// right click again: the rally point); all one's own mobile units in view; the group the first tap's icon selected, again,
+  /// with the camera, as a control group's double click.
   void TapByStep(const Tap& tap)
   {
     switch (tap.step) {
@@ -2023,6 +2668,11 @@ namespace
         break;
       case kStepAllMobile:
         moho::CON_Execute(kAllMobile);
+        break;
+      case kStepGroupAgain:
+        if (tap.number == gGroupTap) {
+          SelectGroup(gGroupTapped, GroupTap::kSelect, true);
+        }
         break;
       default:
         break;
@@ -2088,6 +2738,16 @@ namespace
     }
   }
 
+  /// A hint of the activity's (Game.griffHint): its kind and number.
+  void HintTask(const WPARAM places)
+  {
+    try {
+      Hint(Coordinate(places, 0), Coordinate(places, 1));
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
   /// The camera to the selection; argument 1: a flight, else at once. Not while the program's clicks run, which aim by it.
   void ToGroupTask(const WPARAM fly)
   {
@@ -2100,6 +2760,96 @@ namespace
     }
   }
 
+  // --- The handle's rest: FAF's Distribute orders -----------------------------------------------------------------------
+
+  /// The group's middle on the picture as griff.lua reported it in the last frame, the handle's group's (Report), where it is on
+  /// the main map: a cursor there is the map's, whose world place under it FAF's Distribute orders reads (GetMouseWorldPos).
+  [[nodiscard]] bool GroupMiddleOnMap(int& x, int& y)
+  {
+    const Selection selection = gSelection;
+    x = static_cast<int>(std::lround(selection.middleX));
+    y = static_cast<int>(std::lround(selection.middleY));
+    return selection.count > 0 && OnMap(static_cast<float>(x), static_cast<float>(y));
+  }
+
+  /// A finger rests on the handle (Game.handleRest, number `rest`): whether its lift gives FAF's Distribute orders, with the
+  /// cursor at the group's middle, as griff.lua's CanDistribute finds FAF's own pick there: two of the selection's non-factory
+  /// units or more, and the queue of the one nearest the cursor's world place two orders or more. Then the ring shows the move
+  /// ping's look, as a drag from the rest is the handle's route. The activity hears it (SAID_DISTRIBUTES). No, where the
+  /// group's middle is not on the map (its units out of view or under a panel), where the cursor could not point at them, and
+  /// between the program's clicks.
+  void HandleRestTask(const WPARAM rest)
+  {
+    bool distributes = false;
+    try {
+      int x = 0;
+      int y = 0;
+      if (moho::UI_GamePlaying() && !ClicksRun() && GroupMiddleOnMap(x, y)) {
+        char call[64];
+        std::snprintf(call, sizeof call, "CanDistribute(%d, %d)", x, y);
+        distributes = Ask((std::string(kGriffLua) + call).c_str()) == kYes;
+      }
+      if (distributes) {
+        griffshown::Set(griffshown::kRest, {static_cast<float>(kRestDistribute)});
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+      distributes = false;
+    }
+    Say(kSaidDistributes, static_cast<int>(rest), distributes ? 1 : 0);
+  }
+
+  /// The lift of the handle's rest that distributes (Game.distribute): the cursor goes to the group's middle, where it stays for
+  /// a drawn frame, as FAF reads the world place under the cursor with the frame's (DistributeAfterFrame, from PlaceTask). The
+  /// pointer's leave that the lift asked for waits for it: on a slow frame it came first and took the cursor off the group.
+  /// Where the group's middle left the map since the rest, nothing, which says Cancelled. Not between the program's clicks.
+  void DistributeTask(const WPARAM)
+  {
+    StopDistributing();
+    try {
+      int x = 0;
+      int y = 0;
+      if (!moho::UI_GamePlaying() || ClicksRun()) {
+        return;
+      }
+      if (!GroupMiddleOnMap(x, y)) {
+        Hint(kHintCancelled);
+        return;
+      }
+      Win32Android_MouseMove(x, y);
+      Distributing waits;
+      // Where the cursor went, within the game's clip of it: a later move would take it elsewhere.
+      (void)::GetCursorPos(&waits.cursor);
+      waits.afterFrame = gFrame;
+      waits.since = Now();
+      gDistributing = waits;
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// After a frame drew the cursor at the group's middle: FAF's own key action G, Distribute orders, which takes the selection's
+  /// non-factory unit nearest the cursor's world place, clears every unit's queue and deals that unit's orders out over them,
+  /// and says what it did where FAF prints its messages ('Distributing orders'). The undo's record ends, as G gives every queue
+  /// anew, which no record takes back. Where the cursor moved meanwhile (a finger) or no frame came in the clicks' patience,
+  /// nothing, which says Cancelled; nothing between the program's clicks. Then the pointer's leave comes, which waited for this.
+  void DistributeAfterFrame()
+  {
+    const Distributing waited = gDistributing;
+    gDistributing = Distributing{};
+    if (moho::UI_GamePlaying() && !ClicksRun()) {
+      POINT cursor{};
+      (void)::GetCursorPos(&cursor);
+      if (cursor.x != waited.cursor.x || cursor.y != waited.cursor.y || Outwaited(waited.since, Now())) {
+        Hint(kHintCancelled);
+      } else {
+        moho::CON_Execute(kDistributeOrders);
+        EndRecord();
+      }
+    }
+    hostclicks::CursorFreed();
+  }
+
   // --- Drags, the pan's glide and the pinch ---------------------------------------------------------
 
   /// What a finger's drag pressed, for its end.
@@ -2110,9 +2860,13 @@ namespace
     kBox,
     kAddingBox,
     kPanel,
+    kFormation,
+    kQueuedFormation,
   };
 
   Drag gDrag = Drag::kNone;
+  /// The watch over a formation's order, which its lift gives.
+  int gFormationWatch = 0;
 
   /// The camera glides on at this velocity, in the picture's pixels a second (griff.lua Glide), or stays where it is.
   void Glide(const int velocityX, const int velocityY)
@@ -2141,9 +2895,65 @@ namespace
         Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, x, y);
         ReleaseShift();
         break;
+      case Drag::kFormation:
+      case Drag::kQueuedFormation:
+        // FAF orders the formation as the right button goes up, facing the way the drag went.
+        Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, x, y);
+        if (gDrag == Drag::kQueuedFormation) {
+          ReleaseShift();
+        }
+        EndWatchAfterInput(gFormationWatch);
+        gFormationWatch = 0;
+        break;
       case Drag::kNone:
         break;
     }
+    gDrag = Drag::kNone;
+  }
+
+  /// GiveUpDrag's formation, at its place and 1 where it was queued: the world views forget the order a release would give
+  /// (their command data, which only the one that took the right button's press holds: by now a panel or one of the app's
+  /// pieces may lie over where it took it) and the formation FAF shows, then the button goes up.
+  void GiveUpFormationTask(const WPARAM places)
+  {
+    try {
+      if (moho::CMauiControl* const root = UiRoot(); root != nullptr) {
+        for (moho::CMauiControl* control = root; control != nullptr; control = control->DepthFirstSuccessor(root)) {
+          if (auto* const view = dynamic_cast<moho::CUIWorldView*>(control)) {
+            view->mCommandData.mMode = moho::COMMOD_None;
+          }
+        }
+      }
+      if (moho::CWldSession* const session = moho::WLD_GetActiveSession();
+          session != nullptr && session->mCurFormation != nullptr) {
+        session->mCurFormation->mReady = false;
+        session->mCurFormation->Reset();
+      }
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, Coordinate(places, 0), Coordinate(places, 1));
+      if (Coordinate(places, 2) != 0) {
+        ReleaseShift();
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The finger's drag goes without its lift (Game.griffDragGiveUp: a second finger on FAF's formation, the system taking the
+  /// fingers, a new first finger): FAF's formation is given up, not ordered, as a PC player's right button let go over a
+  /// panel orders nothing (GiveUpFormationTask). That runs as a task of its own: this one may have been queued before
+  /// DragTask ran, and so come ahead of the right button's press DragTask queued, which would give the view its command data
+  /// back; a task queued from here comes after that press (Win32Android_RunOnWindowThread). Any other drag ends here as at a
+  /// lift, without a pan's glide.
+  void GiveUpDrag(const int x, const int y)
+  {
+    if (gDrag != Drag::kFormation && gDrag != Drag::kQueuedFormation) {
+      EndDrag(x, y, 0, 0);
+      return;
+    }
+    Win32Android_RunOnWindowThread(&GiveUpFormationTask, Places(x, y, gDrag == Drag::kQueuedFormation ? 1 : 0));
+    // Nothing was ordered: the watch ends with no record.
+    EndWatchAfterInput(gFormationWatch);
+    gFormationWatch = 0;
     gDrag = Drag::kNone;
   }
 
@@ -2162,10 +2972,190 @@ namespace
   std::mutex gDragsMutex;
   std::deque<DragStart> gDrags;
 
+  // --- A finger's rest on the map: a waypoint to delete, a formation's right button --------------------------------------
+
+  /// What a finger that rests on the map found (RestTask), until its gesture goes on: a waypoint of the selection's orders,
+  /// marked for deletion, with Shift held so that FAF draws its command graph and FAF's cursor on the waypoint (`aimX`, `aimY`);
+  /// or the ground, where FAF's right click is a plain move for the selection, where the rest's right button gives a formation
+  /// (at the drag that follows, or as a click at the lift); or nothing of either.
+  enum class Rest
+  {
+    kNone,
+    kWaypoint,
+    kGround,
+  };
+
+  struct Resting
+  {
+    Rest kind = Rest::kNone;
+    /// On the ground, whether the drag that follows is FAF's formation (kRestDragGivesFormation, with mobile units selected).
+    bool formation = false;
+    int command = 0;
+    int aimX = 0;
+    int aimY = 0;
+  };
+
+  Resting gRest;
+
+  /// The rest's gesture went on, or went: a marked waypoint's Shift goes up, and its mark with it; its ring goes.
+  void ForgetRest()
+  {
+    if (gRest.kind == Rest::kWaypoint) {
+      ReleaseShift();
+    }
+    gRest = Resting{};
+    griffshown::Set(griffshown::kRest, {});
+  }
+
+  /// The waypoint of the selection's orders nearest to a finger at this place on the map, within the tap help's reach: one FAF
+  /// draws in its command graph (griffundo::Removable), at the place it draws it. Marked for deletion: Shift held, so that FAF
+  /// draws the graph and its cursor hovers waypoints, and FAF's cursor on it. False where none is in reach.
+  [[nodiscard]] bool MarkWaypoint(const int x, const int y)
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    MapView map;
+    if (session == nullptr || !MapAt(x, y, map)) {
+      return false;
+    }
+    const float reach = gTapReach.load();
+    float nearest = reach * reach;
+    Resting found;
+    msvc8::vector<moho::UserUnit*> units;
+    session->GetSelectionUnits(units);
+    for (moho::UserUnit* const unit : units) {
+      for (const bool route : {false, true}) {
+        moho::UserCommandQueue* const commands = CommandsOf(*unit, route);
+        if (commands == nullptr) {
+          continue;
+        }
+        for (const moho::WeakPtr<moho::UserCommandIssueHelper>& link : *moho::GetUserUnitManagerQueueLinks(commands)) {
+          moho::UserCommandIssueHelper* const helper = link.GetObjectPtr();
+          if (helper == nullptr) {
+            continue;
+          }
+          const griffundo::Entry entry = EntryOf(*helper);
+          float screenX = 0;
+          float screenY = 0;
+          if (!griffundo::Removable(entry) || !Project(map, entry.place.x, entry.place.y, entry.place.z, screenX, screenY)) {
+            continue;
+          }
+          const float distance = (screenX - x) * (screenX - x) + (screenY - y) * (screenY - y);
+          if (distance <= nearest) {
+            nearest = distance;
+            found = Resting{.kind = Rest::kWaypoint,
+                            .command = entry.id,
+                            .aimX = static_cast<int>(std::lround(screenX)),
+                            .aimY = static_cast<int>(std::lround(screenY))};
+          }
+        }
+      }
+    }
+    if (found.kind != Rest::kWaypoint) {
+      return false;
+    }
+    gRest = found;
+    HoldShift();
+    Win32Android_MouseMove(gRest.aimX, gRest.aimY);
+    return true;
+  }
+
+  /// How a resting finger's ring looks (Game.REST_, griffmap.lua): what its drag gives, by what the rest found, or nothing on a
+  /// Checkbox of FAF's (`checkbox`), from which a drag presses nothing (DragTask; grifftap::RestLookOf).
+  void ShowRest(const bool checkbox)
+  {
+    const grifftap::RestLook look = grifftap::RestLookOf(checkbox, gRest.kind == Rest::kWaypoint, gRest.formation);
+    griffshown::Set(griffshown::kRest, {static_cast<float>(look)});
+  }
+
+  /// A finger rested here on the map (Game.griffRest), without Box: on a waypoint of the selection's orders it is marked for
+  /// deletion; on the ground, where FAF's right click is a plain move for the selection, the rest is the right button's, and
+  /// with mobile units selected the drag after it FAF's formation (kRestDragGivesFormation); else nothing, and a drag after it
+  /// is FAF's box as before. Not with a command mode armed, whose drag is its own (FAF's area attack), nor on FAF's UI or the
+  /// minimap, nor between the program's clicks. Whatever it found, the ring about the finger shows what its drag gives
+  /// (ShowRest, Game.REST_), also where it looked for nothing: there the left button's drag, the armed mode's, the minimap's or
+  /// the panel's, but from a Checkbox of FAF's nothing.
+  void RestTask(const WPARAM places)
+  {
+    const int x = Coordinate(places, 0);
+    const int y = Coordinate(places, 1);
+    try {
+      ForgetRest();
+      // The map as DragTask finds it for the drag that may follow.
+      const bool map = moho::UI_GamePlaying() && OnMap(static_cast<float>(x), static_cast<float>(y));
+      if (map && !ClicksRun() && !Covered(x, y) && !CommandModeArmed() && !MarkWaypoint(x, y)) {
+        // What the cursor is over, where it rests: the finger's place since its down.
+        const int kind = Ask(kTapKind);
+        if ((kind & kSelection) != 0 && (kind & kMoveOrder) != 0) {
+          gRest.kind = Rest::kGround;
+          gRest.formation = kRestDragGivesFormation && (kind & kMobileSelected) != 0;
+        }
+      }
+      ShowRest(!map && PressComesToCheckbox(static_cast<float>(x), static_cast<float>(y)));
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The rest's gesture went without its lift or a drag: a second finger came, or the system took the fingers.
+  void RestGoneTask(const WPARAM)
+  {
+    ForgetRest();
+  }
+
+  /// FAF's Shift+Ctrl right release on the marked waypoint, where FAF's cursor hovers its very command: FAF takes it out of
+  /// every unit it went to (CUIWorldView::HandleEvent's right release), as the undo does; whether it went. Not where the
+  /// press would pair with the press before it as the message layer's double click, which FAF's world view takes otherwise.
+  [[nodiscard]] bool DeleteMarked()
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr || session->CursorInfo().mIsDragger != gRest.command
+        || Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_RIGHT, gRest.aimX, gRest.aimY) != 0) {
+      return false;
+    }
+    Win32Android_Key(VK_CONTROL, kCtrlScanCode, TRUE, FALSE, 0);
+    Win32Android_MouseButton(WIN32ANDROID_BUTTON_RIGHT, TRUE, gRest.aimX, gRest.aimY);
+    Win32Android_MouseButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, gRest.aimX, gRest.aimY);
+    Win32Android_Key(VK_CONTROL, kCtrlScanCode, FALSE, FALSE, 0);
+    return true;
+  }
+
+  constexpr char kMarkedHelp[] =
+    "FafreGriffMarked() - the waypoint a resting finger marked for deletion: x, y, z where FAF draws it, and whether FAF's cursor hovers it";
+
+  /// The marked waypoint (RestTask) for griffhud.lua, which marks it with FAF's Cancel icon while lifting would take it out:
+  /// where FAF draws it now (it goes with what its command targets), and whether FAF's cursor hovers its very command. Nothing
+  /// where none is marked, or FAF holds its command no more.
+  int Marked(lua_State* const lua)
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (gRest.kind != Rest::kWaypoint || session == nullptr) {
+      return 0;
+    }
+    moho::UserCommandIssueHelper* const helper = moho::FindCommandIssueHelperInSession(session, gRest.command);
+    if (helper == nullptr) {
+      return 0;
+    }
+    const Wm3::Vector3f at = moho::ResolveCommandGraphAnchorWorldPosition(*helper);
+    if (!std::isfinite(at.x) || !std::isfinite(at.y) || !std::isfinite(at.z)) {
+      return 0;
+    }
+    lua_pushnumber(lua, at.x);
+    lua_pushnumber(lua, at.y);
+    lua_pushnumber(lua, at.z);
+    lua_pushboolean(lua, session->CursorInfo().mIsDragger == gRest.command ? 1 : 0);
+    return 4;
+  }
+
+  moho::CScrLuaBinder gMarkedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffMarked", &Marked, nullptr, "<global>", kMarkedHelp);
+
   /// A finger's drag from where it came down, as the place wants it: on the map the middle button's, which pans the camera,
-  /// pressed where the finger is now so that the map does not jump by the slop it went; after a rest or with Box a selection
-  /// box from where it came down, which Plus makes add to the selection (Shift's); on a panel or the minimap the left button's
-  /// from there, as a mouse drags there. The activity hears which drag is a pan, which a second finger makes two of.
+  /// pressed where the finger is now so that the map does not jump by the slop it went; with Box, or after a rest that found
+  /// neither a waypoint nor the ground for a formation, a selection box from where it came down, which Plus makes add to the
+  /// selection (Shift's); after a rest on the ground the right button's from there, FAF's formation, which turns to face the
+  /// way the finger goes and is ordered at the lift (with Shift for Plus); after a rest on a waypoint nothing, as the finger
+  /// slid off the waypoint it marked; on a panel or the minimap the left button's from there, as a mouse drags there, but
+  /// from a Checkbox of FAF's nothing, also after a rest on it, as its press would act (PressComesToCheckbox). The activity
+  /// hears which drag is a pan, which a second finger makes two of.
   void DragTask(const WPARAM)
   {
     DragStart drag;
@@ -2178,7 +3168,12 @@ namespace
       gDrags.pop_front();
     }
     EndDrag(drag.x, drag.y, 0, 0);
+    // What the rest before the drag found is this drag's, once: the rest's gesture goes on as the drag.
+    const Rest rest = drag.rested ? gRest.kind : Rest::kNone;
+    const bool formation = drag.rested && gRest.formation;
+    ForgetRest();
     bool map = false;
+    bool checkbox = false;
     try {
       const bool playing = moho::UI_GamePlaying();
       // A box, a panel's drag or a pan would come between the undo's or the tick's clicks; and one of the app's pieces that
@@ -2187,12 +3182,27 @@ namespace
         return;
       }
       map = playing && OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
+      checkbox = !map && PressComesToCheckbox(static_cast<float>(drag.x), static_cast<float>(drag.y));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
-    if (!map) {
+    if (checkbox) {
+      // A slide from the button presses nothing, as a mouse's: the pointer only goes with the finger.
+    } else if (!map) {
       gDrag = Drag::kPanel;
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, drag.x, drag.y);
+    } else if (rest == Rest::kWaypoint) {
+      // The finger slid off the waypoint it marked: the mark went with Shift, and nothing is deleted.
+    } else if (rest == Rest::kGround && formation && (drag.rail & kRailBox) == 0) {
+      const bool queued = (drag.rail & kRailQueue) != 0;
+      if (queued) {
+        HoldShift();
+      }
+      gFormationWatch = WatchOrders(false);
+      gDrag = queued ? Drag::kQueuedFormation : Drag::kFormation;
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, TRUE, drag.x, drag.y);
+      // The activity gives a formation up where its fingers go without a lift (Game.griffDragGiveUp).
+      Say(kSaidFormation, drag.number, 0);
     } else if (drag.rested || (drag.rail & kRailBox) != 0) {
       const bool adding = (drag.rail & kRailQueue) != 0;
       if (adding) {
@@ -2212,6 +3222,16 @@ namespace
   {
     try {
       EndDrag(Coordinate(places, 0), Coordinate(places, 1), SignedCoordinate(places, 2), SignedCoordinate(places, 3));
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The drag goes without its lift, at a place (GiveUpDrag).
+  void DragGiveUpTask(const WPARAM places)
+  {
+    try {
+      GiveUpDrag(Coordinate(places, 0), Coordinate(places, 1));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
@@ -2255,9 +3275,12 @@ namespace
     }
   }
 
-  /// A finger rested and lifted: on a panel FAF's right click, with the tap help, as the mouse scheme's hold gives it; on the map
-  /// the rest was for a box that did not come, but with Box it was none (TouchInput) and is Box's tap. With no game behind the
-  /// UI any more, the UI's right click wherever it is.
+  /// A finger rested and lifted: on a waypoint it marked (RestTask), FAF's removal of that order, as a PC player's Shift+Ctrl
+  /// right click on it, and a hint where FAF's cursor did not hover it then; on the ground where the rest was the right
+  /// button's, FAF's right click there, which a mouse's hold gives (with Shift for Plus), watched as a tap's; elsewhere on the
+  /// map the rest was for a box that did not come, but with Box it was none (TouchInput) and is Box's tap; on a panel FAF's
+  /// right click, with the tap help, as the mouse scheme's hold gives it. With no game behind the UI any more, the UI's right
+  /// click wherever it is.
   void RestTapTask(const WPARAM places)
   {
     Tap tap;
@@ -2267,13 +3290,27 @@ namespace
     try {
       const bool playing = moho::UI_GamePlaying();
       if (playing && (ClicksRun() || Covered(tap.x, tap.y))) {
+        ForgetRest();
         if ((tap.rail & kRailBox) != 0) {
           AnswerTap(tap, kTapOther, grifftap::Outcome::kBoxFoundNothing);
         }
         return;
       }
+      // FAF's release needs Shift down still, which the mark holds until it is forgotten.
+      const Rest rest = gRest.kind;
+      if (playing && rest == Rest::kWaypoint && !DeleteMarked()) {
+        Hint(kHintNotDeleted);
+      }
+      ForgetRest();
+      if (rest == Rest::kWaypoint) {
+        return;
+      }
       if (playing && OnMap(static_cast<float>(tap.x), static_cast<float>(tap.y))) {
-        if ((tap.rail & kRailBox) != 0) {
+        if (rest == Rest::kGround && (tap.rail & kRailBox) == 0) {
+          const int watch = WatchOrders(false);
+          ClickWith((tap.rail & kRailQueue) != 0, WIN32ANDROID_BUTTON_RIGHT, tap.x, tap.y);
+          EndWatchAfterInput(watch);
+        } else if ((tap.rail & kRailBox) != 0) {
           TapByPlace(tap);
         }
         return;
@@ -2283,7 +3320,7 @@ namespace
       ClickUi((tap.rail & kRailQueue) != 0, static_cast<float>(tap.x), static_cast<float>(tap.y), WIN32ANDROID_BUTTON_RIGHT);
       EndWatchAfterInput(watch);
       if ((tap.rail & kRailBox) != 0) {
-        // Box, which the activity left to the answer, was none of this: it stays lit, and Plus and Attack go out.
+        // Box, which the activity left to the answer, was none of this: it stays lit, and Plus goes out.
         AnswerTap(tap, kTapUi);
       }
     } catch (const std::exception& exception) {
@@ -2318,7 +3355,9 @@ namespace
         return;
       }
       moho::CUIWorldView* const view = WorldViewAt(static_cast<float>(x), static_cast<float>(y));
-      const int end = view == nullptr ? kEndPanel : view->IsMiniMap() ? kEndMinimap : Ask(kStrokeKind);
+      const int end = view == nullptr       ? kEndPanel
+                      : view->IsMiniMap() ? kEndMinimap | (AttackMoveArmed() ? kEndAttackMove : 0)
+                                          : Ask(kStrokeKind);
       gStrokeAnswer.store(static_cast<std::int64_t>(stroke) << 32 | static_cast<std::uint32_t>(end));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -2348,6 +3387,8 @@ namespace
     int rail = 0;
     /// A loop: FAF's patrol, where it offers one.
     bool patrol = false;
+    /// FAF's attack-move was armed as it began (its orders panel's button): each waypoint is an attack-move.
+    bool attackMove = false;
   };
 
   /// What the activity has given and the program's thread has not begun.
@@ -2363,10 +3404,11 @@ namespace
   /// The watch over the route's orders, one undo for all of its clicks.
   int gRouteWatch = 0;
 
-  /// What a route gives: a stroke that ends on a panel other than the minimap gives nothing, which the activity says; on its
-  /// way, only what is on the map itself is a waypoint. A loop is a patrol where FAF's orders panel offers one, not for
-  /// factories alone: their loop is their rally route, as any stroke. None while the undo's or the tick's clicks run, which
-  /// its clicks would come between.
+  /// What a route gives: a stroke that ends on a panel other than the minimap gives nothing, which a hint says; on its way,
+  /// only what is on the map itself is a waypoint. A loop is a patrol where FAF's orders panel offers one, not for factories
+  /// alone: their loop is their rally route, as any stroke. With FAF's attack-move armed (its orders panel's button) each
+  /// waypoint is an attack-move, as a PC player's clicks with Shift in that mode give; any other mode armed goes first. None
+  /// while the undo's or the tick's clicks run, which its clicks would come between.
   void BeginRouteTask(const WPARAM)
   {
     gRoute = Route{};
@@ -2387,11 +3429,12 @@ namespace
       }
       const POINT end = given.points.back();
       if (WorldViewAt(static_cast<float>(end.x), static_cast<float>(end.y)) == nullptr) {
-        Say(kSaidRouteGivenUp, 0, 0);
+        Hint(kHintCancelled);
         return;
       }
       gRoute.rail = given.rail;
       gRoute.patrol = given.patrol && Ask(kOffersPatrol) == kYes;
+      gRoute.attackMove = !gRoute.patrol && AttackMoveArmed();
       for (std::size_t at = 0; at + 1 < given.points.size(); ++at) {
         const POINT point = given.points[at];
         if (OnMap(static_cast<float>(point.x), static_cast<float>(point.y))) {
@@ -2400,8 +3443,8 @@ namespace
       }
       gRoute.points.push_back(end);
       // Its clicks are right clicks, or an attack-move's or a patrol's left clicks in the mode each arms, which a command mode
-      // armed before would take for its own.
-      if (CommandModeArmed()) {
+      // armed before would take for its own: but FAF's attack-move, which the route's clicks are then.
+      if (CommandModeArmed() && !gRoute.attackMove) {
         moho::CON_Execute(kEndCommandMode);
       }
       gRouteWatch = WatchOrders(false);
@@ -2412,7 +3455,8 @@ namespace
   }
 
   /// The next waypoint: FAF's right click there, the first one replacing what the units were doing unless Plus counts, the
-  /// others appended (Shift, held to the route's end). With Attack, an attack-move's left click; a patrol's, a patrol's.
+  /// others appended (Shift, held to the route's end). With FAF's attack-move armed, an attack-move's left click; a patrol's,
+  /// a patrol's.
   void RouteStepTask(const WPARAM)
   {
     if (gNextPoint >= gRoute.points.size()) {
@@ -2429,7 +3473,7 @@ namespace
       // A mode that FAF ended after a replacing order is armed again; where FAF offers no attack-move, a right click.
       if (gRoute.patrol) {
         Click(CommandModeArmed() || ArmPatrol() ? WIN32ANDROID_BUTTON_LEFT : WIN32ANDROID_BUTTON_RIGHT, point.x, point.y);
-      } else if ((gRoute.rail & kRailAttack) != 0 && (CommandModeArmed() || ArmAttackMove())) {
+      } else if (gRoute.attackMove && (CommandModeArmed() || ArmAttackMove())) {
         Click(WIN32ANDROID_BUTTON_LEFT, point.x, point.y);
       } else {
         Click(WIN32ANDROID_BUTTON_RIGHT, point.x, point.y);
@@ -2461,13 +3505,13 @@ namespace
   {
     switch (placed) {
       case griffdraft::Placed::kNoFreeDeposit:
-        Say(kSaidToast, kToastNoFreeResource, 0);
+        Hint(kHintNoFreeResource);
         break;
       case griffdraft::Placed::kTaken:
-        Say(kSaidToast, kToastTaken, 0);
+        Hint(kHintTaken);
         break;
       case griffdraft::Placed::kFull:
-        Say(kSaidToast, kToastFull, 0);
+        Hint(kHintFull);
         break;
       case griffdraft::Placed::kPlaced:
         break;
@@ -2489,10 +3533,14 @@ namespace
     }
   }
 
-  /// Where PlaceAt would put a plan for a finger there, without putting it: false where it would not.
-  [[nodiscard]] bool WouldPlace(const MapView& map, const int x, const int y, griffdraft::Place& place)
+  /// Where PlaceAt would put a plan for a finger there, without putting it: false where it would put none. A building that
+  /// stands on no deposit has its place under the finger also where its ground is taken (`taken`), as FAF's ghost shows
+  /// itself over ground its check refuses, in the colour of a refused place: so a finger that slides along the draft's plans
+  /// and the buildings sees where the ground of one ends.
+  [[nodiscard]] bool WouldPlace(const MapView& map, const int x, const int y, griffdraft::Place& place, bool& taken)
   {
     const griffdraft::Building& building = gDraft.Picked();
+    taken = false;
     if (gDraft.Full()) {
       return false;
     }
@@ -2510,7 +3558,8 @@ namespace
       return false;
     }
     place = gDraft.Snapped(at.x, at.z);
-    return !gDraft.OnPlan(building, place.x, place.z) && GroundFree(building, place.x, place.z);
+    taken = gDraft.OnPlan(building, place.x, place.z) || !GroundFree(building, place.x, place.z);
+    return true;
   }
 
   /// A tap in the draft (TouchInput's DRAFT_PENDING): on the UI the UI's click, with the tap help; a lit Plus stays for the tick
@@ -2575,7 +3624,7 @@ namespace
       gDraftLine.clear();
       griffdraft::Place at;
       if (DraftPlaceUnder(Coordinate(places, 0), Coordinate(places, 1), at) && !gDraft.AddLine(at.x, at.z, GroundFree)) {
-        Say(kSaidToast, kToastFull, 0);
+        Hint(kHintFull);
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -2619,7 +3668,8 @@ namespace
   }
 
   /// A finger that rests in the draft on no plan: the plan its lift would place shown under it, as it moves (the moves
-  /// coalesce); at the lift that plan, or on the UI the rest's right click there, as Griff's rest on a panel gives.
+  /// coalesce), also where its ground is taken (WouldPlace); at the lift that plan, or on the UI the rest's right click there,
+  /// as Griff's rest on a panel gives.
   void DraftAimTask(const WPARAM places)
   {
     try {
@@ -2627,7 +3677,9 @@ namespace
       const int x = Coordinate(places, 0);
       const int y = Coordinate(places, 1);
       gAimOnMap = !ClicksRun() && gDraft.Open() && MapAt(x, y, map);
-      gAimShown = gAimOnMap && WouldPlace(map, x, y, gAim);
+      bool taken = false;
+      gAimShown = gAimOnMap && WouldPlace(map, x, y, gAim, taken);
+      gAimTaken = taken;
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
       gAimShown = false;
@@ -2667,6 +3719,22 @@ namespace
     gAimOnMap = false;
   }
 
+  /// A finger rests in the draft, Griff's rest (Game.draftRest: its place and number): whether it is on FAF's UI, where the
+  /// rest is the panel's as outside the draft, its lift FAF's right click there (RestTapTask) as the aim's on FAF's UI gave it;
+  /// the activity hears it (SAID_DRAFT_REST). With no game behind the UI any more all of it is the UI's.
+  void DraftRestTask(const WPARAM places)
+  {
+    const float x = static_cast<float>(Coordinate(places, 0));
+    const float y = static_cast<float>(Coordinate(places, 1));
+    bool onUi = false;
+    try {
+      onUi = !moho::UI_GamePlaying() || !OnMap(x, y);
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+    Say(kSaidDraftRest, Coordinate(places, 2), onUi ? 1 : 0);
+  }
+
   /// Box over deposits with an extractor picked: every free deposit of its kind whose middle is in the box on the picture gets
   /// a plan (FAF's own box is not pressed).
   void DraftBoxTask(const WPARAM places)
@@ -2689,7 +3757,7 @@ namespace
       bool full = false;
       gDraft.PlaceOnDeposits(inside, GroundFree, full);
       if (full) {
-        Say(kSaidToast, kToastFull, 0);
+        Hint(kHintFull);
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3283,7 +4351,7 @@ namespace
     gCommitWatch = 0;
     const int notOrdered = gClicks.unreached + gClicks.refused;
     if (notOrdered > 0) {
-      Say(kSaidToast, kToastNotOrdered, notOrdered);
+      Hint(kHintNotOrdered, notOrdered);
     }
     Say(kSaidCommitted, gClicks.appendAll ? kRailQueue : 0, 0);
     ForgetDraft();
@@ -3295,7 +4363,7 @@ namespace
   /// (FAF's build templates cleared first), in its cell, the first replacing what the builders do unless Plus counted. It
   /// waits while the undo's clicks run, or a finger's drag holds FAF's dragger (a pan's camera drag, a panel's), which would
   /// take the clicks' cursor and come between them: it comes after them, from the next frame on (PlaceTask), as the undo
-  /// does; and while an undo the pill asked for waits for the sim, as its record is a gesture's from before the tick, whose
+  /// does; and while an undo the button asked for waits for the sim, as its record is a gesture's from before the tick, whose
   /// orders would replace it. Clicks that ran past their patience are over first, as their own end has them: the tick's own
   /// closes its draft, and its 'not ordered' stays the last word.
   void DraftCommitTask(const WPARAM plus)
@@ -3314,27 +4382,27 @@ namespace
         return;
       }
       if (gDraft.Plans().empty()) {
-        Say(kSaidToast, kToastNoPlan, 0);
+        Hint(kHintNoPlan);
         return;
       }
       // Without the map's view each click would only wait for frames that never show its place (griff.lua's report of the
       // view failed): no plan is ordered, and the draft stays.
       if (!gSelection.viewKnown) {
-        Say(kSaidToast, kToastNotOrdered, static_cast<int>(gDraft.Plans().size()));
+        Hint(kHintNotOrdered, static_cast<int>(gDraft.Plans().size()));
         return;
       }
       if (Ask(kCommitBegin) != kYes) {
-        Say(kSaidToast, kToastNoEngineer, 0);
+        Hint(kHintNoEngineer);
         return;
       }
       const std::vector<griffdraft::Plan> buildable = gDraft.Buildable(GroundFree);
       if (buildable.empty()) {
-        Say(kSaidToast, kToastAllOnBuildings, 0);
+        Hint(kHintAllOnBuildings);
         moho::CON_Execute(kCommitEnd);
         return;
       }
       if (buildable.size() < gDraft.Plans().size()) {
-        Say(kSaidToast, kToastSomeOnBuildings, static_cast<int>(gDraft.Plans().size() - buildable.size()));
+        Hint(kHintSomeOnBuildings, static_cast<int>(gDraft.Plans().size() - buildable.size()));
       }
       Clicks clicks;
       for (const griffdraft::Plan& plan : buildable) {
@@ -3347,15 +4415,17 @@ namespace
       }
       clicks.appendAll = plus != 0;
       clicks.finish = &FinishCommit;
-      // The builders CommitBegin selected are the tick's units: their queues as they are now, for its undo.
+      // The builders CommitBegin selected are the tick's units: their queues as they are now, for its undo, which the tick
+      // always offers.
       gCommitWatch = WatchOrders(false);
+      gWatch.tick = gCommitWatch != 0;
       StartClicks(std::move(clicks));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
   }
 
-  // --- The undo: the pill takes the last gesture's orders back --------------------------------------------------------------
+  // --- The undo: its button takes the last gesture's orders back -----------------------------------------------------------
 
   /// The call of griff.lua's that arms FAF's mode for an order given again: the construction panel's build mode for its
   /// building, else the mode the orders panel arms for its way (griff.lua Arm, by the number of griffundo::Way).
@@ -3367,7 +4437,7 @@ namespace
     return "Arm(" + std::to_string(static_cast<int>(click.way)) + ")";
   }
 
-  /// The pill's record, whose undo was not done and nothing of it clicked, holds as it was: the pill offers it again for its
+  /// The undo's record, whose undo was not done and nothing of it clicked, holds as it was: the button offers it again for its
   /// time, as the activity is told the record anew (Undo.ordered after Undo.undone).
   void OfferAgain()
   {
@@ -3379,7 +4449,7 @@ namespace
   /// the gesture went and came back (an upgrade FAF ordered for one of its assists goes on; what the plan was unsure of counts
   /// as not), part of it (also where nothing was left to click, as for a factory's builds a Stop took), or nothing, where it
   /// had steps and none of them made a release or a click: as where its clicks ended before their first step (no frame came,
-  /// the game ended, a throw). Nothing was clicked then, so the record holds as it was and the pill offers it again, while
+  /// the game ended, a throw). Nothing was clicked then, so the record holds as it was and the button offers it again, while
   /// the game goes on and no other order came meanwhile, which would have ended it. The Guards of the record and those the
   /// undo gave back wait for an upgrade FAF's assist-to-upgrade orders only after this word, for the game's next few ticks
   /// (gUndone), while a game is playing: none outlives it.
@@ -3394,7 +4464,11 @@ namespace
     const bool whole = notDone == 0 && !gUndoing.record.unknown;
     const bool none = gClicks.acted == 0 && !gClicks.steps.empty();
     const int said = whole ? kUndoneWhole : none ? kNotUndone : kUndoneInPart;
-    Say(kSaidUndone, gUndoing.record.number, said);
+    SayUndone(gUndoing.record.number, said);
+    // The gesture taken back whole: its units are in the groups they were in before it, where no other gesture took them.
+    if (whole) {
+      gGroups.Undone(gUndoing.record.gestures, gUndoing.record.earlier);
+    }
     if (playing) {
       const std::unordered_set<int>& guarded = gUndoing.record.guarded;
       gUndone.Finished(gUndoing.record.number, std::vector<int>(guarded.begin(), guarded.end()),
@@ -3528,12 +4602,12 @@ namespace
     return steps;
   }
 
-  /// The pill's undo, once the sim took what the gesture ordered its units, so that its plan reads the queues the sim holds
+  /// The undo the button asked for, once the sim took what the gesture ordered its units, so that its plan reads the queues the sim holds
   /// (a paused game's after it resumed, a lagging one's its lag later), no clicks run and no finger's drag holds FAF's
   /// dragger, which would take the clicks' cursor and come between them (a pan's camera drag, a box's, a panel's): until then
-  /// the fingers are free and the pill says it waits, and the next order ends the record as ever. Then the record is taken
+  /// the fingers are free and the button says it waits, and the next order ends the record as ever. Then the record is taken
   /// (one level), griff.lua keeps the selection, ends a command mode and holds FAF's capping off (UndoBegin), and the clicks
-  /// run. Without the map's view, which their places are found on, or where the plan threw, nothing is clicked and the pill
+  /// run. Without the map's view, which their places are found on, or where the plan threw, nothing is clicked and the button
   /// offers the record again. All of the undo's inputs go to the sim after the gesture's, which it takes in order. Clicks
   /// that ran past their patience are over first: the tick's orders they end are a record of their own, which an undo asked
   /// for the one before does not take back.
@@ -3547,7 +4621,7 @@ namespace
       return;
     }
     if (!gSelection.viewKnown) {
-      Say(kSaidUndone, gRecord.number, kNotUndone);
+      SayUndone(gRecord.number, kNotUndone);
       OfferAgain();
       return;
     }
@@ -3559,7 +4633,7 @@ namespace
       clicks.steps = PlanUndoSteps(gRecord, dropped, unsure, again);
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
-      Say(kSaidUndone, gRecord.number, kNotUndone);
+      SayUndone(gRecord.number, kNotUndone);
       OfferAgain();
       return;
     }
@@ -3583,22 +4657,67 @@ namespace
     StartClicks(std::move(clicks));
   }
 
-  /// The pill was tapped for record `number`: its undo, now or once the tick's or another undo's clicks are over. A record
-  /// replaced or ended meanwhile is not taken back (one level).
+  /// The undo of a draft the cross or two fingers' tap dropped (Kept::kDraft): it is open again as it was, its builders with
+  /// it, and an order mode armed since the drop ends, as none stays armed while plans wait (griff.lua DraftBack), at once, as
+  /// nothing is clicked and nothing goes to the sim. No other draft is open by then, as one that opens ends the record
+  /// (PickForDraft), and no clicks run, which only an open draft's tick or an order record's undo starts.
+  void DraftBack()
+  {
+    Record record = std::move(gRecord);
+    gRecord = Record{};
+    if (!moho::UI_GamePlaying()) {
+      SayUndone(record.number, kNotUndone);
+      return;
+    }
+    gDraft = std::move(record.draft);
+    gDraftBlueprints = std::move(record.blueprints);
+    ShowDraftOpen(gDraft.Picked());
+    moho::CON_Execute(kDraftBack);
+    SayUndone(record.number, kUndoneWhole);
+  }
+
+  /// The undo of a control group a rest stored over (Kept::kGroup): the units it held that live are the group again, as FAF
+  /// stores a selection (griff.lua GroupBack), at once, as nothing is clicked or ordered; with none of them alive nothing is
+  /// given back, and the group stays as the store left it.
+  void GroupBack()
+  {
+    Record record = std::move(gRecord);
+    gRecord = Record{};
+    const bool back =
+      moho::UI_GamePlaying()
+      && Ask((std::string(kGriffLua) + "GroupBack(" + std::to_string(record.group) + ", " + UnitList(record.held) + ")").c_str()) == kYes;
+    SayUndone(record.number, back ? kUndoneWhole : kNotUndone);
+  }
+
+  /// The undo's button was tapped for record `number`: a gesture's orders taken back, now or once the tick's or another undo's
+  /// clicks are over; what a gesture of Griff's own threw away put back at once. A record replaced or ended meanwhile is not
+  /// taken back (one level).
   void UndoTask(const WPARAM number)
   {
     try {
-      if (gRecord.number != 0 && static_cast<WPARAM>(gRecord.number) == number) {
-        gRecord.asked = true;
-        TryUndo();
+      if (gRecord.number == 0 || static_cast<WPARAM>(gRecord.number) != number) {
+        return;
+      }
+      switch (gRecord.kept) {
+        case Kept::kOrders:
+          gRecord.asked = true;
+          TryUndo();
+          break;
+        case Kept::kDraft:
+          DraftBack();
+          break;
+        case Kept::kGroup:
+          GroupBack();
+          break;
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
   }
 
-  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered. Not while the program's clicks run, which end
-  /// the tick's draft themselves; a tick that waits goes all the same.
+  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered, and one of plans enough is a record of Griff's
+  /// own (griffundo::DropSavesWork), which the undo's button brings back as it was, at rest where its plans stood. Not while
+  /// the program's clicks run, which end the tick's draft themselves; a tick that waits goes all the same.
   void DraftDropTask(const WPARAM)
   {
     gCommitAsked = 0;
@@ -3606,9 +4725,37 @@ namespace
       if (ClicksRun() || !gDraft.Open()) {
         return;
       }
+      const bool playing = moho::UI_GamePlaying();
+      Record dropped;
+      if (playing && griffundo::DropSavesWork(gDraft.Plans().size())) {
+        dropped.kept = Kept::kDraft;
+        dropped.draft = gDraft;
+        dropped.draft.MoveEnd();
+        dropped.blueprints = gDraftBlueprints;
+      }
       ForgetDraft();
-      if (moho::UI_GamePlaying()) {
+      if (playing) {
         moho::CON_Execute(kDraftEnded);
+      }
+      if (dropped.kept == Kept::kDraft) {
+        Offer(std::move(dropped));
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// A tap on the cross, Griff's Esc (EscapeNow): the draft goes as the cross dropped it, else FAF's armed command mode ends,
+  /// else the selection goes, as FAF's HandleEsc puts them away. The mode and the selection not between the program's clicks,
+  /// whose they are, as for two fingers' tap.
+  void EscapeTask(const WPARAM)
+  {
+    try {
+      const grifftap::Escape escape = EscapeNow();
+      if (escape == grifftap::Escape::kDropDraft) {
+        DraftDropTask(0);
+      } else if (escape != grifftap::Escape::kNothing && moho::UI_GamePlaying() && !ClicksRun()) {
+        moho::CON_Execute(escape == grifftap::Escape::kEndCommandMode ? kEndCommandMode : kDeselect);
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3744,6 +4891,18 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_toGroup(JNI
   Win32Android_RunOnWindowThread(&ToGroupTask, fly != JNI_FALSE ? 1 : 0);
 }
 
+/// A finger rests on the handle, rest number `rest` (HandleRestTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_handleRest(JNIEnv*, jclass, const jint rest)
+{
+  Win32Android_RunOnWindowThread(&HandleRestTask, static_cast<WPARAM>(rest & 0xFFFF));
+}
+
+/// The lift of the handle's rest that distributes (DistributeTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_distribute(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&DistributeTask, 0);
+}
+
 /// A route's waypoints, `count` places as x, y pairs in the picture's pixels; `rail`: the RAIL_ bits that count for it; `patrol`:
 /// a loop.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_route(
@@ -3801,10 +4960,28 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragEn
   Win32Android_RunOnWindowThread(&DragEndTask, Places(x, y, Velocity(velocityX), Velocity(velocityY)));
 }
 
+/// The drag goes without its lift, here: FAF's formation given up, any other drag ended without a glide (DragGiveUpTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragGiveUp(JNIEnv*, jclass, const jint x, const jint y)
+{
+  Win32Android_RunOnWindowThread(&DragGiveUpTask, Places(x, y));
+}
+
 /// A finger rested here and lifted (RestTapTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_restTap(JNIEnv*, jclass, const jint x, const jint y, const jint rail)
 {
   Win32Android_RunOnWindowThread(&RestTapTask, Places(x, y, rail));
+}
+
+/// A finger rests here on the map, without Box (RestTask): a waypoint marked, or the ground for a formation's right button.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffRest(JNIEnv*, jclass, const jint x, const jint y)
+{
+  Win32Android_RunOnWindowThread(&RestTask, Places(x, y));
+}
+
+/// The resting finger's gesture went without its lift or a drag (RestGoneTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffRestGone(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&RestGoneTask, 0);
 }
 
 /// The camera follows fingers: `start` keeps what lies at x, y under them, then fingers `distance` apart zoom it (0: one).
@@ -3869,6 +5046,13 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftAim(JN
   RunDraft(phase, &DraftAimTask, &DraftAimEndTask, &DraftAimGoneTask, Places(x, y));
 }
 
+/// A finger rests here in the draft, Griff's rest number `rest` (DraftRestTask).
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_draftRest(JNIEnv*, jclass, const jint x, const jint y, const jint rest)
+{
+  Win32Android_RunOnWindowThread(&DraftRestTask, Places(x, y, rest));
+}
+
 /// Box from one corner to the other over deposits, with an extractor picked (DraftBoxTask).
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_draftBox(JNIEnv*, jclass, const jint x0, const jint y0, const jint x1, const jint y1)
@@ -3882,23 +5066,22 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftCommit
   Win32Android_RunOnWindowThread(&DraftCommitTask, plus != JNI_FALSE ? 1 : 0);
 }
 
-/// The cross, or two fingers' tap in the draft (DraftDropTask).
+/// Two fingers' tap in the draft (DraftDropTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftDrop(JNIEnv*, jclass)
 {
   Win32Android_RunOnWindowThread(&DraftDropTask, 0);
 }
 
-/// The orders as the last frame drew them (PublishOrders), as many of its numbers as fit; how many.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOrders(JNIEnv* const env, jclass, const jfloatArray values)
+/// A tap on the cross, Griff's Esc (EscapeTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscape(JNIEnv*, jclass)
 {
-  std::vector<float> shown;
-  {
-    const std::lock_guard<std::mutex> lock(gOrdersShownMutex);
-    shown = gOrdersShown;
-  }
-  const jsize count = (std::min)(env->GetArrayLength(values), static_cast<jsize>(shown.size()));
-  env->SetFloatArrayRegion(values, 0, count, shown.data());
-  return count;
+  Win32Android_RunOnWindowThread(&EscapeTask, 0);
+}
+
+/// Whether the cross shows, as the last frame found Esc.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscapes(JNIEnv*, jclass)
+{
+  return gEscapes.load() ? JNI_TRUE : JNI_FALSE;
 }
 
 /// What the player opened of FAF's that shows (FafreGriffOpened), into `values` as many whole boxes as fit, left, top, right and
@@ -3915,7 +5098,39 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOpened
   return count;
 }
 
-/// The undo's pill was tapped for record `number` (UndoTask).
+/// A hint of the activity's (Game.HINT_, as a stroke given up), where FAF prints its own messages (griff.lua Hint).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHint(JNIEnv*, jclass, const jint kind, const jint number)
+{
+  Win32Android_RunOnWindowThread(&HintTask, Places(kind, number));
+}
+
+/// How the rail's Box and Plus look (Rail.look, two bits each, Box's first) with a finger on the draft's tick, its cross and the
+/// undo's button (Game.HUD_HELD_), and the undo's button (Game.HUD_UNDO_, the part of its time left), which griffhud.lua draws in
+/// FAF's UI (FafreGriffHud).
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_setGriffHud(JNIEnv*, jclass, const jint looks, const jint undo, const jfloat undoLeft)
+{
+  gHudLooks.store(looks);
+  gUndoShown.store(undo);
+  gUndoLeft.store(undoLeft);
+}
+
+/// Where griffhud.lua drew Box, Plus, the undo's button, the draft's tick and its cross (FafreGriffHudPlaces), into `values`:
+/// left, top, right, bottom in the picture's pixels and 1 where something the player opened of FAF's lies over it or FAF's UI
+/// is hidden, for each; how many numbers.
+extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHudPlaces(JNIEnv* const env, jclass, const jfloatArray values)
+{
+  std::array<float, kHudPlaces> places{};
+  {
+    const std::lock_guard<std::mutex> lock(gHudPlacesMutex);
+    places = gHudPlaces;
+  }
+  const jsize count = (std::min)(env->GetArrayLength(values), static_cast<jsize>(kHudPlaces));
+  env->SetFloatArrayRegion(values, 0, count, places.data());
+  return count;
+}
+
+/// The undo's button was tapped for record `number` (UndoTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffUndo(JNIEnv*, jclass, const jint number)
 {
   Win32Android_RunOnWindowThread(&UndoTask, static_cast<WPARAM>(number));
@@ -3937,4 +5152,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffClickR
 bool hostclicks::GriffClicking() noexcept
 {
   return gClicking.load();
+}
+
+bool hostclicks::GriffHoldsCursor() noexcept
+{
+  // As the clicks' wait, only within their patience: without frames (the activity in the back) the leave is not held for good.
+  return gDistributing.since != 0 && !Outwaited(gDistributing.since, Now());
 }

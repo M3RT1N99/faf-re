@@ -160,7 +160,7 @@ namespace griffundo
 
   /// Whether an order FAF's UI gave is a gesture's to take back: not FAF's by-product (None), nor the construction panel's own
   /// queue (a factory's units, an upgrade, an enhancement: a script other than the attack-move's), which the panel itself
-  /// takes back. Any other order ends the pill's record: only the last order counts.
+  /// takes back. Any other order ends the undo's record: only the last order counts.
   [[nodiscard]] inline bool Takeable(const std::string& type, const bool attackMove)
   {
     return type != "None" && type != "BuildFactory" && type != "Upgrade" && (type != "Script" || attackMove);
@@ -307,6 +307,92 @@ namespace griffundo
       return Way::kBuild;
     }
     return Way::kNone;
+  }
+
+  /// Whether taking a gesture back saves more than the player's own next order (Griff v4, the user's rule of 2026-11-14): the
+  /// gesture replaced a queue (`before`, as it began) that held a building to give back, or two orders or more that come back
+  /// (a route, a patrol, a line of reclaims). For idle units, or units with one plain move or one assist, a Stop or the next
+  /// order does as much, and no undo is offered. A factory's own builds and what the orders panel has no mode for cannot come
+  /// back by a click and count for nothing; an attack-move's script and its AggressiveMove are one order.
+  [[nodiscard]] inline bool SavesWork(const std::vector<Entry>& before)
+  {
+    std::size_t back = 0;
+    for (const Entry& entry : before) {
+      const Way way = WayOf(entry);
+      if (way == Way::kBuild) {
+        return true;
+      }
+      back += way != Way::kNone ? 1 : 0;
+    }
+    return back >= 2;
+  }
+
+  /// What a record of the undo's holds (the program's Record): a gesture's orders, which its undo takes back by FAF's clicks
+  /// once the sim took them; or what a gesture of Griff's own threw away that ordered nothing, which its undo puts back at the
+  /// tap: the draft the cross or two fingers' tap dropped, the units of a control group a rest stored over.
+  enum class Kept
+  {
+    kOrders,
+    kDraft,
+    kGroup,
+  };
+
+  /// Whether the undo's button offers to bring back a draft that the cross or two fingers' tap dropped, a record of Griff's own
+  /// that orders nothing (the user's choice of 2026-11-18): one of two plans or more, as one plan comes back by a tap.
+  [[nodiscard]] constexpr bool DropSavesWork(const std::size_t plans)
+  {
+    return plans >= 2;
+  }
+
+  /// Whether a building picked for the draft (the program's PickForDraft) ends the undo's record, which holds `kept`: where it
+  /// opens the draft, none being `open`, a dropped draft's record ends, as its undo would put that draft in the new one's place.
+  [[nodiscard]] constexpr bool OpeningEndsRecord(const bool open, const Kept kept)
+  {
+    return !open && kept == Kept::kDraft;
+  }
+
+  /// Whether the undo's button offers to give a control group back the units a rest stored over, a record of Griff's own that
+  /// orders nothing (the user's choice of 2026-11-18): where the store took out a unit that lived, one of `before`, the
+  /// group's units that lived as it came, that `after`, those it holds now, lacks. Not for a store on an empty slot, nor for
+  /// one that kept every unit and added others, and never for Plus's append (`appended`), which takes none of them out. The
+  /// hook says the same of any store while FAF's option to steal from other control groups is On (Off by default), which
+  /// takes the stored units out of their other groups without a word (selection.lua AddSelectionSet), as the undo's would.
+  [[nodiscard]] inline bool StoreSavesWork(const bool appended, std::vector<int> before, std::vector<int> after)
+  {
+    if (appended) {
+      return false;
+    }
+    std::sort(before.begin(), before.end());
+    std::sort(after.begin(), after.end());
+    return !std::includes(after.begin(), after.end(), before.begin(), before.end());
+  }
+
+  /// What a store by a rest on a slot of Griff's control groups does to the undo's record (the program's GroupStored).
+  enum class StoreOutcome
+  {
+    /// The store is a record of Griff's own, whose undo gives the group back the units it took out (StoreSavesWork), in
+    /// place of the record before it.
+    kOffer,
+    /// The record ends: the store changed the group of a group's record, whose undo would undo that store.
+    kEnd,
+    /// The record stays as it was.
+    kKeep,
+  };
+
+  /// What a store on control group `group` does to the undo's record, which holds `kept`, where that is a group's, of group
+  /// `recordGroup`: `before` the group's units that lived as the store came and `after` those it holds now, `appended` for
+  /// Plus's append. A store that took out a unit that lived offers a record of its own; any other that changed the record's
+  /// group ends that record; one that changed nothing, as a second rest on the slot or a double click there, or that changed
+  /// another group keeps it.
+  [[nodiscard]] inline StoreOutcome OutcomeOfStore(const Kept kept, const int recordGroup, const int group, const bool appended,
+                                                   std::vector<int> before, std::vector<int> after)
+  {
+    if (StoreSavesWork(appended, before, after)) {
+      return StoreOutcome::kOffer;
+    }
+    std::sort(before.begin(), before.end());
+    std::sort(after.begin(), after.end());
+    return kept == Kept::kGroup && recordGroup == group && before != after ? StoreOutcome::kEnd : StoreOutcome::kKeep;
   }
 
   /// Whether an order is the script FAF's attack-move button gives (commandmode.lua's OnScriptIssued then asks the sim's
