@@ -37,10 +37,12 @@ final class Launch {
     static final String EXTRA_MODS = EXTRA_PREFIX + "MODS";
     /** A String[], one for each of MODS in its order: the file of that mod version in content.faforever.com/mods/. */
     static final String EXTRA_MOD_FILES = EXTRA_PREFIX + "MOD_FILES";
+    /** A String: the token the status provider gave the launcher for this start, which LaunchGameActivity spends (PlayTokens). */
+    static final String EXTRA_TOKEN = EXTRA_PREFIX + "TOKEN";
 
     static final List<String> EXTRAS = Collections.unmodifiableList(Arrays.asList(GameStart.EXTRA_GAME_VERSION,
         GameStart.EXTRA_LAUNCHER_ARGUMENTS, EXTRA_FEATURED_MOD, EXTRA_REJOIN_OFFER, EXTRA_REJOIN_PEERS, EXTRA_REJOIN_SOURCE,
-        EXTRA_MAP, EXTRA_MODS, EXTRA_MOD_FILES));
+        EXTRA_MAP, EXTRA_MODS, EXTRA_MOD_FILES, EXTRA_TOKEN));
 
     /** The featured mod whose game files the app has. */
     static final String FAF = "faf";
@@ -132,13 +134,13 @@ final class Launch {
     }
 
     /**
-     * A start from outside: its extras as the intent has them (any type: each is checked here), whether it has data (the
-     * replay) with the data's scheme and authority as Android reads them, and the file the rejoin's seat key goes to.
-     * ARGUMENTS for an extra that is not what the contract says, NO_GAME_FILES for a featured mod other than faf, REPLAY for
-     * data that is no replay a launcher may give.
+     * A start from outside: its extras as the intent has them (any type: each is checked here; TOKEN is the trampoline's),
+     * whether it has data (the replay) with the data's scheme and authority as Android reads them and whether the start grants
+     * reading it, and the file the rejoin's seat key goes to. ARGUMENTS for an extra that is not what the contract says,
+     * NO_GAME_FILES for a featured mod other than faf, REPLAY for data that is no replay a launcher may give.
      */
-    static Launch check(Map<String, ?> extras, boolean replay, String replayScheme, String replayAuthority, File rejoinKey)
-        throws GameStart.Failure {
+    static Launch check(Map<String, ?> extras, boolean replay, String replayScheme, String replayAuthority, boolean replayGranted,
+        File rejoinKey) throws GameStart.Failure {
         for (String name : extras.keySet()) {
             if (name.startsWith(EXTRA_PREFIX) && !EXTRAS.contains(name)) {
                 throw GameStart.Failure.arguments("the start has the extra " + name + ", which the contract has not");
@@ -170,6 +172,12 @@ final class Launch {
             // Also behind a user's id ("0@..."), which Android's resolver takes off.
             if (replayAuthority == null || replayAuthority.contains(OWN_AUTHORITY)) {
                 throw GameStart.Failure.replay("it must come from the launcher's own provider, not " + replayAuthority);
+            }
+            // Android lets the start through with the grant only when its app may read the URI itself. Without it the game
+            // would read with access of its own, a grant the user's pick or another app gave it, for an app that has none.
+            if (!replayGranted) {
+                throw GameStart.Failure.replay("the start does not grant reading it: a launcher starts the game with "
+                    + "FLAG_GRANT_READ_URI_PERMISSION");
             }
         }
         boolean liveReplay = arguments.contains("/replay");

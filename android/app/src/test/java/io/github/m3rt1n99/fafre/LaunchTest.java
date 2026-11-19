@@ -54,7 +54,12 @@ public class LaunchTest {
     }
 
     private static Launch check(Map<String, Object> extras) throws GameStart.Failure {
-        return Launch.check(extras, false, null, null, KEY);
+        return Launch.check(extras, false, null, null, false, KEY);
+    }
+
+    /** A start with a replay of {@code authority}, which it grants the game to read. */
+    private static Launch checkReplay(Map<String, Object> extras, String scheme, String authority) throws GameStart.Failure {
+        return Launch.check(extras, true, scheme, authority, true, KEY);
     }
 
     // --- The whitelist -----------------------------------------------------------------------------
@@ -223,8 +228,16 @@ public class LaunchTest {
         assertEquals(Arrays.asList("io.github.m3rt1n99.fafre.extra.GAME_VERSION", "io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS",
             "io.github.m3rt1n99.fafre.extra.FEATURED_MOD", "io.github.m3rt1n99.fafre.extra.REJOIN_OFFER",
             "io.github.m3rt1n99.fafre.extra.REJOIN_PEERS", "io.github.m3rt1n99.fafre.extra.REJOIN_SOURCE",
-            "io.github.m3rt1n99.fafre.extra.MAP", "io.github.m3rt1n99.fafre.extra.MODS", "io.github.m3rt1n99.fafre.extra.MOD_FILES"),
-            Launch.EXTRAS);
+            "io.github.m3rt1n99.fafre.extra.MAP", "io.github.m3rt1n99.fafre.extra.MODS", "io.github.m3rt1n99.fafre.extra.MOD_FILES",
+            "io.github.m3rt1n99.fafre.extra.TOKEN"), Launch.EXTRAS);
+    }
+
+    @Test
+    public void theTokenIsTheTrampolinesAndNoneOfTheChecksHere() throws GameStart.Failure {
+        // LaunchGameActivity spends it (PlayTokens) before these checks: any value passes them, as does none.
+        Launch launch = check(extras(Launch.EXTRA_TOKEN, "0123456789abcdef0123456789abcdef"));
+        assertEquals(Collections.emptyList(), Arrays.asList(launch.arguments));
+        assertNull(launch.version);
     }
 
     @Test
@@ -290,26 +303,35 @@ public class LaunchTest {
 
     @Test
     public void aReplayIsAContentUriOfAnotherAppsProvider() throws GameStart.Failure {
-        assertTrue(Launch.check(extras(), true, "content", "com.faforever.rustclient.replays", KEY).replay);
+        assertTrue(checkReplay(extras(), "content", "com.faforever.rustclient.replays").replay);
         assertFailure(GameStart.Code.REPLAY, "the replay: a launcher gives it as a content:// URI that it grants the game to read, "
-            + "not file:", () -> Launch.check(extras(), true, "file", null, KEY));
+            + "not file:", () -> checkReplay(extras(), "file", null));
         assertFailure(GameStart.Code.REPLAY, "the replay: a launcher gives it as a content:// URI that it grants the game to read, "
-            + "not null:", () -> Launch.check(extras(), true, null, null, KEY));
+            + "not null:", () -> checkReplay(extras(), null, null));
         for (String own : new String[] {"io.github.m3rt1n99.fafre.results", "io.github.m3rt1n99.fafre.status",
             "0@io.github.m3rt1n99.fafre.results"}) {
             assertFailure(GameStart.Code.REPLAY, "the replay: it must come from the launcher's own provider, not " + own,
-                () -> Launch.check(extras(), true, "content", own, KEY));
+                () -> checkReplay(extras(), "content", own));
         }
+    }
+
+    @Test
+    public void aReplayComesWithTheStartsOwnGrantToReadIt() {
+        // Android checks that the start's app may read what it grants: without the grant the game would read with its own
+        // access, a grant another app or the user's pick gave it, for a launcher that has none.
+        assertFailure(GameStart.Code.REPLAY, "the replay: the start does not grant reading it: a launcher starts the game with "
+            + "FLAG_GRANT_READ_URI_PERMISSION", () -> Launch.check(extras(), true, "content",
+                "com.android.externalstorage.documents", false, KEY));
     }
 
     @Test
     public void aStartPlaysOneReplayAndARejoinNone() {
         assertFailure(GameStart.Code.ARGUMENTS, "the start has a replay twice, REPLAY and /replay",
-            () -> Launch.check(extras(GameStart.EXTRA_LAUNCHER_ARGUMENTS,
-                new String[] {"/replay", "gpgnet://127.0.0.1:15000/1/a.SCFAreplay"}), true, "content", "com.example.replays", KEY));
+            () -> checkReplay(extras(GameStart.EXTRA_LAUNCHER_ARGUMENTS,
+                new String[] {"/replay", "gpgnet://127.0.0.1:15000/1/a.SCFAreplay"}), "content", "com.example.replays"));
         Object[] rejoin = {Launch.EXTRA_REJOIN_OFFER, true, Launch.EXTRA_REJOIN_PEERS, "1=0", Launch.EXTRA_REJOIN_SOURCE, 1};
         assertFailure(GameStart.Code.ARGUMENTS, "a start that takes a seat back (REJOIN_PEERS) plays no replay",
-            () -> Launch.check(extras(rejoin), true, "content", "com.example.replays", KEY));
+            () -> checkReplay(extras(rejoin), "content", "com.example.replays"));
         Map<String, Object> live = extras(rejoin);
         live.put(GameStart.EXTRA_LAUNCHER_ARGUMENTS, new String[] {"/replay", "gpgnet://127.0.0.1:15000/1/a.SCFAreplay"});
         assertFailure(GameStart.Code.ARGUMENTS, "a start that takes a seat back (REJOIN_PEERS) plays no replay", () -> check(live));
@@ -325,8 +347,8 @@ public class LaunchTest {
         assertEquals(Collections.emptyList(), Launch.rejoin(null, null, null, KEY));
         assertEquals("faf_rejoin_seat.key", Launch.REJOIN_KEY);
         // After the launcher's switches.
-        List<String> arguments = Arrays.asList(Launch.check(extras(GameStart.EXTRA_LAUNCHER_ARGUMENTS,
-            new String[] {"/gpgnet", "127.0.0.1:7237"}, Launch.EXTRA_REJOIN_OFFER, true), false, null, null, KEY).arguments);
+        List<String> arguments = Arrays.asList(check(extras(GameStart.EXTRA_LAUNCHER_ARGUMENTS,
+            new String[] {"/gpgnet", "127.0.0.1:7237"}, Launch.EXTRA_REJOIN_OFFER, true)).arguments);
         assertEquals(Arrays.asList("/gpgnet", "127.0.0.1:7237", "/rejoinoffer", "/rejoinkeyfile", KEY.getPath(), "/con",
             "net_PeerFeatures=1;net_RejoinAccept=1"), arguments);
     }

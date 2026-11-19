@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.File;
@@ -12,9 +13,10 @@ import java.util.Map;
 
 /**
  * The game's only way in from another app, the FAF client (action PLAY, android/README.md): no UI. It checks the caller
- * (Callers, CALLER) and the start's extras (Launch), then starts the game's activity, which is not exported, with what the
- * checks let through and what this side adds, and ends. FLAG_ACTIVITY_FORWARD_RESULT hands the game's result straight to
- * the client; a start this refuses ends with its own, the same RESULT_FIRST_USER with "failure" and "message".
+ * (Callers, and the token an allowed app got for the start: PlayTokens; CALLER) and the start's extras (Launch), then starts
+ * the game's activity, which is not exported, with what the checks let through and what this side adds, and ends.
+ * FLAG_ACTIVITY_FORWARD_RESULT hands the game's result straight to the client; a start this refuses ends with its own, the
+ * same RESULT_FIRST_USER with "failure" and "message".
  */
 public final class LaunchGameActivity extends Activity {
     private static final String TAG = "faf-launch";
@@ -27,7 +29,7 @@ public final class LaunchGameActivity extends Activity {
             try {
                 startActivity(game);
             } catch (SecurityException e) {
-                // The grant this start passes on needs one of the client's: Android refuses ours without it.
+                // The grant this start passes on is the client's, which Android checked at its start: gone since.
                 throw GameStart.Failure.replay("the game may not read it: the launcher grants that with "
                     + "FLAG_GRANT_READ_URI_PERMISSION (" + e.getMessage() + ")");
             }
@@ -46,14 +48,21 @@ public final class LaunchGameActivity extends Activity {
 
     /** The game's start for this one, which the checks let through. */
     private Intent game() throws GameStart.Failure {
-        // Set only for a start that waits for a result, which is also the only way to the game's.
+        // The app the result goes to, set only for a start that waits for one, which is also the only way to the game's.
         if (!Callers.allowed(this, getCallingPackage())) {
             throw GameStart.Failure.caller();
         }
         Intent intent = getIntent();
+        Map<String, Object> extras = extras(intent);
+        // The app that started PLAY, which need not be that one: an app the client started for a result can forward PLAY
+        // with its own extras (FLAG_ACTIVITY_FORWARD_RESULT). Only an allowed app gets a token, from the status provider.
+        if (!PlayTokens.APP.spend(extras.get(Launch.EXTRA_TOKEN), SystemClock.elapsedRealtime())) {
+            throw GameStart.Failure.token();
+        }
         Uri replay = intent.getData();
-        Launch launch = Launch.check(extras(intent), replay != null, replay != null ? replay.getScheme() : null,
-            replay != null ? replay.getAuthority() : null, new File(getNoBackupFilesDir(), Launch.REJOIN_KEY));
+        Launch launch = Launch.check(extras, replay != null, replay != null ? replay.getScheme() : null,
+            replay != null ? replay.getAuthority() : null, (intent.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+            new File(getNoBackupFilesDir(), Launch.REJOIN_KEY));
         // LAUNCHER_ARGUMENTS also when empty: it makes the start a launcher's, which GameActivity refuses beside a running
         // game and in Android's restore after its process ended (GameStart.refusal).
         Intent game = new Intent(this, GameActivity.class).addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT)

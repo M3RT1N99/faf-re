@@ -58,7 +58,10 @@ final class GameStart {
         RUNNING,
         /** Android brought back the activity of a launcher's game whose process had ended in the back (refusal). */
         PROCESS_ENDED,
-        /** The app that started LaunchGameActivity is not one the game allows (Callers), or did not start it for a result. */
+        /**
+         * The app that started LaunchGameActivity is not one the game allows (Callers), did not start it for a result, or gave no
+         * token of the game's (PlayTokens).
+         */
         CALLER,
         /** FAF's map vault has no map of the start's MAP. */
         NO_MAP,
@@ -116,6 +119,11 @@ final class GameStart {
         static Failure caller() {
             return new Failure(Code.CALLER, "the app that started the game is not one it allows: start it for a result, from an "
                 + "app signed with a key on the game's allowlist");
+        }
+
+        static Failure token() {
+            return new Failure(Code.CALLER, "the start has no token the game gave out, or one spent or older than "
+                + PlayTokens.LIFETIME_MS / 1000 + " s: ask its status provider for one (play_token) right before each start");
         }
 
         static Failure arguments(String why) {

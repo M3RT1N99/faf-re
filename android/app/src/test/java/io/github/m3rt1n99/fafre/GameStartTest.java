@@ -164,7 +164,7 @@ public class GameStartTest {
             GameStart.Failure.storage("shared storage is not available"),
             failure(() -> arguments(false, null, new String[] {"/init", "x"})),
             GameStart.refusal(true, false, 3841, null), GameStart.refusal(false, true, null, new String[0]),
-            GameStart.Failure.caller(),
+            GameStart.Failure.caller(), GameStart.Failure.token(),
             GameStart.fetchFailure(new Http.StatusException(Http.MAP_URL + "x.zip", 404), GameStart.Code.NO_MAP, "the map x"),
             GameStart.fetchFailure(new Vault.Missing("y.zip holds the mod 1234abcd, not 5678abcd"), GameStart.Code.NO_MOD,
                 "the mod 5678abcd"),
@@ -184,6 +184,8 @@ public class GameStartTest {
                 + "program ended): its game is gone, and the activity Android brought back starts none with the launcher's arguments"},
             {"CALLER", "the app that started the game is not one it allows: start it for a result, from an app signed with a key "
                 + "on the game's allowlist"},
+            {"CALLER", "the start has no token the game gave out, or one spent or older than 60 s: ask its status provider for one "
+                + "(play_token) right before each start"},
             {"NO_MAP", "the map x: HTTP 404 for https://content.faforever.com/maps/x.zip"},
             {"NO_MOD", "the mod 5678abcd: y.zip holds the mod 1234abcd, not 5678abcd"},
             {"DOWNLOAD", "the map x: Connection reset"},
