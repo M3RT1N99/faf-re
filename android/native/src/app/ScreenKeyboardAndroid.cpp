@@ -8,6 +8,8 @@
 //
 // The window system's events reach this through the hook that src/platform/sdl/WindowSdlPlatform.h has for the developer
 // windows, on the program's thread before the engine takes them: Android has one window, so no developer window takes it.
+// The host (src/host/HostSdl.cpp) takes its tasks' wakes from it first, and gives a finger's press here itself, as the
+// engine gets that press from the host and SDL never sees it (FingerPressed).
 
 #include "ScreenKeyboardAndroid.h"
 
@@ -15,6 +17,8 @@
 
 #include <SDL3/SDL.h>
 
+#include "../host/HostSdl.h"
+#include "GameAndroid.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/ui/UiPrivate.h"
 #include "platform/sdl/WindowSdlPlatform.h"
@@ -25,17 +29,7 @@ namespace
   /// text; no suggestion or correction of the keyboard's stands between a key and the game's field.
   constexpr Sint64 kPlainKeys = 0;
 
-  [[nodiscard]] SDL_Window* GameWindow()
-  {
-    if (SDL_Window* const focus = SDL_GetKeyboardFocus()) {
-      return focus;
-    }
-    int count = 0;
-    SDL_Window** const windows = SDL_GetWindows(&count);
-    SDL_Window* const first = windows != nullptr && count > 0 ? windows[0] : nullptr;
-    SDL_free(windows);
-    return first;
-  }
+  using platform::android::GameWindow;
 
   // SDL shows and hides its keyboard with text input while its hint says so: on for the one call.
 
@@ -85,27 +79,38 @@ namespace
     return false;
   }
 
+  /// A finger's press in the engine's pixels: the keyboard comes where it lands on a text field.
+  void ShowForField(SDL_Window* const window, const float x, const float y)
+  {
+    if (window == nullptr || SDL_ScreenKeyboardShown(window)) {
+      return;
+    }
+    try {
+      if (OnTextField(x, y)) {
+        Show(window);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Screen keyboard: %s", exception.what());
+    }
+  }
+
   bool OnEvent(const void* const sdlEvent)
   {
+    if (host::OnSdlEvent(sdlEvent)) {
+      return true;
+    }
     const SDL_Event& event = *static_cast<const SDL_Event*>(sdlEvent);
     switch (event.type) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN: {
       // A finger's press, which SDL gives as the left button; a mouse's goes with a keyboard of its own.
       SDL_Window* const window = SDL_GetWindowFromID(event.button.windowID);
-      if (event.button.which != SDL_TOUCH_MOUSEID || event.button.button != SDL_BUTTON_LEFT || window == nullptr ||
-          SDL_ScreenKeyboardShown(window)) {
+      if (event.button.which != SDL_TOUCH_MOUSEID || event.button.button != SDL_BUTTON_LEFT || window == nullptr) {
         break;
       }
       // The engine's pixels, as src/platform/sdl/WindowSdl.cpp takes them.
       const float density = SDL_GetWindowPixelDensity(window);
       const float scale = density > 0.0f ? density : 1.0f;
-      try {
-        if (OnTextField(event.button.x * scale, event.button.y * scale)) {
-          Show(window);
-        }
-      } catch (const std::exception& exception) {
-        gpg::Warnf("Screen keyboard: %s", exception.what());
-      }
+      ShowForField(window, event.button.x * scale, event.button.y * scale);
       break;
     }
     case SDL_EVENT_KEY_UP:
@@ -131,6 +136,18 @@ namespace
   }
 } // namespace
 
+SDL_Window* platform::android::GameWindow()
+{
+  if (SDL_Window* const focus = SDL_GetKeyboardFocus()) {
+    return focus;
+  }
+  int count = 0;
+  SDL_Window** const windows = SDL_GetWindows(&count);
+  SDL_Window* const first = windows != nullptr && count > 0 ? windows[0] : nullptr;
+  SDL_free(windows);
+  return first;
+}
+
 void screenkeyboard::Install()
 {
   platform::window::sdl::SetToolEventHook(&OnEvent);
@@ -147,4 +164,9 @@ void screenkeyboard::Toggle()
   } else {
     Show(window);
   }
+}
+
+void screenkeyboard::FingerPressed(const float x, const float y)
+{
+  ShowForField(GameWindow(), x, y);
 }

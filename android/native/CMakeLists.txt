@@ -341,6 +341,7 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/app/SoundAndroid.cpp
   src/app/UiPackageAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
+  src/host/HostSdl.cpp
   src/gal/VulkanSurfaceAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings FAudio-static SDL3::SDL3-static faf_imgui_sdl faf_freetype
   faf_msdfgen faf_netlink)
@@ -393,6 +394,7 @@ add_executable(faf_griff_tests
   tests/griff/GriffSkirtsTests.cpp
   tests/griff/GriffTapTests.cpp
   tests/griff/GriffUndoTests.cpp
+  tests/griff/HostQueueTests.cpp
   tests/griff/ListDragTests.cpp
   tests/griff/TapTargetTests.cpp)
 target_include_directories(faf_griff_tests PRIVATE "${FAF_ANDROID_DIR}/include")
