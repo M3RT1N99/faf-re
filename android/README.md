@@ -446,8 +446,11 @@ the list changes, for the links that start after it. It passes the lobby server'
 `IceMsg [sender id, text]` to the game as the server sends them, and every message of the game's to the server, the
 game's `IceMsg [receiver id, text]` among them, which the server routes to that player. The game sends no link states:
 they are in its log (`NETLINK:`). `/nativenetrelay` keeps the links to relayed candidates, the client's *force relay*.
-Two games on two emulators played it with the PC's script as their launchers and the lobby server
-([native README](native/README.md), Tests).
+The game's own messages can be 2 KB or longer too, as its `JsonStats` at a game's end and the CandidatesMessage of a
+device with many addresses, and go to the server whole. The links of a game that was launched outlive a peer's game:
+the game offers the peer a new link about every 11 s until its own `GameEnded`, and the server drops those `IceMsg`,
+as it does for a player without a game. Two games on two emulators played a game to its end with no desync, with the
+PC's script as their launchers and the lobby server ([native README](native/README.md), Tests).
 
 **The status.** `content://io.github.m3rt1n99.fafre.status/game_data` and `/last_game` (`StatusProvider`), read-only and
 for allowed callers only: a refused one gets the table's columns and no row; another table gives a null cursor. All

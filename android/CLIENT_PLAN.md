@@ -691,3 +691,38 @@ The network):
   game's logs now have native mode's `NETLINK:` lines: the scrubber (`game_logs`) took both games' names and every
   address out of them, the selected pairs' and the peers' engine addresses too, in a throwaway JVM check over the two
   engine logs; their ids of one digit stay, as the scrubber leaves such ids where no shape gives them.
+
+*2026-11-19, C5's own peer links in a game (E3, part 2):* `android/tools/gpgnet_host.py --play` plays both games'
+launchers and FAF's lobby server on the PC through a whole game ([native README](native/README.md), Tests). On each
+game's `GameState Idle` it sends `IceServers []` and `CreateLobby [0, 0, login, id, 1]`; the host gets `HostGame [map]`,
+the joiner `JoinGame [host's login, id]` and the host `ConnectToPeer [joiner's login, id, 1]`, and each game's
+`IceMsg [receiver id, text]` goes to the other as `IceMsg [sender id, text]`, as faf-server's `connect_to_host` and
+`handle_ice_message` have it. A game that goes before the host's launch leaves the others' lobbies
+(`DisconnectFromPeer`, the server's `abort` while the game is in its lobby); after the launch the server sends nothing.
+- **Shown on the emulator** (fafre_api36, x86_64, two read-only instances in netsim's Wi-Fi), each game started with the
+  activity's `LAUNCHER_ARGUMENTS` `/gpgnet 127.0.0.1:7237 /nativenet` and `adb reverse` to its port of the script's: the
+  host's lobby had both players 5 s after the first game's connect. After both *Ready* taps the host's *Launch Game*
+  started the game on Desert Arena (`GameState Launching` from both within 50 ms), and both commanders moved on orders by
+  taps from about 3:00 to 7:40 of the game, on both screens. The joiner left through *Exit to Windows*; the host's game reported
+  the defeat and its victory (`GameResult`) and `GameEnded`, and ended from its score screen at 8:22. Both programs
+  returned 0, neither log has a desync and no game sent `Desync`. The link: ICE over the emulators' IPv6 host
+  candidates, `direct (host/host)` on both network panels, a round trip of 5.5 ms on the host (the offerer's echo) and
+  9.6 ms on the joiner (the lane's), none lost, the encrypted lane.
+- **A long IceMsg**: with eleven documentation addresses more on the host's emulator (its dummy interface) the host's
+  CandidatesMessage had 14 host candidates in 2502 bytes. It went through the script unchanged (the same SHA-256), and
+  the joiner connected to the last of them, the IPv6 one. The games' own `JsonStats` at the end were 2349 and 2400 bytes.
+- **A game killed in a game** (the joiner, `kill -9`, at 1:50 of the game): its GPGNet connection closed at once, and
+  the host's simulation stopped where it was. The host's link lost the peer after 10 s without the echo and offered a new
+  link about every 11 s, 17 times, each a CandidatesMessage of 2.5 KB that the script dropped (no game of that
+  player's); the engine sent `Bottleneck` (`ack`, waiting for that player) every 5 s, and FAF's connectivity dialog
+  counted the player's quiet time and offered *Eject From Game*. About 175 s after the kill the game went on without the
+  player (the lobby's *Disconnection delay* Regular, `DisconnectionDelay02` 90), reported the defeat and its victory
+  and `GameEnded`, which stopped the link's offers, and ended from its score screen with 0. The killed game's report has
+  no end, as its process went with `SIGKILL`.
+- **Tests**: the script against fake games of a throwaway script (a clean end, a joiner gone in the lobby, a game gone
+  after the launch, a desync) and against the two games above; its one-game mode as before.
+- **Not shown**: a phone and arm64; ICE servers that answer (no server-reflexive or relayed path); a Java adapter at the
+  other end; WebRTC in a game; the FAF client as the launcher; a rejoin.
+- **Open**: for a rejoin the script would have to keep a game's port open after its connection closed, as a launcher
+  does (`docs/LAUNCHER_NATIVE_NETWORK.md`); it takes one connection on each port. A tap within about 0.2 s of *Move* gave
+  no order on this client's input, one a second later did (the touch schemes' stage).
