@@ -352,14 +352,18 @@ final class Http {
         sleep(ms);
     }
 
+    /** A wait between tries, up to 5 minutes, which the user's Cancel ends within half a second. */
     private static void sleep(long ms) throws IOException {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted");
+        long end = System.currentTimeMillis() + ms;
+        for (long left = ms; left > 0; left = end - System.currentTimeMillis()) {
+            try {
+                Thread.sleep(Math.min(left, 500));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted");
+            }
+            Cancellation.check();
         }
-        Cancellation.check();
     }
 
     static String utf8(byte[] data) {

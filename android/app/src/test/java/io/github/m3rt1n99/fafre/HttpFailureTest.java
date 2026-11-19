@@ -168,6 +168,41 @@ public class HttpFailureTest {
         }
     }
 
+    /**
+     * A wait between tries, of up to 5 minutes, ends at the user's Cancel within half a second: Back on the game's start, or
+     * the Progress card's Cancel, while the network is down. The first wait is 2 s.
+     */
+    @Test(timeout = 60_000)
+    public void aCancelEndsTheWaitBetweenTriesAtOnce() throws Exception {
+        Server server = new Server(socket -> socket.getOutputStream().write(
+            "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII)));
+        String url = server.url("/lua.3840.nx2");
+        long[] cancelledAt = {0};
+        Thread cancel = new Thread(() -> {
+            while (retries(url).isEmpty()) {
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+            cancelledAt[0] = System.nanoTime();
+            Cancellation.request();
+        });
+        cancel.start();
+        try {
+            IOException failure = assertThrows(IOException.class,
+                () -> Http.download(url, new File(folder.getRoot(), "lua.3840.nx2"), null));
+            long waited = (System.nanoTime() - cancelledAt[0]) / 1_000_000;
+            assertTrue("a Cancelled, not " + failure, failure instanceof Cancellation.Cancelled);
+            assertTrue("the wait went on for " + waited + " ms after the Cancel", waited < 1000);
+        } finally {
+            cancel.interrupt();
+            cancel.join();
+            server.close();
+        }
+    }
+
     /** A server on this PC: each request's head is read, then {@code answer} has the connection, which closes after it. */
     private static final class Server {
         interface Answer {
