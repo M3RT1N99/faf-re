@@ -3,19 +3,24 @@ package io.github.m3rt1n99.fafre;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Display;
+import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -24,6 +29,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.libsdl.app.HIDDeviceManager;
@@ -32,6 +38,7 @@ import org.libsdl.app.SDLSurface;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
@@ -41,7 +48,9 @@ import java.util.Locale;
  * SDL's activity, in a process of its own (":game") that ends with the program, as a Windows program's does.
  * It plays FAF's game files of the newest version this app has (the Game card's "Get FAF's newest version" or
  * the replay test downloads them), or of the version a launcher's start asks for (GameStart: its extras, and the
- * result of a start that fails), on the user's Supreme Commander: Forged Alliance.
+ * result of a start that fails), on the user's Supreme Commander: Forged Alliance. Not exported: a launcher in
+ * another app comes through LaunchGameActivity, which checks it; what its start needs fetched or copied first (the
+ * map, the mods, its replay) the Preparation gets on SDL's thread before the program, shown on the activity.
  *
  * <p>SDL gives the program the screen (the activity's surface, through Vulkan), the fingers as the mouse,
  * the keys and the sound. The app gives the command line (getArguments, the program's path first, as FAF's
@@ -62,9 +71,18 @@ public final class GameActivity extends SDLActivity {
     private static final String EXTRA_ARGUMENTS = "arguments";
     private static final String EXTRA_BC_ON_CPU = "bcOnCpu";
 
-    /** The program's command line without its display mode, or null with mFailure saying why there is none. */
-    private List<String> mArguments;
+    /**
+     * The program's command line without its display mode, which onCreate prepares and SDL's thread asks of the activity
+     * that shows the program then (getArguments): one program to a process.
+     */
+    private static List<String> sArguments;
+    /** What the start needs fetched or copied before the program, which main runs; null for nothing. */
+    private static Preparation sPreparation;
+    /** SDL's thread runs the preparation, or waits for a surface after it: the program has not started. */
+    private static volatile boolean sPreparing;
     private GameStart.Failure mFailure;
+    /** The preparation's step over the surface, while it runs. */
+    private TextView mPreparing;
     /** A launcher's start refused while the program runs, for which SDL set nothing up (refuseBesideProgram). */
     private boolean mBesideProgram;
     /** The lines the user chose (PictureSize), which the picture has on any screen. */
@@ -87,6 +105,7 @@ public final class GameActivity extends SDLActivity {
         @Override
         public void run() {
             NetworkGameService.startIfNeeded(GameActivity.this);
+            showPreparation();
             mHandler.postDelayed(this, 500);
         }
     };
@@ -109,7 +128,7 @@ public final class GameActivity extends SDLActivity {
             GameReport.begin(this);
             if (mFailure == null) {
                 try {
-                    mArguments = prepare();
+                    sArguments = prepare();
                 } catch (GameStart.Failure failure) {
                     mFailure = failure;
                 }
@@ -136,7 +155,8 @@ public final class GameActivity extends SDLActivity {
             for (String line : mFailure.reportLines()) {
                 GameReport.append(this, line);
             }
-            endStart();
+            result();
+            finish();
             return;
         }
         if (mBrokenLibraries) {
@@ -187,7 +207,8 @@ public final class GameActivity extends SDLActivity {
             // Activity's onCreate has run, and SDL's stopped before it set anything up. The running program's report has a
             // line of it, and no end.
             Game.report(mFailure.reportLine());
-            endStart();
+            result();
+            finish();
             return;
         }
         throw new IllegalStateException("SDL's onCreate went past loadLibraries beside the running program");
@@ -206,16 +227,78 @@ public final class GameActivity extends SDLActivity {
     private static final class BesideProgram extends Error {
     }
 
-    /** A start that runs no program of its own (mFailure) ends with its result: before it is resumed, so SDL starts no program. */
-    private void endStart() {
+    /**
+     * The result of a start that runs no program of its own (mFailure), before the activity finishes: in onCreate, before it
+     * is resumed, so SDL starts no program; on SDL's thread for a preparation that failed, as SDL finishes it after main.
+     */
+    private void result() {
         // For a starter that waits for the result, a launcher's activity (GameStart).
         setResult(RESULT_FIRST_USER, new Intent().putExtra(GameStart.RESULT_FAILURE, mFailure.code.name())
             .putExtra(GameStart.RESULT_MESSAGE, mFailure.getMessage()));
         if (getCallingActivity() == null) {
             // The Game card's start or a test's: a starter that waits for the result says it in its own words.
-            Toast.makeText(this, mFailure.cardLine(), Toast.LENGTH_LONG).show();
+            String line = mFailure.cardLine();
+            runOnUiThread(() -> Toast.makeText(this, line, Toast.LENGTH_LONG).show());
         }
-        finish();
+    }
+
+    /**
+     * On SDL's thread, before the program: what the start needs fetched or copied (Preparation), shown on the activity, and
+     * then the program, on the surface of the activity that shows it then. A preparation that fails, or that Back cancels,
+     * ends the start with its code, and SDL finishes the activity after main as it does at a program's end.
+     */
+    @Override
+    protected void main() {
+        Preparation preparation = sPreparation;
+        sPreparation = null;
+        if (preparation != null) {
+            sPreparing = true;
+            try {
+                preparation.run();
+            } catch (GameStart.Failure failure) {
+                // The activity that shows the start now: Android may have made it anew meanwhile.
+                ((GameActivity) mSingleton).endPreparation(failure);
+                return;
+            }
+            // Android may have destroyed the activity in the back meanwhile, and with it the surface: the program starts on the
+            // next one's, which SDL's onCreate sets up (and clears the field for, for a moment).
+            for (SDLSurface surface = mSurface; surface == null || !((GameSurface) surface).ready(); surface = mSurface) {
+                SystemClock.sleep(50);
+            }
+            sPreparing = false;
+        }
+        super.main();
+    }
+
+    private void endPreparation(GameStart.Failure failure) {
+        mFailure = failure;
+        for (String line : failure.reportLines()) {
+            GameReport.append(this, line);
+        }
+        result();
+    }
+
+    /** The preparation's step over the surface while it runs, which the poll keeps up to date; gone when it ends. */
+    private void showPreparation() {
+        String step = Preparation.step();
+        if (step == null) {
+            if (mPreparing != null) {
+                mLayout.removeView(mPreparing);
+                mPreparing = null;
+            }
+            return;
+        }
+        if (mPreparing == null) {
+            mPreparing = new TextView(this);
+            mPreparing.setTextColor(Color.WHITE);
+            mPreparing.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            mPreparing.setGravity(Gravity.CENTER);
+            RelativeLayout.LayoutParams place = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT);
+            place.addRule(RelativeLayout.CENTER_IN_PARENT);
+            mLayout.addView(mPreparing, place);
+        }
+        mPreparing.setText(step + "\n\nBack cancels the start");
     }
 
     /** The program's command line without its display mode, with its environment set; or why the game cannot start. */
@@ -234,6 +317,10 @@ public final class GameActivity extends SDLActivity {
             throw GameStart.Failure.noFonts();
         }
         int version = GameStart.version(storage, extra(GameStart.EXTRA_GAME_VERSION));
+        // A launcher's map and mods, which LaunchGameActivity has checked already; a test's are checked here.
+        String map = Launch.map(extra(Launch.EXTRA_MAP));
+        String[] mods = Launch.mods(extra(Launch.EXTRA_MODS));
+        String[] modFiles = Launch.modFiles(extra(Launch.EXTRA_MOD_FILES), mods);
         File game = storage.game(version);
         File folder = Storage.mkdirs(GameReport.folder(storage));
         File vault = Storage.mkdirs(new File(folder, "vault"));
@@ -261,6 +348,15 @@ public final class GameActivity extends SDLActivity {
         List<String> arguments = GameStart.arguments(game, init, GameReport.log(storage), hudScale,
             HudScale.argument(HudScale.most(pictureLines())), ScfaImport.movies(storage) == 0,
             getIntent().getStringExtra(EXTRA_ARGUMENTS), extra(GameStart.EXTRA_LAUNCHER_ARGUMENTS));
+        Uri replay = getIntent().getData();
+        File copy = null;
+        if (replay != null) {
+            // The launcher's replay, which the preparation copies here through the grant its start passed on.
+            copy = new File(getCacheDir(), Preparation.REPLAY_COPY);
+            arguments.addAll(Arrays.asList("/replay", copy.getPath()));
+        }
+        sPreparation = map != null || mods.length > 0 || replay != null
+            ? new Preparation(this, storage, vault, map, mods, modFiles, replay, copy) : null;
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
         GameReport.append(this, "game: HUD scale " + hudScale + " on " + screenInWords());
         return arguments;
@@ -294,7 +390,7 @@ public final class GameActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         Rect picture = mSurface.getHolder().getSurfaceFrame();
-        String[] arguments = GameStart.commandLine(mArguments, picture.width(), picture.height());
+        String[] arguments = GameStart.commandLine(sArguments, picture.width(), picture.height());
         GameReport.append(this, String.format(Locale.ROOT, "game: display mode %dx%d on a %dx%d view", picture.width(),
             picture.height(), mSurface.getWidth(), mSurface.getHeight()));
         GameReport.append(this, "game: command line " + GameStart.inWords(arguments));
@@ -407,8 +503,9 @@ public final class GameActivity extends SDLActivity {
         }
         super.onDestroy();
         // A game that could not start leaves no process behind: SDL's activity takes the next start in this
-        // process for one made anew around a program, and would end it.
-        if (mFailure != null) {
+        // process for one made anew around a program, and would end it. So does one whose launcher finished it while its
+        // preparation ran (Activity.finishActivity), which would start the program after SDL's quit.
+        if (mFailure != null || sPreparing) {
             System.exit(0);
         }
     }
@@ -516,6 +613,13 @@ public final class GameActivity extends SDLActivity {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK && Preparation.step() != null) {
+            // While a preparation runs, which knows no Esc yet, Back cancels the start.
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                Cancellation.request();
+            }
+            return true;
+        }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK && !event.isFromSource(InputDevice.SOURCE_MOUSE)) {
             event = new KeyEvent(event.getDownTime(), event.getEventTime(), event.getAction(), KeyEvent.KEYCODE_ESCAPE,
                 event.getRepeatCount(), event.getMetaState(), event.getDeviceId(), event.getScanCode(), event.getFlags(),

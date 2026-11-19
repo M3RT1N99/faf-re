@@ -68,6 +68,29 @@
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
+        <!-- The game's only way in from another app, the FAF client (android/README.md, the launcher's contract): it checks
+             the caller's signing key and the start's extras, starts GameActivity with the result forwarded, and ends at once,
+             with no UI. Its filters take the action with no data, and with a replay, a content:// URI with or without a type. -->
+        <activity
+            android:name=".LaunchGameActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="io.github.m3rt1n99.fafre.action.PLAY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="io.github.m3rt1n99.fafre.action.PLAY" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="io.github.m3rt1n99.fafre.action.PLAY" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".TestService"
             android:exported="false"

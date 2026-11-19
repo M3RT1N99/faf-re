@@ -32,6 +32,11 @@ final class GameSurface extends SDLSurface {
         return inPicture(event, picture -> super.onTouch(view, picture));
     }
 
+    /** SDL has the surface, from surfaceChanged to surfaceDestroyed: what a program needs to start on. */
+    boolean ready() {
+        return mIsSurfaceReady;
+    }
+
     /**
      * What `handler` makes of `event` in the picture's pixels: of a copy, where the picture's size is not the view's. Only a
      * pointer's places are on the screen (a finger's, a mouse's, a pen's): a joystick's axes and a touchpad's places are not,

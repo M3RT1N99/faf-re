@@ -163,7 +163,13 @@ public class GameStartTest {
             GameStart.Failure.initFile("no room left"), GameStart.Failure.environment("setenv failed: EINVAL (Invalid argument)"),
             GameStart.Failure.storage("shared storage is not available"),
             failure(() -> arguments(false, null, new String[] {"/init", "x"})),
-            GameStart.refusal(true, false, 3841, null), GameStart.refusal(false, true, null, new String[0]));
+            GameStart.refusal(true, false, 3841, null), GameStart.refusal(false, true, null, new String[0]),
+            GameStart.Failure.caller(),
+            GameStart.fetchFailure(new Http.StatusException(Http.MAP_URL + "x.zip", 404), GameStart.Code.NO_MAP, "the map x"),
+            GameStart.fetchFailure(new Vault.Missing("y.zip holds the mod 1234abcd, not 5678abcd"), GameStart.Code.NO_MOD,
+                "the mod 5678abcd"),
+            GameStart.fetchFailure(new IOException("Connection reset"), GameStart.Code.NO_MAP, "the map x"),
+            GameStart.Failure.replay("it is empty"), GameStart.Failure.cancelled());
         String[][] expected = {
             {"NO_SCFA", "no Supreme Commander: Forged Alliance imported yet"},
             {"NO_FONTS", "no fonts of Supreme Commander: Forged Alliance yet: import its folder again, which takes fonts/ too"},
@@ -176,6 +182,13 @@ public class GameStartTest {
             {"RUNNING", "a game runs already, which this start's version and arguments cannot reach: end it first"},
             {"PROCESS_ENDED", "the game's process ended while the game was in the back (Android ended it, it crashed, or the "
                 + "program ended): its game is gone, and the activity Android brought back starts none with the launcher's arguments"},
+            {"CALLER", "the app that started the game is not one it allows: start it for a result, from an app signed with a key "
+                + "on the game's allowlist"},
+            {"NO_MAP", "the map x: HTTP 404 for https://content.faforever.com/maps/x.zip"},
+            {"NO_MOD", "the mod 5678abcd: y.zip holds the mod 1234abcd, not 5678abcd"},
+            {"DOWNLOAD", "the map x: Connection reset"},
+            {"REPLAY", "the replay: it is empty"},
+            {"CANCELLED", "Back ended the start while it fetched what the game needs"},
         };
         EnumSet<GameStart.Code> codes = EnumSet.noneOf(GameStart.Code.class);
         for (int i = 0; i < expected.length; ++i) {
@@ -199,7 +212,7 @@ public class GameStartTest {
             names.add(code.name());
         }
         assertEquals(Arrays.asList("NO_SCFA", "NO_FONTS", "NO_GAME_FILES", "INIT_FILE", "ENVIRONMENT", "STORAGE", "ARGUMENTS",
-            "RUNNING", "PROCESS_ENDED"), names);
+            "RUNNING", "PROCESS_ENDED", "CALLER", "NO_MAP", "NO_MOD", "DOWNLOAD", "REPLAY", "CANCELLED"), names);
     }
 
     @Test

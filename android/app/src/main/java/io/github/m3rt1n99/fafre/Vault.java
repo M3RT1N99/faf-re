@@ -6,39 +6,126 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
  * The maps and M28AI versions a replay needs, as tools/parity-data/shard.py gets them: a map
  * the user's SCFA install has (maps/, mounted by the init file) is used from there; any other
- * comes from FAF's map vault into a per-run vault folder.
+ * comes from FAF's map vault into a per-run vault folder. The game's own vault gets the map and
+ * the mods a launcher's start names (Preparation) the same way.
  */
 final class Vault {
+    /** FAF has no such map or mod: its file holds none of the name or uid asked for. */
+    static final class Missing extends IOException {
+        Missing(String message) {
+            super(message);
+        }
+    }
+
+    /** A mod's uid in its mod_info.lua: {@code uid = "..."}. */
+    private static final Pattern MOD_UID = Pattern.compile("^\\s*uid\\s*=\\s*[\"']([^\"'\\r\\n]+)[\"']", Pattern.MULTILINE);
+
     private Vault() {
     }
 
     /** The cached map folder for {@code folder}, downloaded when missing; null when SCFA has it. */
     static File map(Storage storage, String folder, GameFiles.Log log) throws IOException {
-        File retail = Storage.findChild(new File(storage.scfa, "maps"), folder);
-        if (retail != null && hasScenario(retail)) {
+        if (inScfa(storage, folder)) {
             return null;
         }
-        File cached = Storage.findChild(storage.maps(), folder);
-        if (cached != null && hasScenario(cached)) {
-            return cached;
+        return fetchMap(storage, storage.maps(), folder, log, Http.WITH_RETRIES, null);
+    }
+
+    /** Whether the user's SCFA has the map {@code folder} (maps/, which every init file mounts). */
+    static boolean inScfa(Storage storage, String folder) {
+        File retail = Storage.findChild(new File(storage.scfa, "maps"), folder);
+        return retail != null && hasScenario(retail);
+    }
+
+    /** The map {@code folder} in {@code maps}, from FAF's map vault when it is not there yet. */
+    static File fetchMap(Storage storage, File maps, String folder, GameFiles.Log log, Http.Downloads downloads,
+            Http.Progress progress) throws IOException {
+        File have = Storage.findChild(maps, folder);
+        if (have != null && hasScenario(have)) {
+            return have;
         }
         File zip = new File(storage.downloads(), folder + ".zip");
         log.step("Downloading map " + folder);
-        Http.download(Http.MAP_URL + Http.quote(folder) + ".zip", zip, null);
+        downloads.download(Http.MAP_URL + Http.quote(folder) + ".zip", zip, progress);
         try {
-            return extractMap(zip, storage.maps(), folder);
+            return extractMap(zip, maps, folder);
         } finally {
             zip.delete();
         }
+    }
+
+    /**
+     * The mod {@code uid} in the game's vault {@code mods}: the folder there whose mod_info.lua has it, or else FAF's
+     * {@code file} of it (content.faforever.com/mods/; null when the start names none), which must hold that uid, as the
+     * zip's own folder, in place of an older version there.
+     */
+    static File fetchMod(Storage storage, File mods, String uid, String file, GameFiles.Log log, Http.Downloads downloads,
+            Http.Progress progress) throws IOException {
+        File have = modWithUid(mods, uid);
+        if (have != null) {
+            return have;
+        }
+        if (file == null) {
+            throw new Missing("the phone has no mod " + uid + ", and the start names no file of it");
+        }
+        File zip = new File(storage.downloads(), uid + ".zip");
+        log.step("Downloading mod " + file);
+        downloads.download(Http.MOD_URL + Http.quote(file), zip, progress);
+        File raw = new File(mods, ".unzip-" + uid);
+        try {
+            Storage.deleteTree(raw);
+            unzip(zip, raw);
+            File found = findModInfo(raw);
+            if (found == null) {
+                throw new Missing(file + " holds no mod_info.lua");
+            }
+            String held = modUid(new File(found, "mod_info.lua"));
+            if (!uid.equalsIgnoreCase(held)) {
+                throw new Missing(file + " holds the mod " + held + ", not " + uid);
+            }
+            File path = new File(mods, found.equals(raw) ? uid : found.getName());
+            Storage.deleteTree(path);
+            if (!found.renameTo(path)) {
+                throw new IOException("cannot move " + found + " to " + path);
+            }
+            return path;
+        } finally {
+            Storage.deleteTree(raw);
+            zip.delete();
+        }
+    }
+
+    /** The folder of {@code mods} whose mod_info.lua has {@code uid}, in any case; null when none has. */
+    static File modWithUid(File mods, String uid) throws IOException {
+        File[] folders = mods.listFiles(File::isDirectory);
+        if (folders != null) {
+            for (File folder : folders) {
+                File info = new File(folder, "mod_info.lua");
+                if (info.isFile() && uid.equalsIgnoreCase(modUid(info))) {
+                    return folder;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The uid in a mod_info.lua, or null without one. */
+    static String modUid(File modInfo) throws IOException {
+        Matcher uid = MOD_UID.matcher(new String(Files.readAllBytes(modInfo.toPath()), StandardCharsets.UTF_8));
+        return uid.find() ? uid.group(1) : null;
     }
 
     /** The cached M28AI mod folder of {@code version}, downloaded when missing. */
@@ -83,7 +170,7 @@ final class Vault {
         }
         if (named.size() != 1 && found.size() != 1) {
             Storage.deleteTree(raw);
-            throw new IOException("no one map folder " + folder + " in the map zip (" + found.size() + " with a scenario file)");
+            throw new Missing("no one map folder " + folder + " in the map zip (" + found.size() + " with a scenario file)");
         }
         File path = new File(mapsDir, folder);
         Storage.deleteTree(path);

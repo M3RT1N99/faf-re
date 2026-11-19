@@ -1,6 +1,7 @@
 package io.github.m3rt1n99.fafre;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -10,11 +11,12 @@ import java.util.regex.Pattern;
 
 /**
  * A start of the game (GameActivity) as its starter asks for it: the Game card's, a test's am start, or a launcher's, the
- * FAF client's activity in the app's main process, which starts it for a result with the extras below and hosts GPGNet
- * itself (upstream's docs/LAUNCHER_NATIVE_NETWORK.md). Here are the game version it plays, the program's command line, and
- * why a start runs no program of its own: a code and a line in English, which the activity's result gives the starter
- * (RESULT_FIRST_USER), and the test app's wording of them. The program's end in front, which ends the process, leaves the
- * starter RESULT_CANCELED; in the back see refusal. No Android in here, for the tests.
+ * FAF client, another app, which starts LaunchGameActivity for a result (Launch: its extras and their checks), which
+ * forwards the start here with the extras below; the client hosts GPGNet itself (upstream's
+ * docs/LAUNCHER_NATIVE_NETWORK.md). Here are the game version it plays, the program's command line, and why a start runs
+ * no program of its own: a code and a line in English, which the activity's result gives the starter (RESULT_FIRST_USER),
+ * and the test app's wording of them. The program's end in front, which ends the process, leaves the starter
+ * RESULT_CANCELED; in the back see refusal. No Android in here, for the tests.
  */
 final class GameStart {
     /** The lobby's FAF game version, an int. */
@@ -55,7 +57,19 @@ final class GameStart {
         /** A launcher's start while the game runs, whose version and arguments would not reach it (refusal). */
         RUNNING,
         /** Android brought back the activity of a launcher's game whose process had ended in the back (refusal). */
-        PROCESS_ENDED
+        PROCESS_ENDED,
+        /** The app that started LaunchGameActivity is not one the game allows (Callers), or did not start it for a result. */
+        CALLER,
+        /** FAF's map vault has no map of the start's MAP. */
+        NO_MAP,
+        /** A mod of the start's MODS is not on the phone, and FAF has no file of it that MOD_FILES names. */
+        NO_MOD,
+        /** A download of the start's map or mods failed: the network, or the phone's storage. */
+        DOWNLOAD,
+        /** The start's replay (the intent's data) could not be read or copied. */
+        REPLAY,
+        /** Back ended the start while it fetched what the game needs (MAP, MODS, its replay). */
+        CANCELLED
     }
 
     /** A start that runs no program of its own: its code, and its line as the message, which names none of the test app's cards. */
@@ -99,6 +113,31 @@ final class GameStart {
                 + "launcher's arguments");
         }
 
+        static Failure caller() {
+            return new Failure(Code.CALLER, "the app that started the game is not one it allows: start it for a result, from an "
+                + "app signed with a key on the game's allowlist");
+        }
+
+        static Failure arguments(String why) {
+            return new Failure(Code.ARGUMENTS, why);
+        }
+
+        static Failure noGameFiles(String why) {
+            return new Failure(Code.NO_GAME_FILES, why);
+        }
+
+        static Failure download(String why) {
+            return new Failure(Code.DOWNLOAD, why);
+        }
+
+        static Failure replay(String why) {
+            return new Failure(Code.REPLAY, "the replay: " + why);
+        }
+
+        static Failure cancelled() {
+            return new Failure(Code.CANCELLED, "Back ended the start while it fetched what the game needs");
+        }
+
         /** The test app's line, which its Game card (the report's end) and its toast show: with the cards that help, as before. */
         String cardLine() {
             switch (code) {
@@ -125,6 +164,23 @@ final class GameStart {
     }
 
     private GameStart() {
+    }
+
+    /**
+     * A failed fetch of what a launcher's start needs, {@code what} ("the map x"), as the start's code: Back (CANCELLED); FAF
+     * has no such file, or its file holds none of the name or uid asked for ({@code missing}: NO_MAP, NO_MOD); else
+     * DOWNLOAD, the network or the phone's storage.
+     */
+    static Failure fetchFailure(IOException e, Code missing, String what) {
+        if (e instanceof Cancellation.Cancelled) {
+            return Failure.cancelled();
+        }
+        boolean notThere = e instanceof Http.StatusException
+            && (((Http.StatusException) e).status == 404 || ((Http.StatusException) e).status == 403);
+        if (notThere || e instanceof Vault.Missing) {
+            return new Failure(missing, what + ": " + e.getMessage());
+        }
+        return Failure.download(what + ": " + e.getMessage());
     }
 
     /**
