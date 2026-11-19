@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -42,10 +43,17 @@ public class VaultTest {
     @Rule
     public final TemporaryFolder folder = new TemporaryFolder();
 
+    @After
+    public void noCancelLeft() {
+        Cancellation.reset();
+    }
+
     /** FAF's content server as the fetches download from it: each URL's zip, of these entries; others are not there. */
     private static final class Server implements Http.Downloads {
         final Map<String, Map<String, String>> zips = new LinkedHashMap<>();
         final List<String> downloaded = new ArrayList<>();
+        /** The user's Back right after a download's last byte, which the download's own loop no longer sees. */
+        boolean backAfterLastByte;
 
         @Override
         public byte[] bytes(String url) {
@@ -65,6 +73,9 @@ public class VaultTest {
                     zip.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
                     zip.closeEntry();
                 }
+            }
+            if (backAfterLastByte) {
+                Cancellation.request();
             }
         }
     }
@@ -188,6 +199,47 @@ public class VaultTest {
         server.zips.put(Http.MOD_URL + "flat.v0001.zip", entries("mod_info.lua", modInfo(UID)));
 
         assertEquals(new File(mods, UID), Vault.fetchMod(storage, mods, UID, "flat.v0001.zip", LOG, server, null));
+    }
+
+    @Test
+    public void backAfterADownloadsLastByteStopsItsUnpackingAndLeavesNothing() {
+        Storage storage = new Storage(folder.getRoot());
+        File maps = Storage.mkdirs(new File(folder.getRoot(), "game/vault/maps"));
+        File mods = Storage.mkdirs(new File(folder.getRoot(), "game/vault/mods"));
+        Server server = new Server();
+        server.zips.put(Http.MAP_URL + "scmp_007.zip", entries("SCMP_007/SCMP_007_scenario.lua", "version = 3"));
+        server.zips.put(Http.MOD_URL + "m28ai.v0247.zip", entries("M28AI/mod_info.lua", modInfo(UID)));
+        server.backAfterLastByte = true;
+
+        assertThrows(Cancellation.Cancelled.class, () -> Vault.fetchMap(storage, maps, "scmp_007", LOG, server, null));
+        assertThrows(Cancellation.Cancelled.class,
+            () -> Vault.fetchMod(storage, mods, UID, "m28ai.v0247.zip", LOG, server, null));
+
+        assertEquals(2, server.downloaded.size());
+        assertEquals("nothing in the vault", Collections.emptyList(), Arrays.asList(maps.list()));
+        assertEquals("nothing in the vault", Collections.emptyList(), Arrays.asList(mods.list()));
+        assertEquals("nothing in downloads", Collections.emptyList(), Arrays.asList(storage.downloads().list()));
+    }
+
+    @Test
+    public void aZipUnpacksBesideItOutOfTheVaultWhereAHalfUnpackedOneIsNoMod() throws IOException {
+        Storage storage = new Storage(folder.getRoot());
+        File mods = Storage.mkdirs(new File(folder.getRoot(), "game/vault/mods"));
+        File zip = new File(storage.downloads(), UID + ".zip");
+        File unpacked = Vault.unpacked(zip);
+        assertEquals(storage.downloads(), unpacked.getParentFile());
+        // What a process that ended while the zip unpacked left: its mod_info.lua, and not the rest.
+        GameFiles.write(new File(Storage.mkdirs(new File(unpacked, "M28AI")), "mod_info.lua"), modInfo(UID));
+        assertNull(Vault.modWithUid(mods, UID));
+        Server server = new Server();
+        server.zips.put(Http.MOD_URL + "m28ai.v0247.zip", entries("M28AI/mod_info.lua", modInfo(UID), "M28AI/lua/ai.lua", "x"));
+
+        File mod = Vault.fetchMod(storage, mods, UID, "m28ai.v0247.zip", LOG, server, null);
+
+        assertEquals(new File(mods, "M28AI"), mod);
+        assertTrue("whole", new File(mod, "lua/ai.lua").isFile());
+        assertFalse(unpacked.exists());
+        assertFalse(zip.exists());
     }
 
     @Test

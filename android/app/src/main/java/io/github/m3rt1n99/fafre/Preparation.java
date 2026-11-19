@@ -76,6 +76,7 @@ final class Preparation {
             if (mMap != null && !Vault.inScfa(mStorage, mMap)) {
                 try {
                     Vault.fetchMap(mStorage, Storage.mkdirs(new File(mVault, "maps")), mMap, log, Http.WITH_RETRIES, progress);
+                    Cancellation.check();
                 } catch (IOException e) {
                     throw GameStart.fetchFailure(e, GameStart.Code.NO_MAP, "the map " + mMap);
                 }
@@ -84,12 +85,18 @@ final class Preparation {
                 try {
                     Vault.fetchMod(mStorage, Storage.mkdirs(new File(mVault, "mods")), mMods[i],
                         mModFiles != null ? mModFiles[i] : null, log, Http.WITH_RETRIES, progress);
+                    Cancellation.check();
                 } catch (IOException e) {
                     throw GameStart.fetchFailure(e, GameStart.Code.NO_MOD, "the mod " + mMods[i]);
                 }
             }
             if (mReplay != null) {
                 copyReplay();
+            }
+            // Back after the last byte that a step's loop looked at, as it put its files in place: the start ends all the
+            // same, as the activity said it would.
+            if (Cancellation.requested()) {
+                throw GameStart.Failure.cancelled();
             }
         } finally {
             sStep = null;

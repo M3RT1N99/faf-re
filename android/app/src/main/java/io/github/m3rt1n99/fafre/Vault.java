@@ -20,7 +20,9 @@ import java.util.zip.ZipInputStream;
  * The maps and M28AI versions a replay needs, as tools/parity-data/shard.py gets them: a map
  * the user's SCFA install has (maps/, mounted by the init file) is used from there; any other
  * comes from FAF's map vault into a per-run vault folder. The game's own vault gets the map and
- * the mods a launcher's start names (Preparation) the same way.
+ * the mods a launcher's start names (Preparation) the same way. Their zips unpack beside them in
+ * downloads/, out of the vaults, which a map's or a mod's folder joins whole: a process that ends
+ * meanwhile leaves no half of one where the game or the next fetch would take it for whole.
  */
 final class Vault {
     /** FAF has no such map or mod: its file holds none of the name or uid asked for. */
@@ -84,7 +86,7 @@ final class Vault {
         File zip = new File(storage.downloads(), uid + ".zip");
         log.step("Downloading mod " + file);
         downloads.download(Http.MOD_URL + Http.quote(file), zip, progress);
-        File raw = new File(mods, ".unzip-" + uid);
+        File raw = unpacked(zip);
         try {
             Storage.deleteTree(raw);
             unzip(zip, raw);
@@ -152,34 +154,41 @@ final class Vault {
         return found;
     }
 
+    /** Where {@code zip}'s files unpack: beside it, out of the vaults. */
+    static File unpacked(File zip) {
+        return new File(zip.getPath() + ".unpacked");
+    }
+
     /**
      * The map zip's folder that holds the scenario file, as {@code maps/<folder>} (common.py
      * extract_map): the names may differ in case alone, and the folder need not be at the top.
      */
     static File extractMap(File zip, File mapsDir, String folder) throws IOException {
-        File raw = new File(mapsDir, ".unzip-" + folder);
-        Storage.deleteTree(raw);
-        unzip(zip, raw);
-        List<File> found = new ArrayList<>();
-        collectMapFolders(raw, found);
-        List<File> named = new ArrayList<>();
-        for (File dir : found) {
-            if (dir.getName().equalsIgnoreCase(folder)) {
-                named.add(dir);
-            }
-        }
-        if (named.size() != 1 && found.size() != 1) {
+        File raw = unpacked(zip);
+        try {
             Storage.deleteTree(raw);
-            throw new Missing("no one map folder " + folder + " in the map zip (" + found.size() + " with a scenario file)");
+            unzip(zip, raw);
+            List<File> found = new ArrayList<>();
+            collectMapFolders(raw, found);
+            List<File> named = new ArrayList<>();
+            for (File dir : found) {
+                if (dir.getName().equalsIgnoreCase(folder)) {
+                    named.add(dir);
+                }
+            }
+            if (named.size() != 1 && found.size() != 1) {
+                throw new Missing("no one map folder " + folder + " in the map zip (" + found.size() + " with a scenario file)");
+            }
+            File path = new File(mapsDir, folder);
+            Storage.deleteTree(path);
+            File source = named.size() == 1 ? named.get(0) : found.get(0);
+            if (!source.renameTo(path)) {
+                throw new IOException("cannot move " + source + " to " + path);
+            }
+            return path;
+        } finally {
+            Storage.deleteTree(raw);
         }
-        File path = new File(mapsDir, folder);
-        Storage.deleteTree(path);
-        File source = named.size() == 1 ? named.get(0) : found.get(0);
-        if (!source.renameTo(path)) {
-            throw new IOException("cannot move " + source + " to " + path);
-        }
-        Storage.deleteTree(raw);
-        return path;
     }
 
     static boolean hasScenario(File dir) {
@@ -245,6 +254,8 @@ final class Vault {
                     int read;
                     while ((read = in.read(buffer)) > 0) {
                         out.write(buffer, 0, read);
+                        // A big map unpacks for seconds after its download's last byte.
+                        Cancellation.check();
                     }
                 }
             }
