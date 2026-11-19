@@ -85,13 +85,15 @@ public final class MainActivity extends Screen {
         // 2. Game data.
         LinearLayout data = card(column, "2 · Game data",
             "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives, fonts/, sounds/ and movies/, about "
-                + "7.5 GB), imported once. An import by an earlier release has no sounds or movies, without which the game "
-                + "is silent and has no films: import the folder again, which copies only what is missing. FAF's own files "
-                + "for a replay's game version are downloaded on the first run, FAF's newest by the button on card 5 (about "
-                + "700 MB from FAF each, kept whole), replays and maps as needed.");
+                + "7.5 GB), imported once from its folder or a ZIP file of it, which may hold the folder itself or what is in "
+                + "it; a ZIP's import changes nothing here unless it ends whole. An import by an earlier release has no sounds "
+                + "or movies, without which the game is silent and has no films: import the folder or the ZIP again, which "
+                + "copies only what is missing. FAF's own files for a replay's game version are downloaded on the first run, "
+                + "FAF's newest by the button on card 5 (about 700 MB from FAF each, kept whole), replays and maps as needed.");
         mDataStatus = text("", 14, TEXT);
         data.addView(mDataStatus);
         mStartButtons.add(button(data, "Import SCFA folder…", v -> pickScfaFolder()));
+        mStartButtons.add(button(data, "Import SCFA ZIP…", v -> pickScfaZip()));
 
         // 3. Replays.
         LinearLayout replays = card(column, "3 · Replay parity",

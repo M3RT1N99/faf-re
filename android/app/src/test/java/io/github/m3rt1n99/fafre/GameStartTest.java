@@ -172,7 +172,8 @@ public class GameStartTest {
             GameStart.Failure.replay("it is empty"), GameStart.Failure.cancelled());
         String[][] expected = {
             {"NO_SCFA", "no Supreme Commander: Forged Alliance imported yet"},
-            {"NO_FONTS", "no fonts of Supreme Commander: Forged Alliance yet: import its folder again, which takes fonts/ too"},
+            {"NO_FONTS", "no fonts of Supreme Commander: Forged Alliance yet: import its folder or a ZIP of it again, which takes "
+                + "fonts/ too"},
             {"NO_GAME_FILES", "no whole FAF game files yet"},
             {"NO_GAME_FILES", "no whole FAF game files of version 3841 yet"},
             {"INIT_FILE", "the init file: no room left"},
@@ -252,13 +253,16 @@ public class GameStartTest {
         assertEquals("Game: running", TestState.gameVerdict());
     }
 
-    /** The lines GameActivity gave the report's end and its toast before the codes (fb096228e), with the same details. */
+    /**
+     * The lines GameActivity gave the report's end and its toast before the codes (fb096228e), with the same details; card 2
+     * imports a ZIP of the folder too since E2c, which the line for no fonts names.
+     */
     @Test
     public void theTestAppsLinesAreTheOnesBeforeTheCodes() throws IOException {
         Storage storage = storage();
         assertEquals("FAIL: no Supreme Commander: Forged Alliance imported yet (card 2)", GameStart.Failure.noScfa().cardLine());
-        assertEquals("FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder again (card 2), which takes fonts/ too",
-            GameStart.Failure.noFonts().cardLine());
+        assertEquals("FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder or a ZIP of it again (card 2), which "
+            + "takes fonts/ too", GameStart.Failure.noFonts().cardLine());
         assertEquals("FAIL: no whole FAF game files yet; \"Get FAF's newest version\" on card 5 downloads them, as does the replay test (card 3)",
             failure(() -> GameStart.version(storage, null)).cardLine());
         assertEquals("FAIL: the init file: no room left", GameStart.Failure.initFile("no room left").cardLine());

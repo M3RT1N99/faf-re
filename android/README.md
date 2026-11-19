@@ -53,7 +53,7 @@ the game data they imported. Everything lives in the app's external files folder
 
 | Folder | What |
 |---|---|
-| `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd`, `fonts/`, `sounds/`, `movies/` (*Import SCFA folder…*, which copies what an earlier release's import has not, or the setup's folder or ZIP, below), `maps/` if imported; `.zip-import/` while a ZIP's import runs |
+| `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd`, `fonts/`, `sounds/`, `movies/` (card 2's *Import SCFA folder…* or *Import SCFA ZIP…*, which copy what an earlier release's import has not, as the setup's folder and ZIP do, below), `maps/` if imported; `.zip-import/` while a ZIP's import runs |
 | `parity/game/<version>/` | FAF's game files for one game version, packed as `tools/parity-data` packs them for CI: `gamedata/*.nx2` whole, as FAF's updater publishes them (pack format 3), `bin/init_ci.lua`, `fa_path.lua` pointing at `scfa/` |
 | `parity/replays/`, `maps/`, `m28/` | Downloaded replays, vault maps and M28AI versions |
 | `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log`, `speed.csv` |
@@ -478,7 +478,8 @@ caller polls), and the screen's Cancel ends it; an import gives back the grant o
 from the caller's activity the screen opens in its task, and Back returns there; with `FLAG_ACTIVITY_NEW_TASK` it opens in
 a task of its own, which a later start brings back with the new start's step.
 
-The ZIP's import (`ScfaZip`) takes what the folder import takes, by its rules (`ScfaImport`):
+The ZIP's import (`ScfaZip`), which the test app's card 2 offers too (*Import SCFA ZIP…*, for testers without the
+client), takes what the folder import takes, by its rules (`ScfaImport`):
 
 - **What it takes**: `gamedata/*.scd`, and `fonts/`, `sounds/`, `movies/` and `maps/` whole, all in any case, of the SCFA
   folder, which is the ZIP's top or one folder there (as Windows' *Send to, Compressed folder* makes it): where its

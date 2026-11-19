@@ -90,7 +90,7 @@ final class GameStart {
 
         static Failure noFonts() {
             return new Failure(Code.NO_FONTS,
-                "no fonts of Supreme Commander: Forged Alliance yet: import its folder again, which takes fonts/ too");
+                "no fonts of Supreme Commander: Forged Alliance yet: import its folder or a ZIP of it again, which takes fonts/ too");
         }
 
         static Failure initFile(String why) {
@@ -152,7 +152,8 @@ final class GameStart {
                 case NO_SCFA:
                     return "FAIL: " + getMessage() + " (card 2)";
                 case NO_FONTS:
-                    return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder again (card 2), which takes fonts/ too";
+                    return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder or a ZIP of it again (card 2), "
+                        + "which takes fonts/ too";
                 case NO_GAME_FILES:
                     return "FAIL: " + getMessage() + "; \"Get FAF's newest version\" on card 5 downloads them, as does the replay test (card 3)";
                 default:
