@@ -13,18 +13,26 @@ GameState Idle with CreateLobby, as FAF's ICE adapter and a launcher in native m
 It ends when the game closes the connection, or --hold seconds after the game's lobby, and its status says
 whether the game reached the lobby (GameState Lobby after CreateLobby): 0 yes, 1 no.
 
+With --ice-msg BYTES it sends, before CreateLobby, a peer's ICE message of BYTES bytes as a launcher in native mode
+relays one (IceMsg [sender id, CandidatesMessage JSON]), and the same arguments as Test, whose arguments the game
+logs: the game reaches its lobby only when it has read both whole. It prints the text's length and SHA-256, which the
+Test's line in the game's log has to match.
+
 The wire format is the engine's (src/moho/net/CGpgNetInterface.cpp; tools/gpgnet/codec.go is the Go codec),
 little-endian: a message is its command as a string, the count of its arguments as an int32 and each argument
 as a tag byte (0 an int32, 1 a string, 2 data) and its body; a string is its length as an int32 and its bytes.
 """
 
 import argparse
+import hashlib
+import json
 import socket
 import struct
 import sys
 import time
 
 TAG_INT, TAG_STRING, TAG_DATA = 0, 1, 2
+CANDIDATE_TYPES = ("HOST_CANDIDATE", "SERVER_REFLEXIVE_CANDIDATE", "RELAYED_CANDIDATE")
 
 
 class Data(bytes):
@@ -46,6 +54,33 @@ def encode(command, args):
         else:
             out.append(struct.pack("<B", TAG_STRING) + string(arg.encode()))
     return b"".join(out)
+
+
+def ice_message(size, sender, receiver):
+    """A peer's CandidatesMessage as the Java adapter writes one (docs/LAUNCHER_ADAPTER_CONTRACT.md, Signalling
+    message), size bytes of JSON: as many candidates as fit, the last one's id taking up the rest. The addresses are
+    documentation addresses (RFC 5737)."""
+    def candidate(index):
+        kind = CANDIDATE_TYPES[index % len(CANDIDATE_TYPES)]
+        host = kind == "HOST_CANDIDATE"
+        return {"foundation": str(index), "protocol": "udp", "priority": 2130706431 - index,
+                "ip": f"203.0.113.{index % 254 + 1}", "port": 6112 + index, "type": kind, "generation": 0, "id": "",
+                "relAddr": None if host else "192.0.2.1", "relPort": 0 if host else 6112}
+
+    message = {"srcId": sender, "destId": receiver, "password": "6cmvb8d7e03sma550p6dtta5vn",
+               "ufrag": "eb31i1k68fj1m5", "candidates": [candidate(0)]}
+
+    def text():
+        return json.dumps(message, separators=(",", ":"))
+
+    if len(text()) > size:
+        raise ValueError(f"an ICE message with one candidate has {len(text())} bytes, more than {size}")
+    while len(text()) <= size:
+        message["candidates"].append(candidate(len(message["candidates"])))
+    message["candidates"].pop()
+    rest = size - len(text())
+    message["candidates"][-1]["id"] = ("0123456789abcdef" * (rest // 16 + 1))[:rest]
+    return text()
 
 
 class Connection:
@@ -97,9 +132,17 @@ class Connection:
 START = time.monotonic()
 
 
+def shown(arg):
+    if isinstance(arg, Data):
+        return f"<data {len(arg)} bytes>"
+    if isinstance(arg, str) and len(arg) > 200:
+        text = arg.encode()
+        return f"<string {len(text)} bytes, SHA-256 {hashlib.sha256(text).hexdigest()}>"
+    return repr(arg)
+
+
 def say(who, command, args=()):
-    shown = " ".join(f"<data {len(a)} bytes>" if isinstance(a, Data) else repr(a) for a in args)
-    print(f"{time.monotonic() - START:8.2f} {who}: {command} {shown}".rstrip(), flush=True)
+    print(f"{time.monotonic() - START:8.2f} {who}: {command} {' '.join(map(shown, args))}".rstrip(), flush=True)
 
 
 def main():
@@ -115,7 +158,17 @@ def main():
     parser.add_argument("--uid", type=int, default=1, help="CreateLobby's player id (default 1)")
     parser.add_argument("--hold", type=float, default=0,
                         help="seconds to hold the connection after the game's lobby, 0 until the game closes it")
+    parser.add_argument("--ice-msg", type=int, default=0, metavar="BYTES",
+                        help="before CreateLobby, send a peer's ICE message of BYTES bytes as IceMsg and as Test "
+                             "(default 0: none)")
     args = parser.parse_args()
+    ice_text = None
+    if args.ice_msg:
+        try:
+            # The peer's id is the next after the player's, as a lobby's second player's would be.
+            ice_text = ice_message(args.ice_msg, args.uid + 1, args.uid)
+        except ValueError as error:
+            parser.error(f"--ice-msg: {error}")
 
     with socket.create_server(("127.0.0.1", args.port)) as server:
         server.settimeout(args.timeout)
@@ -150,6 +203,9 @@ def main():
             command, values = message
             say("game", command, values)
             if command == "GameState" and values == ["Idle"]:
+                if ice_text is not None:
+                    game.send("IceMsg", args.uid + 1, ice_text)
+                    game.send("Test", args.uid + 1, ice_text)
                 game.send("CreateLobby", args.mode, args.lobby_port, args.name, args.uid, 1)
             elif command == "GameState" and values == ["Lobby"] and lobby_at is None:
                 lobby_at = time.monotonic()
