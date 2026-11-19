@@ -26,11 +26,13 @@ seconds after the host's lobby seated every other player, and its status is 0 wh
 a PlayerOption for each of the others' ids, which FAF's lobby sends once a player is in a slot.
 
 With --play as well the games go on from the lobby into a game, which the host launches: the session ends when every
-game has closed its connection, and its status is 0 when the host's lobby seated every other player, every game
-launched (GameState Launching), a game reported the game's end (GameEnded) and none a desync (Desync). As FAF's server
-does, a game whose connection closes before the host launched leaves the others' lobbies (DisconnectFromPeer [its id]
-to each); after the launch the games handle a lost peer themselves, and an IceMsg for a gone game is dropped. A long
-IceMsg's line names its CandidatesMessage's candidates by type, and its SHA-256 is the same where it goes on.
+game has closed its connection, and its status is 0 when the host's lobby seated every other player, every game launched
+(GameState Launching) and ended its session before its connection did (JsonStats, which a game sends at the game's end
+and when its player leaves the game, or GameEnded), a game reported the game's end (GameEnded) and none a desync
+(Desync); a game that crashed or was killed sends neither. Each miss has a line, a game's naming the game. As FAF's
+server does, a game whose connection closes before the host launched leaves the others' lobbies (DisconnectFromPeer
+[its id] to each); after the launch the games handle a lost peer themselves, and an IceMsg for a gone game is dropped. A
+long IceMsg's line names its CandidatesMessage's candidates by type, and its SHA-256 is the same where it goes on.
 
 With --ice-msg BYTES (one game) it sends, before CreateLobby, a peer's ICE message of BYTES bytes as a launcher in
 native mode relays one (IceMsg [sender id, CandidatesMessage JSON]), and the same arguments as Test, whose arguments
@@ -207,6 +209,7 @@ class Seat:
         self.joined = False  # another game: JoinGame sent, and ConnectToPeer to the games before it
         self.seated = False  # another game: the host's PlayerOption named it
         self.launched = False  # its GameState Launching
+        self.stats = False  # its JsonStats: its session ended, at the game's end or as its player left the game
         self.ended = False  # its GameEnded: its simulation reached the game's end
         self.desyncs = 0  # its Desync messages
 
@@ -228,10 +231,21 @@ class Session:
             return False
         return all(seat.seated for seat in self.seats[1:])
 
-    def played(self):
-        """--play's goal: the lobby's, then every game launched, one reported the game's end and none a desync."""
-        return (self.succeeded_at is not None and all(seat.launched for seat in self.seats)
-                and any(seat.ended for seat in self.seats) and not any(seat.desyncs for seat in self.seats))
+    def unplayed(self):
+        """What --play's goal misses, a line each, none when it is met: the lobby's goal, then every game launched and
+        ended its session before its connection did, one reported the game's end and none a desync."""
+        misses = [] if self.succeeded_at is not None else ["the host's lobby did not seat every other player"]
+        for seat in self.seats:
+            if not seat.launched:
+                misses.append(f"{seat.label} did not launch")
+            elif not (seat.stats or seat.ended):
+                misses.append(f"{seat.label} left the game without JsonStats or GameEnded, as a game that crashed or "
+                              "was killed does")
+            if seat.desyncs:
+                misses.append(f"{seat.label} sent {seat.desyncs} Desync")
+        if not any(seat.ended for seat in self.seats):
+            misses.append("no game reported the game's end (GameEnded)")
+        return misses
 
     def by_uid(self, uid):
         return next((seat for seat in self.seats if seat.uid == uid), None)
@@ -254,6 +268,8 @@ class Session:
                 seat.launched = True
                 if seat is self.seats[0]:
                     self.launched = True
+            elif command == "JsonStats":
+                seat.stats = True
             elif command == "GameEnded":
                 seat.ended = True
             elif command == "Desync":
@@ -440,11 +456,17 @@ def main():
                     + ("" if seat is seats[0] else ", seated by the host" if seat.seated else ", not seated"))
             if args.play:
                 line += (", launched" if seat.launched else ", not launched") \
+                    + (", JsonStats" if seat.stats else ", no JsonStats") \
                     + (", GameEnded" if seat.ended else ", no GameEnded") \
                     + f", {seat.desyncs} Desync; " + (seat.gone or "never connected")
             print(line, flush=True)
     if args.play:
-        return 0 if session.played() else 1
+        misses = session.unplayed()
+        for miss in misses:
+            print(f"not played to its end: {miss}", flush=True)
+        if not misses:
+            print("played to its end", flush=True)
+        return 1 if misses else 0
     return 0 if session.succeeded_at is not None else 1
 
 
