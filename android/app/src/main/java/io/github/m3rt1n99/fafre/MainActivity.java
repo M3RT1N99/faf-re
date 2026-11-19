@@ -1,30 +1,21 @@
 package io.github.m3rt1n99.fafre;
 
 import android.Manifest;
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
-import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -38,18 +29,7 @@ import java.util.List;
  * played on the engine's headless simulation. The tests run in TestService; this screen polls
  * TestState and shows it.
  */
-public final class MainActivity extends Activity {
-    // res/values/colors.xml
-    private static final int BACKGROUND = 0xFF101820;
-    private static final int CARD = 0xFF1A2934;
-    private static final int ACCENT = 0xFFF2A33A;
-    private static final int TEXT = 0xFFE8EEF2;
-    private static final int MUTED = 0xFF9AAAB6;
-    private static final int PASS = 0xFF6BD06B;
-    private static final int FAIL = 0xFFFF6B6B;
-
-    private static final int PICK_SCFA = 1;
-
+public final class MainActivity extends Screen {
     /** docs/PR_REPLAY_CHECK.md, the core set (FAF game version 3835), shortest first. */
     private static final long[] CORE_SET = {26902315, 26930624, 26943656, 26883423, 26881085, 26928211, 26989770, 26897073};
     /** The extended set's ten games beyond the core set, shortest first (28 to 83 minutes). */
@@ -58,7 +38,6 @@ public final class MainActivity extends Activity {
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private long mShownRevision = -1;
-    private boolean mScreenKeptOn;
 
     private TextView mMathResult;
     private TextView mGameResult;
@@ -112,7 +91,7 @@ public final class MainActivity extends Activity {
                 + "700 MB from FAF each, kept whole), replays and maps as needed.");
         mDataStatus = text("", 14, TEXT);
         data.addView(mDataStatus);
-        mStartButtons.add(button(data, "Import SCFA folder…", v -> pickScfa()));
+        mStartButtons.add(button(data, "Import SCFA folder…", v -> pickScfaFolder()));
 
         // 3. Replays.
         LinearLayout replays = card(column, "3 · Replay parity",
@@ -199,17 +178,7 @@ public final class MainActivity extends Activity {
         mLog.setTypeface(Typeface.MONOSPACE);
         running.addView(mLog);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(BACKGROUND);
-        scroll.addView(column);
-        setContentView(scroll);
-        if (Build.VERSION.SDK_INT >= 35) {
-            scroll.setOnApplyWindowInsetsListener((v, insets) -> {
-                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars());
-                v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-                return insets;
-            });
-        }
+        show(column);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, 0);
         }
@@ -248,15 +217,7 @@ public final class MainActivity extends Activity {
             button.setEnabled(!running);
         }
         mCancel.setEnabled(running);
-        if (running != mScreenKeptOn) {
-            // A game is played with the screen on; a phone with the screen off may run the CPU slower.
-            mScreenKeptOn = running;
-            if (running) {
-                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            } else {
-                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            }
-        }
+        keepScreenOn(running);
         if (revision == mShownRevision) {
             return;
         }
@@ -279,11 +240,8 @@ public final class MainActivity extends Activity {
             Storage storage = new Storage(this);
             int archives = ScfaImport.archives(storage);
             int fonts = ScfaImport.fonts(storage);
-            StringBuilder status = new StringBuilder();
-            status.append(archives > 0
-                ? "SCFA: " + archives + " archives, " + fonts + " fonts, " + ScfaImport.soundBanks(storage) + " sound banks, "
-                    + ScfaImport.movies(storage) + " movies in " + storage.scfa
-                : "SCFA: not imported yet");
+            StringBuilder status = new StringBuilder(ScfaImport.summary(storage));
+            status.append(archives > 0 ? " in " + storage.scfa : "");
             List<Integer> versions = GameFiles.readyVersions(storage);
             status.append("\nFAF game files: ");
             for (int i = 0; i < versions.size(); ++i) {
@@ -298,29 +256,6 @@ public final class MainActivity extends Activity {
         } catch (IOException e) {
             mDataStatus.setText("Storage: " + e.getMessage());
         }
-    }
-
-    /** The card's button: a check of FAF's newest version, or while the card asks, the question again. */
-    private void getNewestGameFiles() {
-        NewestGameFiles pending = NewestGameFiles.pending();
-        if (pending != null) {
-            askToDownload(pending);
-        } else {
-            TestService.start(this, TestService.checkNewestGameFiles());
-        }
-    }
-
-    /** A download on a metered network waits for a yes to its size. */
-    private void askToDownload(NewestGameFiles question) {
-        String size = NewestGameFiles.size(question.bytes);
-        new AlertDialog.Builder(this)
-            .setTitle("Download " + size + " on a metered network?")
-            .setMessage("FAF's game version " + question.newest + " is " + size + " from FAF's servers, and the phone's network "
-                + "was metered when the app checked (mobile data, a hotspot, or a Wi-Fi set so). Until a yes, the button asks "
-                + "again.")
-            .setPositiveButton("Download", (dialog, which) -> TestService.start(this, TestService.gameFiles(question.newest)))
-            .setNegativeButton("Not now", null)
-            .show();
     }
 
     /** "26902315 26930624 ...": a replay set for the ID field. */
@@ -361,26 +296,6 @@ public final class MainActivity extends Activity {
         TestService.start(this, TestService.replays(array, workers, mHint.isChecked()));
     }
 
-    private void pickScfa() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(intent, PICK_SCFA);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == PICK_SCFA && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            Uri tree = data.getData();
-            try {
-                getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (SecurityException e) {
-                // a one-time grant is enough for this import
-            }
-            TestService.start(this, TestService.importScfa(tree));
-        }
-    }
-
     private void share() {
         try {
             File zip = Results.write(this, new Storage(this));
@@ -395,53 +310,5 @@ public final class MainActivity extends Activity {
         } catch (IOException e) {
             Toast.makeText(this, "Cannot write the results: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
-    }
-
-    // --- Views -------------------------------------------------------------------------------
-
-    private int dp(int value) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
-    }
-
-    private TextView text(String value, int sp, int color) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        view.setTextColor(color);
-        view.setPadding(0, dp(2), 0, dp(2));
-        return view;
-    }
-
-    private LinearLayout card(LinearLayout parent, String title, String description) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(14);
-        card.setPadding(pad, pad, pad, pad);
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(CARD);
-        shape.setCornerRadius(dp(10));
-        card.setBackground(shape);
-        TextView heading = text(title, 17, TEXT);
-        heading.setTypeface(Typeface.DEFAULT_BOLD);
-        card.addView(heading);
-        if (description != null) {
-            card.addView(text(description, 13, MUTED));
-        }
-        LinearLayout.LayoutParams params =
-            new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dp(14);
-        parent.addView(card, params);
-        return card;
-    }
-
-    private Button button(LinearLayout parent, String label, View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        button.setTextColor(Color.BLACK);
-        button.getBackground().setTint(ACCENT);
-        button.setOnClickListener(listener);
-        parent.addView(button);
-        return button;
     }
 }
