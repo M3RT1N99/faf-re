@@ -76,11 +76,21 @@ final class Launch {
         }
     }
 
-    private static final String LOOPBACK_REPLAY = "gpgnet://127\\.0\\.0\\.1:(\\d{1,5})/\\d{1,10}/[A-Za-z0-9_.-]{1,64}\\.SCFAreplay";
-    private static final String REPLAY_TAKES = "gpgnet://127.0.0.1:<port>/<game id>/<name>.SCFAreplay";
+    /** The loopback, as /gpgnet and the replays' URIs name it: FAF's Java client says 127.0.0.1, a client may say localhost. */
+    private static final String LOOPBACK = "(?:127\\.0\\.0\\.1|localhost)";
+    private static final String LOOPBACK_REPLAY = "gpgnet://" + LOOPBACK + ":(\\d{1,5})/\\d{1,10}/[A-Za-z0-9_.-]{1,64}\\.SCFAreplay";
+    private static final String REPLAY_TAKES = "gpgnet://<127.0.0.1 or localhost>:<port>/<game id>/<name>.SCFAreplay";
     private static final String DECIMAL = "-?\\d{1,10}(?:\\.\\d{1,20})?";
     private static final String COUNT = "\\d{1,4}";
     private static final String COUNT_TAKES = "a whole number from 0 to 9999";
+    /**
+     * FAF's league divisions, the league service's name keys that FAF's Java client passes for a matchmaker game, and
+     * "unlisted" for a player with none (its GameRunner): FAF's autolobby takes them as they are, for its texture
+     * /textures/divisions/&lt;division&gt; &lt;subdivision&gt;.png (AutolobbyController.lua, Division and Subdivision).
+     */
+    private static final String DIVISION = "bronze|silver|gold|diamond|master|grandmaster|unlisted";
+    /** A division's subdivision, which grandmaster and unlisted have not, and the Java client then leaves out. */
+    private static final String SUBDIVISION = "I|II|III|IV|V";
 
     /**
      * The whitelist: each switch a launcher may give, spelled so, once, with what it takes. Never from outside: the app's
@@ -91,7 +101,7 @@ final class Launch {
 
     static {
         Map<String, Switch> switches = new LinkedHashMap<>();
-        switches.put("/gpgnet", new Switch("(?:127\\.0\\.0\\.1|localhost):(\\d{1,5})", "127.0.0.1:<port> or localhost:<port>"));
+        switches.put("/gpgnet", new Switch(LOOPBACK + ":(\\d{1,5})", "127.0.0.1:<port> or localhost:<port>"));
         switches.put("/savereplay", new Switch(LOOPBACK_REPLAY, REPLAY_TAKES));
         switches.put("/replay", new Switch(LOOPBACK_REPLAY, REPLAY_TAKES));
         switches.put("/nativenet", new Switch(null, null));
@@ -104,6 +114,8 @@ final class Launch {
         switches.put("/startspot", new Switch(COUNT, COUNT_TAKES));
         switches.put("/country", new Switch("[A-Z]{2}", "two capital letters"));
         switches.put("/clan", new Switch("[A-Za-z0-9_-]{1,8}", "1 to 8 letters, digits, _ or -"));
+        switches.put("/division", new Switch(DIVISION, "bronze, silver, gold, diamond, master, grandmaster or unlisted"));
+        switches.put("/subdivision", new Switch(SUBDIVISION, "I, II, III, IV or V"));
         SWITCHES = Collections.unmodifiableMap(switches);
     }
 

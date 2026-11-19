@@ -393,13 +393,15 @@ it), a value where a switch goes, a file's path, a host off the loopback, a swit
 | Switch | Value |
 |---|---|
 | `/gpgnet` | `127.0.0.1:<port>` or `localhost:<port>`, port 1 to 65535 |
-| `/savereplay` | `gpgnet://127.0.0.1:<port>/<game id>/<name>.SCFAreplay`: the id 1 to 10 digits, the name `[A-Za-z0-9_.-]{1,64}` |
+| `/savereplay` | `gpgnet://127.0.0.1:<port>/<game id>/<name>.SCFAreplay`, or the same with `localhost`, as `/gpgnet` takes either: the id 1 to 10 digits, the name `[A-Za-z0-9_.-]{1,64}` |
 | `/replay` | The same, a live replay through the client on the loopback |
 | `/nativenet`, `/nativenetrelay` | none |
 | `/mean`, `/deviation` | A decimal number, `-?\d{1,10}(\.\d{1,20})?` |
 | `/numgames`, `/team`, `/players`, `/startspot` | A whole number from 0 to 9999 |
 | `/country` | `[A-Z]{2}` |
 | `/clan` | `[A-Za-z0-9_-]{1,8}` |
+| `/division` | `bronze`, `silver`, `gold`, `diamond`, `master`, `grandmaster` or `unlisted`: the player's league division in a matchmaker game, the league service's name, as FAF's Java client passes it (`unlisted` for none), for FAF's autolobby and its `textures/divisions` |
+| `/subdivision` | `I`, `II`, `III`, `IV` or `V`: the division's step; `grandmaster` and `unlisted` have none, and the Java client leaves the switch out |
 
 A start plays one replay, `REPLAY` or `/replay`, and a rejoin none (`ARGUMENTS`). The switches go after the activity's
 own (`/init`, `/log`, `/notelemetry`, the HUD's two, `/nomovie` for an import without movies), this side's after the

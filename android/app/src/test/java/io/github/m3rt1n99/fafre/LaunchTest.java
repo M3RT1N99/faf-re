@@ -29,9 +29,9 @@ public class LaunchTest {
 
     /** Every switch of the whitelist once, with a value as the FAF client gives it. */
     private static final String[] EVERY_SWITCH = {"/gpgnet", "127.0.0.1:7237", "/savereplay",
-        "gpgnet://127.0.0.1:41011/26930624/player.SCFAreplay", "/replay", "gpgnet://127.0.0.1:15000/26930624/live.SCFAreplay",
+        "gpgnet://127.0.0.1:41011/26930624/player.SCFAreplay", "/replay", "gpgnet://localhost:15000/26930624/live.SCFAreplay",
         "/nativenet", "/nativenetrelay", "/mean", "1523.75", "/deviation", "87.5", "/numgames", "3", "/team", "2", "/players", "4",
-        "/startspot", "1", "/country", "DE", "/clan", "AB-1_"};
+        "/startspot", "1", "/country", "DE", "/clan", "AB-1_", "/division", "gold", "/subdivision", "II"};
 
     private static void assertFailure(GameStart.Code code, String message, ThrowingRunnable start) {
         GameStart.Failure failure = assertThrows(GameStart.Failure.class, start);
@@ -67,7 +67,7 @@ public class LaunchTest {
     @Test
     public void theWhitelistHasTheContractsSwitches() {
         assertEquals(Arrays.asList("/gpgnet", "/savereplay", "/replay", "/nativenet", "/nativenetrelay", "/mean", "/deviation",
-            "/numgames", "/team", "/players", "/startspot", "/country", "/clan"), Launch.switches());
+            "/numgames", "/team", "/players", "/startspot", "/country", "/clan", "/division", "/subdivision"), Launch.switches());
     }
 
     @Test
@@ -84,7 +84,7 @@ public class LaunchTest {
     public void theAppsOwnSwitchesAndEveryOtherSwitchNeverComeFromOutside() {
         List<String> never = new ArrayList<>(GameStart.OWN_SWITCHES);
         never.addAll(Arrays.asList("/prefs", "/nobugreport", "/con", "/rejoinoffer", "/rejoinkeyfile", "/rejoin", "/hostgame",
-            "/joingame", "/connectserver", "/map", "/load", "/windowed", "/debug", "/division", "/fafre_hud_scale"));
+            "/joingame", "/connectserver", "/map", "/load", "/windowed", "/debug", "/fafre_hud_scale"));
         for (String forbidden : never) {
             assertRefused(forbidden + " after allowed ones", "/gpgnet", "127.0.0.1:7237", forbidden, "x");
             assertFailure(GameStart.Code.ARGUMENTS, "LAUNCHER_ARGUMENTS has \"" + forbidden + "\" at index 0, which is no switch "
@@ -151,18 +151,55 @@ public class LaunchTest {
     }
 
     @Test
+    public void theReplaySwitchesTakeTheLoopbackByEitherNameAsGpgnetDoes() throws GameStart.Failure {
+        for (String host : new String[] {"127.0.0.1", "localhost"}) {
+            for (String name : new String[] {"/savereplay", "/replay"}) {
+                for (String port : new String[] {"1", "41011", "65535"}) {
+                    String uri = "gpgnet://" + host + ":" + port + "/26930624/a.b-c_D.SCFAreplay";
+                    assertEquals(Arrays.asList(name, uri), Launch.switches(new String[] {name, uri}));
+                }
+            }
+            assertEquals(host + ":7237", Launch.switches(new String[] {"/gpgnet", host + ":7237"}).get(1));
+        }
+    }
+
+    @Test
     public void theReplaySwitchesTakeTheLoopbacksGpgnetReplaysOnlyWithAPlainName() {
-        for (String uri : new String[] {"gpgnet://192.0.2.10:15000/26930624/a.SCFAreplay", "gpgnet://localhost:15000/1/a.SCFAreplay",
-            "gpgnet://127.0.0.1:15000/x/a.SCFAreplay", "gpgnet://127.0.0.1:15000/1/a b.SCFAreplay",
-            "gpgnet://127.0.0.1:15000/1/../a.SCFAreplay", "gpgnet://127.0.0.1:15000/1/a.scfareplay",
-            "gpgnet://127.0.0.1:15000/1/.SCFAreplay", "gpgnet://127.0.0.1:0/1/a.SCFAreplay", "gpgnet://127.0.0.1:15000/1/"
-                + "a234567890123456789012345678901234567890123456789012345678901234x.SCFAreplay",
+        for (String uri : new String[] {"gpgnet://192.0.2.10:15000/26930624/a.SCFAreplay", "gpgnet://LOCALHOST:15000/1/a.SCFAreplay",
+            "gpgnet://localhost.example.org:15000/1/a.SCFAreplay", "gpgnet://127.0.0.2:15000/1/a.SCFAreplay",
+            "gpgnet://[::1]:15000/1/a.SCFAreplay", "gpgnet://localhost/1/a.SCFAreplay", "gpgnet://localhost:0/1/a.SCFAreplay",
+            "gpgnet://localhost:65536/1/a.SCFAreplay", "gpgnet://127.0.0.1:15000/x/a.SCFAreplay",
+            "gpgnet://127.0.0.1:15000/1/a b.SCFAreplay", "gpgnet://127.0.0.1:15000/1/../a.SCFAreplay",
+            "gpgnet://127.0.0.1:15000/1/a.scfareplay", "gpgnet://127.0.0.1:15000/1/.SCFAreplay", "gpgnet://127.0.0.1:0/1/a.SCFAreplay",
+            "gpgnet://127.0.0.1:15000/1/a234567890123456789012345678901234567890123456789012345678901234x.SCFAreplay",
             "gpgnet://127.0.0.1:15000/12345678901/a.SCFAreplay", "/sdcard/replay.SCFAreplay", "file:///sdcard/a.SCFAreplay",
-            "http://127.0.0.1:15000/1/a.SCFAreplay"}) {
+            "http://127.0.0.1:15000/1/a.SCFAreplay", "http://localhost:15000/1/a.SCFAreplay"}) {
             for (String name : new String[] {"/savereplay", "/replay"}) {
                 assertFailure(GameStart.Code.ARGUMENTS, "LAUNCHER_ARGUMENTS has " + name + " \"" + uri + "\": it takes "
-                    + "gpgnet://127.0.0.1:<port>/<game id>/<name>.SCFAreplay", () -> Launch.switches(new String[] {name, uri}));
+                    + "gpgnet://<127.0.0.1 or localhost>:<port>/<game id>/<name>.SCFAreplay",
+                    () -> Launch.switches(new String[] {name, uri}));
             }
+        }
+    }
+
+    @Test
+    public void theDivisionsAreFafsLeagueNamesAndTheSubdivisionsItsNumerals() throws GameStart.Failure {
+        // The league service's name keys, which FAF's autolobby takes for /textures/divisions/<division> <subdivision>.png.
+        for (String division : new String[] {"bronze", "silver", "gold", "diamond", "master", "grandmaster", "unlisted"}) {
+            assertEquals(division, Launch.switches(new String[] {"/division", division}).get(1));
+        }
+        for (String subdivision : new String[] {"I", "II", "III", "IV", "V"}) {
+            assertEquals(subdivision, Launch.switches(new String[] {"/subdivision", subdivision}).get(1));
+        }
+        assertEquals(Arrays.asList("/division", "diamond", "/subdivision", "IV", "/team", "2"),
+            Launch.switches(new String[] {"/division", "diamond", "/subdivision", "IV", "/team", "2"}));
+        for (String bad : new String[] {"Gold", "GOLD", "platinum", "bronze I", "bronze_I", "", " gold", "gold ", "../gold", "goldd"}) {
+            assertFailure(GameStart.Code.ARGUMENTS, "LAUNCHER_ARGUMENTS has /division \"" + bad + "\": it takes bronze, silver, gold, "
+                + "diamond, master, grandmaster or unlisted", () -> Launch.switches(new String[] {"/division", bad}));
+        }
+        for (String bad : new String[] {"i", "ii", "VI", "IIII", "0", "1", "", "I ", "II/", "bronze"}) {
+            assertFailure(GameStart.Code.ARGUMENTS, "LAUNCHER_ARGUMENTS has /subdivision \"" + bad + "\": it takes I, II, III, IV or V",
+                () -> Launch.switches(new String[] {"/subdivision", bad}));
         }
     }
 
