@@ -94,7 +94,6 @@ public final class TestService extends Service {
         Intent job = intent;
         Thread worker = new Thread(() -> runJob(job), "faf-tests");
         worker.start();
-        StatusProvider.changed(this);
         mHandler.post(mUpdate);
         return START_NOT_STICKY;
     }
@@ -110,7 +109,6 @@ public final class TestService extends Service {
                 mShownStep = step;
                 NotificationManager manager = getSystemService(NotificationManager.class);
                 manager.notify(NOTIFICATION, notification(step.isEmpty() ? "Running" : step));
-                StatusProvider.changed(TestService.this);
             }
             mHandler.postDelayed(this, 2000);
         }
@@ -153,8 +151,6 @@ public final class TestService extends Service {
         } finally {
             lock.release();
             TestState.end();
-            // What the job changed of the game's data (an import, game files) and that it ended.
-            StatusProvider.changed(this);
             mHandler.post(() -> {
                 stopForeground(true);
                 stopSelf();

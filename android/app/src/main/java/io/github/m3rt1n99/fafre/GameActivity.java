@@ -155,8 +155,6 @@ public final class GameActivity extends SDLActivity {
             for (String line : mFailure.reportLines()) {
                 GameReport.append(this, line);
             }
-            // The last game's report has its end: the status a launcher reads changed.
-            StatusProvider.changed(this);
             result();
             finish();
             return;
@@ -193,10 +191,6 @@ public final class GameActivity extends SDLActivity {
             .build();
         mShowsProgram = true;
         mHandler.post(mPoll);
-        if (program == null) {
-            // A game began: the status a launcher reads changed.
-            StatusProvider.changed(this);
-        }
     }
 
     /**
@@ -282,7 +276,6 @@ public final class GameActivity extends SDLActivity {
             GameReport.append(this, line);
         }
         result();
-        StatusProvider.changed(this);
     }
 
     /** The preparation's step over the surface while it runs, which the poll keeps up to date; gone when it ends. */

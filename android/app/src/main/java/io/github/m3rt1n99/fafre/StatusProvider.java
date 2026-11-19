@@ -17,23 +17,15 @@ import java.util.List;
  * The game's status for a launcher in another app, read-only: content://io.github.m3rt1n99.fafre.status/game_data and
  * /last_game (Status: their columns), and the token a launcher's start carries (call "play_token", PlayTokens). Exported, as
  * the FAF client is another app, and it answers allowed callers only (Callers): a refused one gets the table's columns and no
- * row, and no token. Each table's URI is notified when its data changes: a job of the app's begins, takes its next step
- * (every 2 s at most) or ends; a game begins, its start fails, or its end is found. In the app's main process, where the jobs
- * run and LaunchGameActivity spends the tokens.
+ * row, and no token. No change notifications: Android lets any app that sees the provider observe its URIs, whatever a query
+ * would answer it, and each would tell it when the player plays; the launcher queries when it needs to know. In the app's
+ * main process, where the jobs run and LaunchGameActivity spends the tokens.
  */
 public final class StatusProvider extends ContentProvider {
     static final String AUTHORITY = "io.github.m3rt1n99.fafre.status";
-    static final Uri GAME_DATA = Uri.parse("content://" + AUTHORITY + "/" + Status.GAME_DATA);
-    static final Uri LAST_GAME = Uri.parse("content://" + AUTHORITY + "/" + Status.LAST_GAME);
     /** The call that gives an allowed launcher a token for its next start, in the answer's TOKEN. */
     static final String PLAY_TOKEN = "play_token";
     static final String TOKEN = "token";
-
-    /** Both tables changed, as far as their observers are concerned: from any of the app's processes. */
-    static void changed(Context context) {
-        context.getContentResolver().notifyChange(GAME_DATA, null);
-        context.getContentResolver().notifyChange(LAST_GAME, null);
-    }
 
     @Override
     public boolean onCreate() {
@@ -57,7 +49,6 @@ public final class StatusProvider extends ContentProvider {
         if (row != null) {
             cursor.addRow(row);
         }
-        cursor.setNotificationUri(context.getContentResolver(), uri);
         return cursor;
     }
 

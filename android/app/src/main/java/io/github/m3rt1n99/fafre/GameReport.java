@@ -213,7 +213,6 @@ final class GameReport {
     private static String withEnd(Context context, File file, String report) {
         String end = end(context, report, file.lastModified());
         append(context, end);
-        StatusProvider.changed(context);
         return report + end + "\n";
     }
 
