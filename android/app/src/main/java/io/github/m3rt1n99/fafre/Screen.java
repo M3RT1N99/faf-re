@@ -19,8 +19,9 @@ import android.widget.TextView;
 
 /**
  * The app's screens, built in code: their look (the colours of res/values/colors.xml, the cards, texts and buttons on a page
- * that scrolls) and what more than one offers, the SCFA import's picker and FAF's newest game files with the question
- * before a download on a metered network. MainActivity, the test app, is its screen; its jobs run in TestService.
+ * that scrolls) and what more than one offers, the SCFA import's two pickers and FAF's newest game files with the question
+ * before a download on a metered network. MainActivity, the test app, and SetupActivity, the game data for the FAF client,
+ * are its screens; their jobs run in TestService.
  */
 abstract class Screen extends Activity {
     // res/values/colors.xml
@@ -33,6 +34,9 @@ abstract class Screen extends Activity {
     static final int FAIL = 0xFFFF6B6B;
 
     private static final int PICK_SCFA_FOLDER = 1;
+    private static final int PICK_SCFA_ZIP = 2;
+    /** The ZIP's types a picker shows; the import goes by the file's first bytes (ScfaZip), whatever its type says. */
+    private static final String[] ZIP_TYPES = {"application/zip", "application/x-zip-compressed"};
 
     private boolean mScreenKeptOn;
 
@@ -43,10 +47,18 @@ abstract class Screen extends Activity {
         startActivityForResult(intent, PICK_SCFA_FOLDER);
     }
 
+    /** The SCFA import from a ZIP of its folder, which the system's file picker gives. */
+    void pickScfaZip() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+            .putExtra(Intent.EXTRA_MIME_TYPES, ZIP_TYPES);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, PICK_SCFA_ZIP);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != PICK_SCFA_FOLDER) {
+        if (requestCode != PICK_SCFA_FOLDER && requestCode != PICK_SCFA_ZIP) {
             return;
         }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
@@ -59,7 +71,7 @@ abstract class Screen extends Activity {
         } catch (SecurityException e) {
             // a one-time grant is enough for this import
         }
-        TestService.start(this, TestService.importScfa(picked));
+        TestService.start(this, requestCode == PICK_SCFA_FOLDER ? TestService.importScfa(picked) : TestService.importScfaZip(picked));
     }
 
     /** The button for FAF's newest game files: a check of the newest version, or while a question waits, the question again. */

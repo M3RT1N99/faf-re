@@ -33,10 +33,15 @@ public final class LaunchGameActivity extends Activity {
             }
         } catch (GameStart.Failure failure) {
             Log.w(TAG, getCallingPackage() + ": " + failure.code + ": " + failure.getMessage());
-            setResult(RESULT_FIRST_USER, new Intent().putExtra(GameStart.RESULT_FAILURE, failure.code.name())
-                .putExtra(GameStart.RESULT_MESSAGE, failure.getMessage()));
+            setResult(RESULT_FIRST_USER, result(failure));
         }
         finish();
+    }
+
+    /** A refused start's result, with RESULT_FIRST_USER: its code and its line. */
+    static Intent result(GameStart.Failure failure) {
+        return new Intent().putExtra(GameStart.RESULT_FAILURE, failure.code.name())
+            .putExtra(GameStart.RESULT_MESSAGE, failure.getMessage());
     }
 
     /** The game's start for this one, which the checks let through. */
@@ -72,9 +77,9 @@ public final class LaunchGameActivity extends Activity {
         return game;
     }
 
-    /** The start's extras by name, each as the client gave it; ARGUMENTS when they cannot be read, such as a class of its own. */
+    /** A start's extras by name, each as the client gave it; ARGUMENTS when they cannot be read, such as a class of its own. */
     @SuppressWarnings("deprecation")
-    private static Map<String, Object> extras(Intent intent) throws GameStart.Failure {
+    static Map<String, Object> extras(Intent intent) throws GameStart.Failure {
         Map<String, Object> extras = new HashMap<>();
         try {
             Bundle bundle = intent.getExtras();
