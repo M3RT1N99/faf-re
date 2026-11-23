@@ -21,6 +21,7 @@ import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -338,6 +339,9 @@ public final class GameActivity extends SDLActivity {
             Os.setenv("HOME", home.getPath(), true);
             Os.setenv("TMPDIR", getCacheDir().getPath(), true);
             Os.setenv("FAF_GAME_REPORT", GameReport.file(this).getPath(), true);
+            // The touch layer's scheme and its millimetre (android/native/src/host/FingersSdl.cpp): the program's own fingers.
+            Os.setenv("FAF_TOUCH", TouchScheme.of(this) == TouchScheme.GRIFF ? "griff" : "mouse", true);
+            Os.setenv("FAF_SCREEN_MM", String.format(Locale.ROOT, "%.2f", screenShortSideMm()), true);
             if (getIntent().getBooleanExtra(EXTRA_BC_ON_CPU, false)) {
                 Os.setenv("FAF_VULKAN_BC_ON_CPU", "1", true);
             }
@@ -386,11 +390,13 @@ public final class GameActivity extends SDLActivity {
         return new GameSurface(context);
     }
 
-    /** The program's word that there is something new to read (Game.FROM_PROGRAM), on the activity's thread. */
+    /** The program's word for a finger's buzz (Game.BUZZ: a hold, a rest, a group stored), on the activity's thread. */
     @Override
     protected boolean onUnhandledMessage(int command, Object param) {
-        if (command == Game.FROM_PROGRAM) {
-            Game.fromProgram();
+        if (command == Game.BUZZ) {
+            if (mSurface != null) {
+                mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            }
             return true;
         }
         return super.onUnhandledMessage(command, param);

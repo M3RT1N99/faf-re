@@ -19,12 +19,13 @@ final class TouchScheme {
     }
 
     /**
-     * What the user chose; the mouse until they choose. In the game's process it stays what that process read first: a choice
-     * made in another process reaches it when it starts again.
+     * What the user chose; Griff until they choose (the user's decision of 2026-11-19: touch is on by default on Android). In
+     * the game's process it stays what that process read first: a choice made in another process reaches it when it starts
+     * again.
      */
     static int of(Context context) {
-        int scheme = preferences(context).getInt(SCHEME, MOUSE);
-        return scheme == GRIFF ? GRIFF : MOUSE;
+        int scheme = preferences(context).getInt(SCHEME, GRIFF);
+        return scheme == MOUSE ? MOUSE : GRIFF;
     }
 
     /**
