@@ -25,6 +25,7 @@
 // are the GPU's or decoded on the CPU, and the output the sound plays through, or why it has none.
 
 #include <android/log.h>
+#include <jni.h>
 #include <pthread.h>
 #include <strings.h>
 #include <time.h>
@@ -39,6 +40,7 @@
 
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_system.h>
 
 #include "GameAndroid.h"
 #include "ScreenKeyboardAndroid.h"
@@ -129,6 +131,48 @@ namespace
     }
   }
 
+  /// The environment as the activity set it (GameActivity.prepare, Os.setenv), in the program's own: what differs is taken.
+  /// On a phone the activity and the program share one C library, and nothing differs. Under an ARM translation (an x86_64
+  /// emulator running the arm64 app) the program's code has a C library of its own, whose environment was copied when the
+  /// process began, before the activity set it: the engine found no HOME and could not set up its search paths.
+  void TakeActivityEnvironment()
+  {
+    JNIEnv* const env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    if (env == nullptr) {
+      return;
+    }
+    const jclass os = env->FindClass("android/system/Os");
+    const jmethodID current = os != nullptr ? env->GetStaticMethodID(os, "environ", "()[Ljava/lang/String;") : nullptr;
+    const auto entries = current != nullptr ? static_cast<jobjectArray>(env->CallStaticObjectMethod(os, current)) : nullptr;
+    if (env->ExceptionCheck() || entries == nullptr) {
+      env->ExceptionClear();
+      return;
+    }
+    const jsize count = env->GetArrayLength(entries);
+    for (jsize at = 0; at < count; ++at) {
+      const auto entry = static_cast<jstring>(env->GetObjectArrayElement(entries, at));
+      if (entry == nullptr) {
+        continue;
+      }
+      if (const char* const chars = env->GetStringUTFChars(entry, nullptr)) {
+        const std::string_view text(chars);
+        const std::size_t equals = text.find('=');
+        if (equals != std::string_view::npos && equals > 0) {
+          const std::string name(text.substr(0, equals));
+          const std::string value(text.substr(equals + 1));
+          const char* const own = std::getenv(name.c_str());
+          if (own == nullptr || value != own) {
+            (void)::setenv(name.c_str(), value.c_str(), 1);
+          }
+        }
+        env->ReleaseStringUTFChars(entry, chars);
+      }
+      env->DeleteLocalRef(entry);
+    }
+    env->DeleteLocalRef(entries);
+    env->DeleteLocalRef(os);
+  }
+
   struct Program
   {
     int argc = 0;
@@ -186,6 +230,7 @@ namespace platform::android
 extern "C" __attribute__((visibility("default"))) int FafGameMain(const int argc, char* argv[])
 {
   gStartMilliseconds = NowMilliseconds();
+  TakeActivityEnvironment();
   // argv[0] is SDL's; the activity's arguments follow, the program's path first.
   if (argc < 2) {
     Report("fatal: the activity gave no program to start");
