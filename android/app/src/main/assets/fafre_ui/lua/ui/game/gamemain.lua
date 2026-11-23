@@ -26,6 +26,13 @@ do
             if not started then
                 WARN('fafre_ui: ui/game/gamemain.lua: griff: ' .. tostring(failure))
             end
+            -- The bar of the touch scheme that is a finger as the mouse (fafre/bar.lua), over the HUD.
+            local made, problem = pcall(function()
+                import('/fafre_ui/lua/fafre/bar.lua').Create(true)
+            end)
+            if not made then
+                WARN('fafre_ui: ui/game/gamemain.lua: the bar: ' .. tostring(problem))
+            end
         end
     end)
     if not ok then

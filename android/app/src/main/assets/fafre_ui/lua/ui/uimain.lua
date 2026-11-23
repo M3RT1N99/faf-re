@@ -25,6 +25,13 @@ do
                 WARN('fafre_ui: the front end: ' .. tostring(why))
             end
             Start()
+            -- The bar over the menus (fafre/bar.lua), after FAF's front end has made its first screen.
+            local made, failure = pcall(function()
+                import('/fafre_ui/lua/fafre/bar.lua').Create(false)
+            end)
+            if not made then
+                WARN('fafre_ui: the bar: ' .. tostring(failure))
+            end
         end
     end)
     if not ok then

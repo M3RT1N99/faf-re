@@ -69,11 +69,18 @@ namespace
 
   /// On the program's thread, where the cursor has come to the place. PC players delete a queued order
   /// by pointing at it, within a few pixels; this takes the nearest within a part of the view, which a
-  /// finger can hit. Nothing for a tap on the UI, as the cursor's place in the world then says nothing.
+  /// finger can hit. A tap on the UI deletes nothing, as the cursor's place in the world then says
+  /// nothing: it is the UI's, a finger's click, as the bar's Del is FAF's UI and is tapped off there.
   void DeleteOrderAtCursor(const Argument place)
   {
-    if (hostclicks::GriffClicking()
-        || !moho::UI_WorldViewAt(static_cast<float>(Coordinate(place, 0)), static_cast<float>(Coordinate(place, 1)))) {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
+    const int x = Coordinate(place, 0);
+    const int y = Coordinate(place, 1);
+    if (!moho::UI_WorldViewAt(static_cast<float>(x), static_cast<float>(y))) {
+      host::TouchButton(host::kButtonLeft, true, x, y);
+      host::TouchButton(host::kButtonLeft, false, x, y);
       return;
     }
     moho::CON_Execute(

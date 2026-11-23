@@ -16,6 +16,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <Windows.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -357,6 +359,8 @@ namespace
     /// The layer goes, as its scheme does: nothing of it stays held or shown, and Griff is off.
     ~Layer()
     {
+      mBarWanted = 0;
+      ApplyBar();
       Release();
       mTimers.Stop(kTouchTimer);
       mTimers.Stop(kPageTimer);
@@ -373,6 +377,24 @@ namespace
     [[nodiscard]] bool Griff() const
     {
       return mGriff;
+    }
+
+    /// The bar's toggles (bar.lua): Order, Del, Shift, Ctrl, as FAF's UI asks; they hold while a game has the fingers, not
+    /// under a dialog, and the game's end lets them go.
+    enum BarToggle : int
+    {
+      kBarOrder = 1,
+      kBarDelete = 2,
+      kBarShift = 4,
+      kBarCtrl = 8,
+    };
+
+    /// Turns a toggle of the bar over; whether it is wanted now.
+    bool FlipBar(const int toggle)
+    {
+      mBarWanted ^= toggle;
+      ApplyBar();
+      return (mBarWanted & toggle) != 0;
     }
 
     /// The picture's size now: Griff's millimetre and sizes follow it.
@@ -965,6 +987,26 @@ namespace
 
     // --- Griff's frame ----------------------------------------------------------------------------------------------------
 
+    /// The bar's toggles as they hold now: what FAF's UI asked for while a game has the fingers, else none.
+    void ApplyBar()
+    {
+      const int applied = mBarInGame ? mBarWanted : 0;
+      const int changed = applied ^ mBarApplied;
+      mBarApplied = applied;
+      if ((changed & kBarOrder) != 0) {
+        mTouch.SetSwapped((applied & kBarOrder) != 0);
+      }
+      if ((changed & kBarDelete) != 0) {
+        mTouch.SetDeleting((applied & kBarDelete) != 0);
+      }
+      if ((changed & kBarShift) != 0) {
+        fingerinput::Key(VK_SHIFT, (applied & kBarShift) != 0);
+      }
+      if ((changed & kBarCtrl) != 0) {
+        fingerinput::Key(VK_CONTROL, (applied & kBarCtrl) != 0);
+      }
+    }
+
     /// The game's pieces are for a game that fingers are on: a dialog over it has the fingers of the menus.
     void PlaceBarAsNow()
     {
@@ -973,6 +1015,11 @@ namespace
         return;
       }
       mBarInGame = inGame;
+      if (!moho::UI_GamePlaying()) {
+        // The game is over, and its bar with it: the next game's begins with none held.
+        mBarWanted = 0;
+      }
+      ApplyBar();
       if (mGriff) {
         if (!inGame) {
           ReleaseRail();
@@ -1223,6 +1270,9 @@ namespace
     float mUnsentDrag = 0;
     /// Griff: a game's fingers are the game's, and its frames are read.
     bool mBarInGame = false;
+    /// The bar's toggles FAF's UI asked for, and those that hold (BarToggle bits).
+    int mBarWanted = 0;
+    int mBarApplied = 0;
     bool mGriffPolling = false;
     touch::Rail mRail;
     touch::Undo mUndo;
@@ -1724,6 +1774,41 @@ namespace
   }
 
   moho::CScrLuaBinder gSetTouchBinder(moho::SCR_UserLuaInitSet(), "FafreSetTouch", &SetTouch, nullptr, "<global>", kSetTouchHelp);
+
+  constexpr char kTouchHelp[] =
+    "FafreTouch() - the touch layer's scheme ('griff', 'mouse' or 'off') and the screen's short side in mm (0: not known)";
+
+  /// What the bar (bar.lua) is to be: the scheme, and the screen's short side, by which its buttons are sized.
+  int Touch(lua_State* const lua)
+  {
+    const fingers::Scheme scheme = LayerWanted() ? fingers::SchemeNow() : fingers::Scheme::kOff;
+    lua_pushstring(lua, scheme == fingers::Scheme::kGriff ? "griff" : scheme == fingers::Scheme::kMouse ? "mouse" : "off");
+    lua_pushnumber(lua, ScreenMm());
+    return 2;
+  }
+
+  moho::CScrLuaBinder gTouchBinder(moho::SCR_UserLuaInitSet(), "FafreTouch", &Touch, nullptr, "<global>", kTouchHelp);
+
+  constexpr char kTouchBarHelp[] =
+    "FafreTouchBar(toggle) - turns the bar's toggle 'order', 'delete', 'shift' or 'ctrl' over and says whether it is on now; "
+    "it holds while a game has the fingers, and only where a finger is the mouse";
+
+  /// The light of the bar's button (bar.lua) is what the layer holds: a layer of another scheme, or none, holds nothing.
+  int TouchBar(lua_State* const lua)
+  {
+    const char* const name = lua_tostring(lua, 1);
+    const std::string toggle = name != nullptr ? name : "";
+    const int bit = toggle == "order" ? Layer::kBarOrder
+      : toggle == "delete"            ? Layer::kBarDelete
+      : toggle == "shift"             ? Layer::kBarShift
+      : toggle == "ctrl"              ? Layer::kBarCtrl
+                                      : 0;
+    const bool on = bit != 0 && gLayer != nullptr && !gLayer->Griff() && gLayer->FlipBar(bit);
+    lua_pushboolean(lua, on ? 1 : 0);
+    return 1;
+  }
+
+  moho::CScrLuaBinder gTouchBarBinder(moho::SCR_UserLuaInitSet(), "FafreTouchBar", &TouchBar, nullptr, "<global>", kTouchBarHelp);
 
   /// The listeners, once: before the first finger, on the program's thread.
   void Listen()

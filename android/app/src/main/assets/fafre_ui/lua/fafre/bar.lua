@@ -1,0 +1,101 @@
+-- The bar (android/TOUCH_UI.md): what a mouse and a keyboard have and fingers have not, as buttons in FAF's UI over the rest
+-- of it. In the menus the phone's keyboard (Keys); in a game with the touch scheme that is a finger as the mouse also Order (the
+-- left and right buttons change places), Shift, Ctrl and Del (a tap deletes the queued order under it), each on or off, which
+-- hold while the game has the fingers (FafreTouchBar). Griff has no bar in a game: its rail is griffhud.lua's, and its keyboard
+-- FAF's Menu tab's. A finger on the bar is the touch layer's, as on any of FAF's buttons (android/native/src/host/FingersSdl.cpp).
+-- Without the touch layer, as on a desktop, there is no bar.
+
+local Bitmap = import('/lua/maui/bitmap.lua').Bitmap
+local Group = import('/lua/maui/group.lua').Group
+local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
+local UIUtil = import('/lua/ui/uiutil.lua')
+
+--- A button's side in mm on the glass: in a game a finger's where there is room, in the menus smaller; the gap about each.
+local BUTTON_MM, MENU_BUTTON_MM, GAP_MM = 9, 6.5, 0.5
+--- In a game the bar stands under FAF's panels at the left edge (138 of FAF's pixels at the HUD's factor, the multifunction
+--- panel's bottom) and above the unit view (234 more).
+local ROOM_TOP, UNIT_VIEW_TOP = 138, 234
+--- The label's height for a button's side, and a button's colours off and on.
+local TEXT_PER_BUTTON = 0.27
+local OFF, ON = '70202830', 'C0D08020'
+
+--- A button of `side` pixels at column `column` and row `row` of the bar, which calls `pressed` with itself.
+local function Button(bar, label, side, gap, column, row, pressed)
+    local button = Bitmap(bar)
+    button:SetSolidColor(OFF)
+    button.Width:Set(side)
+    button.Height:Set(side)
+    button.Left:Set(function() return bar.Left() + gap + column * (side + 2 * gap) end)
+    button.Top:Set(function() return bar.Top() + gap + row * (side + 2 * gap) end)
+    -- FAF's text scales its size by the pixel factor; the side is the glass's already.
+    local text = UIUtil.CreateText(button, label, math.max(1, math.floor(side * TEXT_PER_BUTTON / LayoutHelpers.GetPixelScaleFactor())), UIUtil.bodyFont)
+    text:SetColor('ffffffff')
+    text:DisableHitTest()
+    LayoutHelpers.AtCenterIn(text, button)
+    button.HandleEvent = function(self, event)
+        if event.Type == 'ButtonPress' then
+            pressed(self)
+            return true
+        end
+        return false
+    end
+    return button
+end
+
+--- A button that turns the touch layer's toggle `name` over, lit while the layer holds it.
+local function Toggle(bar, label, side, gap, column, row, name)
+    return Button(bar, label, side, gap, column, row, function(self)
+        self:SetSolidColor(FafreTouchBar(name) and ON or OFF)
+    end)
+end
+
+local function Keys(bar, side, gap, column, row)
+    return Button(bar, 'Keys', side, gap, column, row, function()
+        FafreKeyboard()
+    end)
+end
+
+--- The bar of the menus (`inGame` false) or of a game, over what FAF's UI has made so far; nothing where it has none.
+function Create(inGame)
+    if not rawget(_G, 'FafreTouch') then
+        return
+    end
+    local scheme, screenMm = FafreTouch()
+    if scheme == 'off' or not screenMm or screenMm <= 0 or (inGame and scheme ~= 'mouse') then
+        return
+    end
+    local root = GetFrame(0)
+    -- The picture's lines span the screen's short side.
+    local mm = root.Height() / screenMm
+    local factor = LayoutHelpers.GetPixelScaleFactor()
+    local side, top
+    if inGame then
+        local room = root.Height() - (ROOM_TOP + UNIT_VIEW_TOP) * factor
+        side = math.min(BUTTON_MM * mm, room / 2 - GAP_MM * mm)
+        top = ROOM_TOP * factor
+    else
+        side = MENU_BUTTON_MM * mm
+        top = 0
+    end
+    side = math.floor(side)
+    local gap = math.max(1, math.floor(GAP_MM / 2 * mm))
+    local bar = Group(root, 'fafre_ui: the bar')
+    bar:DisableHitTest()
+    bar.Depth:Set(root:GetTopmostDepth() + 1)
+    bar.Left:Set(root.Left)
+    bar.Top:Set(function() return root.Top() + top end)
+    local columns, rows = 1, 1
+    if inGame then
+        Toggle(bar, 'Order', side, gap, 0, 0, 'order')
+        Toggle(bar, 'Shift', side, gap, 1, 0, 'shift')
+        Toggle(bar, 'Ctrl', side, gap, 2, 0, 'ctrl')
+        Toggle(bar, 'Del', side, gap, 0, 1, 'delete')
+        Keys(bar, side, gap, 1, 1)
+        columns, rows = 3, 2
+    else
+        Keys(bar, side, gap, 0, 0)
+    end
+    bar.Width:Set(columns * (side + 2 * gap))
+    bar.Height:Set(rows * (side + 2 * gap))
+    return bar
+end
