@@ -5,6 +5,11 @@
 touch::PageInput::PageInput(Mouse& mouse, const float slop) : mMouse(mouse), mSlop(slop)
 {}
 
+void touch::PageInput::SetSlop(const float slop)
+{
+  mSlop = slop;
+}
+
 void touch::PageInput::Down(const int id, const float x, const float y, const Millis time, const bool first)
 {
   // First: a leave on its way counts as taken back, whatever this finger goes on to send.

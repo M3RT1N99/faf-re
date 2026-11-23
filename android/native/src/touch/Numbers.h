@@ -47,6 +47,21 @@ namespace touch
     return static_cast<int>(value);
   }
 
+  /// `value` towards zero as an int, saturating; NaN gives 0: Java's (int) of a double.
+  [[nodiscard]] inline int ToInt(const double value)
+  {
+    if (std::isnan(value)) {
+      return 0;
+    }
+    if (value <= static_cast<double>(std::numeric_limits<int>::min())) {
+      return std::numeric_limits<int>::min();
+    }
+    if (value >= static_cast<double>(std::numeric_limits<int>::max())) {
+      return std::numeric_limits<int>::max();
+    }
+    return static_cast<int>(value);
+  }
+
   /// Whether two floats are the same number: NaN is NaN, and -0 is not 0.
   [[nodiscard]] inline bool SameFloat(const float a, const float b)
   {

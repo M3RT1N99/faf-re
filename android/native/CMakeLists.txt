@@ -347,7 +347,8 @@ add_library(faf_touch STATIC
   src/touch/TouchInput.cpp)
 target_include_directories(faf_touch PUBLIC "${FAF_ANDROID_DIR}/src")
 target_compile_features(faf_touch PUBLIC cxx_std_20)
-target_compile_options(faf_touch PRIVATE -Wall -Wextra -Wshadow -ffp-contract=off -fvisibility=hidden
+# Its headers' inline code too, wherever they are compiled (the client, the tests).
+target_compile_options(faf_touch PUBLIC -ffp-contract=off PRIVATE -Wall -Wextra -Wshadow -fvisibility=hidden
   -fvisibility-inlines-hidden)
 
 add_library(faf_client OBJECT ${_faf_client_files}

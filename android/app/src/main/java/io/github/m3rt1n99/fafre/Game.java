@@ -42,6 +42,15 @@ final class Game {
     static native void keyboardCovers(float share);
 
     /**
+     * All of a touch event's moved fingers are in SDL's queue (GameSurface), which gives them one motion a finger: the program's
+     * gestures take them together, as Android gave them.
+     */
+    static native void fingersMoved();
+
+    /** The lift of pointer `pointer` that SDL gets next is a palm's that the system took back: the program forgets it. */
+    static native void palm(int pointer);
+
+    /**
      * Whether a network lobby or game has its socket open, or a peer link of its own (native mode): not a skirmish, not
      * the LAN screen's search for games.
      */

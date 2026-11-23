@@ -109,6 +109,13 @@ namespace
   /// while it is not there; -1 where nothing says (Android before 11).
   std::atomic<float> gKeyboardShare{-1};
 
+  /// The activity's marks of its touch events (fingers::MoveDone, fingers::Palm), in SDL's queue among SDL's events of the same
+  /// touch event: their type, 0 until the program's thread has registered it, and whether moves are marked at all.
+  std::atomic<Uint32> gMarkType{0};
+  std::atomic<bool> gMovesMarked{false};
+  constexpr Sint32 kMarkMoved = 0;
+  constexpr Sint32 kMarkPalm = 1;
+
   [[nodiscard]] Millis Now()
   {
     return static_cast<Millis>(SDL_GetTicks());
@@ -169,6 +176,11 @@ namespace
         (void)SDL_RemoveTimer(timer.id);
         timer.id = 0;
       }
+    }
+
+    [[nodiscard]] bool Running(const int name) const
+    {
+      return mTimers[static_cast<std::size_t>(name)].id != 0;
     }
 
     /// The timer whose time came with `event`, or -1: none, or a round that is over.
@@ -374,15 +386,28 @@ namespace
       ApplyBar();
       (void)mView.ClearPage();
       ApplyView();
+      // A mouse's button that the host holds for a page goes up where the host has it.
+      for (int button = touch::kButtonLeft; button <= touch::kButtonMiddle; ++button) {
+        if ((mHostButtons & (1 << button)) != 0) {
+          fingerinput::MouseButton(button, false, mMouseX, mMouseY);
+        }
+      }
       Release();
+      // The gesture's end asked for the pointer to leave, by the leave timer, which goes with the layer: it leaves now.
+      const bool leaving = mTimers.Running(kLeaveTimer);
       mTimers.Stop(kTouchTimer);
       mTimers.Stop(kPageTimer);
       mTimers.Stop(kLeaveTimer);
       mTimers.Stop(kPollTimer);
+      if (leaving) {
+        fingerinput::PointerLeave();
+      }
       for (const griffshown::Piece piece : {griffshown::kHandle, griffshown::kRing, griffshown::kStroke, griffshown::kBox}) {
         griffshown::Set(piece, {});
       }
       if (mGriff) {
+        // Griff's draft goes with it: nothing would be left to place it or drop it.
+        griffinput::DraftDrop();
         griffinput::SetGriff(false, griffinput::Sizes{});
       }
     }
@@ -401,6 +426,12 @@ namespace
       kBarShift = 4,
       kBarCtrl = 8,
     };
+
+    /// Whether the bar's toggle is wanted now (FAF's UI lights it).
+    [[nodiscard]] bool BarHeld(const int toggle) const
+    {
+      return (mBarWanted & toggle) != 0;
+    }
 
     /// Turns a toggle of the bar over; whether it is wanted now.
     bool FlipBar(const int toggle)
@@ -421,6 +452,9 @@ namespace
       mView.SetScreen(width, height);
       mView.SetPicture(width, height);
       mTouch.SetMillimetre(Millimetre());
+      // The slops are the picture's pixels, which a mm on the glass now has more or fewer of.
+      mTouch.SetSlop(kSlopMm * Millimetre());
+      mPage.SetSlop(kSlopMm * Millimetre());
       mTouch.SetScreen(static_cast<float>(width), static_cast<float>(height));
       if (mGriff && mGriffPolling) {
         SetGriff();
@@ -430,11 +464,13 @@ namespace
     }
 
     /// A mouse's event on a page the UI's view zooms: its place goes back to the UI's pixels, as a finger's does, and its
-    /// wheel to the list under it, or else to the page, as a finger's drag. False elsewhere, and for a button the game has
-    /// no use for: those keep SDL's way.
+    /// wheel to the list under it, or else to the page, as a finger's drag. A button that went down so goes up so, and the
+    /// mouse's moves with it, whatever the page did meanwhile: the host's buttons and the engine's stay one. False elsewhere,
+    /// and for a button the game has no use for: those keep SDL's way.
     bool MouseOnPage(const SDL_Event& event)
     {
-      if (!mView.Zoomed()) {
+      const bool zoomed = mView.Zoomed();
+      if (!zoomed && mHostButtons == 0) {
         return false;
       }
       // The window's pixels, as the engine's window layer takes a mouse's place (WindowSdl.cpp, ToPixels).
@@ -445,7 +481,9 @@ namespace
       switch (event.type) {
         case SDL_EVENT_MOUSE_MOTION: {
           const float pixels = pixelsOf(event.motion.windowID);
-          fingerinput::MouseMove(PictureX(event.motion.x * pixels), PictureY(event.motion.y * pixels));
+          mMouseX = PictureX(event.motion.x * pixels);
+          mMouseY = PictureY(event.motion.y * pixels);
+          fingerinput::MouseMove(mMouseX, mMouseY);
           return true;
         }
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -457,19 +495,30 @@ namespace
           if (button < 0) {
             return false;
           }
+          const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+          const int bit = 1 << button;
+          if (!zoomed && (down || (mHostButtons & bit) == 0)) {
+            return false;
+          }
+          mHostButtons = down ? mHostButtons | bit : mHostButtons & ~bit;
           const float pixels = pixelsOf(event.button.windowID);
-          fingerinput::MouseButton(
-            button, event.type == SDL_EVENT_MOUSE_BUTTON_DOWN, PictureX(event.button.x * pixels),
-            PictureY(event.button.y * pixels)
-          );
+          mMouseX = PictureX(event.button.x * pixels);
+          mMouseY = PictureY(event.button.y * pixels);
+          fingerinput::MouseButton(button, down, mMouseX, mMouseY);
           return true;
         }
         case SDL_EVENT_MOUSE_WHEEL: {
           // Away from the user is up the page, as a finger's drag downwards.
+          if (!zoomed) {
+            return false;
+          }
           const float notches = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event.wheel.y : event.wheel.y;
           if (notches != 0) {
             const float pixels = pixelsOf(event.wheel.windowID);
-            LookForList(event.wheel.mouse_x * pixels, event.wheel.mouse_y * pixels);
+            // The list under it is asked once for the notches that come before its answer, which takes them all (PassDrag).
+            if (mUnsentDrag == 0) {
+              LookForList(event.wheel.mouse_x * pixels, event.wheel.mouse_y * pixels);
+            }
             mUnsentDrag += notches * kWheelNotchMm * Millimetre();
             PassDrag();
           }
@@ -510,8 +559,23 @@ namespace
     }
 
     /// A finger came down, at `time`, in the picture's pixels.
+    /// All of a move's fingers are in, as the activity marks it (fingers::MoveDone): the layer takes them together.
+    void MovesDone()
+    {
+      FlushMove();
+    }
+
+    /// The finger whose lift comes next was a palm the system took back (fingers::Palm): it is forgotten, not lifted.
+    void Palm(const SDL_FingerID sdl)
+    {
+      if (Find(sdl) != nullptr) {
+        mPalms.push_back(sdl);
+      }
+    }
+
     void FingerDown(const SDL_FingerID sdl, const float x, const float y, const Millis time)
     {
+      FlushMove();
       PlaceBarAsNow();
       Finger finger;
       finger.sdl = sdl;
@@ -548,22 +612,38 @@ namespace
         return;
       }
       mLayer->Move(finger->id, x, y);
-      mLayer->Moved(time);
+      // SDL gives one motion a finger: where the activity marks a move's end the layer takes its fingers together, as Android
+      // gave them (Fingers::Moved); else each one on its own.
+      if (gMovesMarked.load()) {
+        mMovePending = true;
+        mMoveTime = time;
+      } else {
+        mLayer->Moved(time);
+      }
     }
 
     void FingerUp(const SDL_FingerID sdl, const float x, const float y, const Millis time)
     {
+      FlushMove();
       Finger* const found = Find(sdl);
       if (found == nullptr) {
         return;
       }
       Finger finger = *found;
       Forget(sdl);
+      const bool palm = TakePalm(sdl);
       if (!finger.layers) {
-        PieceUp(finger.piece, x, y, time, false);
+        PieceUp(finger.piece, x, y, time, palm);
         return;
       }
-      mLayer->Up(finger.id, time, LayersDown() == 0);
+      if (!palm) {
+        mLayer->Up(finger.id, time, LayersDown() == 0);
+      } else if (LayersDown() > 0) {
+        mLayer->Forget(finger.id, time);
+      } else {
+        // No finger of the gesture is left: it ends as the system's.
+        mLayer->Cancel();
+      }
     }
 
     /// The system took a finger: the layer's gesture ends, as a canceled MotionEvent ended it, once for all its fingers.
@@ -575,6 +655,8 @@ namespace
       }
       Finger finger = *found;
       Forget(sdl);
+      (void)TakePalm(sdl);
+      mMovePending = false;
       if (!finger.layers) {
         PieceUp(finger.piece, finger.piece.downX, finger.piece.downY, time, true);
         return;
@@ -593,10 +675,32 @@ namespace
       }
       mFingers.clear();
       mCanceled = false;
+      mMovePending = false;
+      mPalms.clear();
       if (mGriff) {
         ReleaseRail();
         PollGriff(false);
       }
+    }
+
+    /// The move that waits for its mark (MovesDone), before what comes after it.
+    void FlushMove()
+    {
+      if (mMovePending) {
+        mMovePending = false;
+        mLayer->Moved(mMoveTime);
+      }
+    }
+
+    /// Whether the activity said that this finger's lift is a palm's; it says so once.
+    bool TakePalm(const SDL_FingerID sdl)
+    {
+      const auto palm = std::find(mPalms.begin(), mPalms.end(), sdl);
+      if (palm == mPalms.end()) {
+        return false;
+      }
+      mPalms.erase(palm);
+      return true;
     }
 
     /// In front again: a game's frames are read again (TouchLayer's resume).
@@ -1406,6 +1510,15 @@ namespace
     touch::Fingers* mLayer = &mTouch;
     std::vector<Finger> mFingers;
     int mNextId = 0;
+    /// A move whose fingers wait for the activity's mark (MovesDone), and its time.
+    bool mMovePending = false;
+    Millis mMoveTime = 0;
+    /// The fingers whose lift the activity said is a palm's (Palm).
+    std::vector<SDL_FingerID> mPalms;
+    /// A mouse on a page: the buttons the host holds for it (1 << touch::kButtonLeft and the rest), and its last place.
+    int mHostButtons = 0;
+    int mMouseX = 0;
+    int mMouseY = 0;
     /// The system took the layer's fingers: what is left of them is no gesture's until they lift.
     bool mCanceled = false;
     /// What a finger has gone and nobody has taken yet: the program has not said what list is under it.
@@ -1859,6 +1972,19 @@ namespace
     return measured;
   }
 
+  /// SDL makes no mouse of a finger while the layer takes fingers: its mouse's place and buttons would follow the first finger,
+  /// which the engine reads besides the events (the view's edge scroll, a mouse's held buttons), and a finger lifted on the
+  /// glass's edge scrolled the view on. With the layer off fingers are SDL's mouse, as on a desktop. On the program's thread.
+  void TouchMouseAsWanted()
+  {
+    static int said = -1;
+    const int wanted = LayerWanted() ? 0 : 1;
+    if (wanted != said) {
+      said = wanted;
+      (void)SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, wanted != 0 ? "1" : "0");
+    }
+  }
+
   /// The layer for a finger in `window`, made where it is not yet; null where it takes no fingers.
   [[nodiscard]] Layer* LayerFor(SDL_Window* const window)
   {
@@ -1877,6 +2003,8 @@ namespace
         ", on a picture of " + std::to_string(width) + "x" + std::to_string(height) + ", " +
         std::to_string(gLayer->Millimetre()) + " of its pixels a mm"
       );
+      // What the program and FAF's Lua said before it: a page is shown as declared from the layer's first finger on.
+      gLayer->Read();
     } else {
       gLayer->Picture(width, height);
     }
@@ -1951,22 +2079,65 @@ namespace
     "FafreTouchBar(toggle) - turns the bar's toggle 'order', 'delete', 'shift' or 'ctrl' over and says whether it is on now; "
     "it holds while a game has the fingers, and only where a finger is the mouse";
 
-  /// The light of the bar's button (bar.lua) is what the layer holds: a layer of another scheme, or none, holds nothing.
-  int TouchBar(lua_State* const lua)
+  /// The toggle that Lua's first argument names (Layer::BarToggle), 0 for none; and the layer that has the bar, null for none: a
+  /// layer of another scheme holds nothing.
+  [[nodiscard]] int BarToggle(lua_State* const lua)
   {
     const char* const name = lua_tostring(lua, 1);
     const std::string toggle = name != nullptr ? name : "";
-    const int bit = toggle == "order" ? Layer::kBarOrder
-      : toggle == "delete"            ? Layer::kBarDelete
-      : toggle == "shift"             ? Layer::kBarShift
-      : toggle == "ctrl"              ? Layer::kBarCtrl
-                                      : 0;
-    const bool on = bit != 0 && gLayer != nullptr && !gLayer->Griff() && gLayer->FlipBar(bit);
+    return toggle == "order" ? Layer::kBarOrder
+      : toggle == "delete"   ? Layer::kBarDelete
+      : toggle == "shift"    ? Layer::kBarShift
+      : toggle == "ctrl"     ? Layer::kBarCtrl
+                             : 0;
+  }
+
+  [[nodiscard]] Layer* BarLayer()
+  {
+    return gLayer != nullptr && !gLayer->Griff() ? gLayer.get() : nullptr;
+  }
+
+  /// The light of the bar's button (bar.lua) is what the layer holds.
+  int TouchBar(lua_State* const lua)
+  {
+    const int bit = BarToggle(lua);
+    Layer* const layer = BarLayer();
+    const bool on = bit != 0 && layer != nullptr && layer->FlipBar(bit);
     lua_pushboolean(lua, on ? 1 : 0);
     return 1;
   }
 
   moho::CScrLuaBinder gTouchBarBinder(moho::SCR_UserLuaInitSet(), "FafreTouchBar", &TouchBar, nullptr, "<global>", kTouchBarHelp);
+
+  constexpr char kTouchBarHeldHelp[] =
+    "FafreTouchBarHeld(toggle) - whether the touch layer holds the bar's toggle 'order', 'delete', 'shift' or 'ctrl' now";
+
+  /// What the bar's button shows each frame (bar.lua): the layer lets go of its toggles when a game ends or the layer goes.
+  int TouchBarHeld(lua_State* const lua)
+  {
+    const int bit = BarToggle(lua);
+    Layer* const layer = BarLayer();
+    lua_pushboolean(lua, bit != 0 && layer != nullptr && layer->BarHeld(bit) ? 1 : 0);
+    return 1;
+  }
+
+  moho::CScrLuaBinder
+    gTouchBarHeldBinder(moho::SCR_UserLuaInitSet(), "FafreTouchBarHeld", &TouchBarHeld, nullptr, "<global>", kTouchBarHeldHelp);
+
+  /// One of the activity's marks into SDL's queue, behind SDL's events of the same touch event; none before the program's thread
+  /// has a type for them, which it has before the first finger.
+  bool PushMark(const Sint32 code, const SDL_FingerID finger)
+  {
+    const Uint32 type = gMarkType.load();
+    if (type == 0) {
+      return false;
+    }
+    SDL_Event event{};
+    event.type = type;
+    event.user.code = code;
+    event.user.data1 = reinterpret_cast<void*>(static_cast<std::uintptr_t>(finger));
+    return SDL_PushEvent(&event);
+  }
 
   /// The activity said how much the keyboard covers (fingers::KeyboardCovers), on the program's thread.
   void KeyboardTask(std::uintptr_t)
@@ -1997,6 +2168,20 @@ void fingers::SetScheme(const Scheme scheme)
   gScheme = scheme;
   // The layer of the scheme before goes with what it held; the next finger makes one of this.
   gLayer.reset();
+  TouchMouseAsWanted();
+}
+
+void fingers::MoveDone()
+{
+  if (PushMark(kMarkMoved, 0)) {
+    gMovesMarked.store(true);
+  }
+}
+
+void fingers::Palm(const int pointer)
+{
+  // SDL's finger is Android's pointer id + 1 (SDL_androidtouch.c, Android_OnTouch).
+  (void)PushMark(kMarkPalm, static_cast<SDL_FingerID>(pointer) + 1);
 }
 
 void fingers::KeyboardCovers(const float share)
@@ -2012,6 +2197,21 @@ fingers::Scheme fingers::SchemeNow()
 
 bool fingers::OnSdlEvent(const SDL_Event& event)
 {
+  TouchMouseAsWanted();
+  if (gMarkType.load() == 0) {
+    // Before any finger, on the program's thread: the activity's marks come from now on.
+    gMarkType.store(SDL_RegisterEvents(1));
+  }
+  if (event.type == gMarkType.load()) {
+    if (gLayer != nullptr) {
+      if (event.user.code == kMarkMoved) {
+        gLayer->MovesDone();
+      } else if (event.user.code == kMarkPalm) {
+        gLayer->Palm(static_cast<SDL_FingerID>(reinterpret_cast<std::uintptr_t>(event.user.data1)));
+      }
+    }
+    return true;
+  }
   if (gLayer == nullptr && event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST &&
       LayerWanted()) {
     // The layer with the window, before any finger: Griff's rail and handle come with a game, not with its first touch.

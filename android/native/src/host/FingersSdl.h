@@ -31,4 +31,12 @@ namespace fingers
   /// How much of the screen's height the phone's keyboard covers (0: none), as the activity's window insets say: a page keeps
   /// the field typed into above it. From any thread.
   void KeyboardCovers(float share);
+
+  /// All of a move's fingers are in (the activity's touch event, which SDL gives as one motion a finger): the gestures take
+  /// them together. From the thread that gives SDL the fingers, after SDL's events of that move; without it each finger's
+  /// motion counts on its own.
+  void MoveDone();
+  /// The lift that SDL gives next for Android's pointer `pointer` is a palm's that the system took back (a pointer-up with
+  /// FLAG_CANCELED): the gesture forgets it. From the thread that gives SDL the fingers, before SDL's event of that lift.
+  void Palm(int pointer);
 } // namespace fingers

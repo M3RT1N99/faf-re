@@ -166,6 +166,12 @@ void screenkeyboard::Toggle()
   }
 }
 
+bool screenkeyboard::Shown()
+{
+  SDL_Window* const window = GameWindow();
+  return window != nullptr && SDL_ScreenKeyboardShown(window);
+}
+
 void screenkeyboard::Dismiss()
 {
   SDL_Window* const window = GameWindow();

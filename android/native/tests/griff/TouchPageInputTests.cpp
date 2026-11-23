@@ -131,6 +131,19 @@ PAGE_TEST(PageAQuickTapClicksWhenTheCursorHasSettled)
   WXT_CHECK(mouse.leaving);
 }
 
+PAGE_TEST(PageASlopGivenAnewHoldsForTheNextFinger)
+{
+  // The host gives the slop anew when the picture's size changes (FingersSdl.cpp, Picture): at twice as many pixels a move
+  // that would have scrolled stays a tap.
+  input.SetSlop(2 * kSlop);
+  input.Down(kFinger, 100, 200, 0, true);
+  mouse.events.clear();
+  MoveTo(100, 215);
+  input.Up(kFinger, 50, true);
+  input.Timer();
+  EXPECT_EVENTS("tap 100 200");
+}
+
 PAGE_TEST(PageATapAfterARestIsAClickAtOnce)
 {
   input.Down(kFinger, 100, 200, 0, true);

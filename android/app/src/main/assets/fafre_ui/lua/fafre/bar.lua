@@ -41,7 +41,8 @@ local function Button(bar, label, side, gap, column, row, pressed)
     LayoutHelpers.AtCenterIn(text, button)
     table.insert(bar.labels, {text = text, side = side})
     button.HandleEvent = function(self, event)
-        if event.Type == 'ButtonPress' then
+        -- A quick second tap or click comes as a double click.
+        if event.Type == 'ButtonPress' or event.Type == 'ButtonDClick' then
             pressed(self)
             return true
         end
@@ -50,11 +51,26 @@ local function Button(bar, label, side, gap, column, row, pressed)
     return button
 end
 
---- A button that turns the touch layer's toggle `name` over, lit while the layer holds it.
+--- A button that turns the touch layer's toggle `name` over, lit while the layer holds it (FollowLayer).
 local function Toggle(bar, label, side, gap, column, row, name)
-    return Button(bar, label, side, gap, column, row, function(self)
-        self:SetSolidColor(FafreTouchBar(name) and ON or OFF)
+    local toggle = {name = name, on = false}
+    toggle.button = Button(bar, label, side, gap, column, row, function(self)
+        toggle.on = FafreTouchBar(name)
+        self:SetSolidColor(toggle.on and ON or OFF)
     end)
+    table.insert(bar.toggles, toggle)
+    return toggle.button
+end
+
+--- The toggles' lights as the layer holds them: it lets go of them when a game ends or the layer goes.
+local function FollowLayer(bar)
+    for _, toggle in bar.toggles do
+        local on = FafreTouchBarHeld(toggle.name)
+        if on ~= toggle.on then
+            toggle.on = on
+            toggle.button:SetSolidColor(on and ON or OFF)
+        end
+    end
 end
 
 local function Keys(bar, side, gap, column, row)
@@ -109,6 +125,7 @@ function Create(inGame)
     bar:DisableHitTest()
     bar.Depth:Set(root:GetTopmostDepth() + 1)
     bar.labels = {}
+    bar.toggles = {}
     -- The view's numbers as FafreView gives them: a place on the glass is the UI's place times the scale plus the offset.
     bar.ScaleX = LazyVar.Create(1)
     bar.ScaleY = LazyVar.Create(1)
@@ -133,6 +150,7 @@ function Create(inGame)
     bar:SetNeedsFrameUpdate(true)
     bar.OnFrame = function(self)
         FollowView(self)
+        FollowLayer(self)
     end
     return bar
 end

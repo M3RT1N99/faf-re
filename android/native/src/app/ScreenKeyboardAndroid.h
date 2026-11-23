@@ -12,6 +12,8 @@ namespace screenkeyboard
   void Toggle();
   /// The keyboard goes, where it is up: a new page has no field it was for. On the program's thread.
   void Dismiss();
+  /// Whether SDL's keyboard is up.
+  [[nodiscard]] bool Shown();
   /// A finger's press the host gave the engine, in its pixels (src/host/HostSdl.cpp, which SDL does not see): the
   /// keyboard comes where it lands on a text field. On the program's thread.
   void FingerPressed(float x, float y);

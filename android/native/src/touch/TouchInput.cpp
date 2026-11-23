@@ -119,6 +119,11 @@ void touch::TouchInput::SetMillimetre(const float pixels)
   mGriffSlop = kGriffSlopMm * pixels;
 }
 
+void touch::TouchInput::SetSlop(const float slop)
+{
+  mSlop = slop;
+}
+
 void touch::TouchInput::SetSwapped(const bool swapped)
 {
   mSwapped = swapped;
@@ -1413,7 +1418,7 @@ void touch::TouchInput::Zoom()
     return;
   }
   const double wheel = std::log(static_cast<double>(now / mWheelDistance)) / kLog2 * kWheelPerDoubling + mWheelRemainder;
-  const int delta = static_cast<int>(wheel);
+  const int delta = ToInt(wheel);
   if (delta != 0) {
     mMouse.Wheel(delta, MiddleX(), MiddleY());
     mWheelRemainder = wheel - delta;

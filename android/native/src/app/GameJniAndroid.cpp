@@ -38,6 +38,18 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_keyboardCov
   fingers::KeyboardCovers(share);
 }
 
+/// All of a move's fingers are in (GameSurface): the touch layer takes them together.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_fingersMoved(JNIEnv*, jclass)
+{
+  fingers::MoveDone();
+}
+
+/// The next lift of Android's pointer `pointer` is a palm's that the system took back (GameSurface).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_palm(JNIEnv*, jclass, const jint pointer)
+{
+  fingers::Palm(pointer);
+}
+
 /// Whether a network lobby or game has its connections: a UDP connector with its socket open, or a peer link of the
 /// game's own (native mode, /nativenet), which runs on libjuice's sockets and registers a transport for the game's
 /// datagrams to its peer. The LAN screen's search for games has a datagram socket, and a skirmish none.

@@ -31,9 +31,22 @@ final class GameSurface extends SDLSurface {
         setDefaultFocusHighlightEnabled(false);
     }
 
+    /**
+     * SDL's fingers, and what SDL does not pass on (src/host/FingersSdl.cpp): where a move's fingers are all in, and that a
+     * lift is a palm the system took back (Android 13 and later), which SDL gives as a lift.
+     */
     @Override
     public boolean onTouch(View view, MotionEvent event) {
-        return inPicture(event, picture -> super.onTouch(view, picture));
+        int action = event.getActionMasked();
+        boolean program = Game.loadError() == null;
+        if (program && action == MotionEvent.ACTION_POINTER_UP && (event.getFlags() & MotionEvent.FLAG_CANCELED) != 0) {
+            Game.palm(event.getPointerId(event.getActionIndex()));
+        }
+        boolean taken = inPicture(event, picture -> super.onTouch(view, picture));
+        if (program && action == MotionEvent.ACTION_MOVE) {
+            Game.fingersMoved();
+        }
+        return taken;
     }
 
     /**

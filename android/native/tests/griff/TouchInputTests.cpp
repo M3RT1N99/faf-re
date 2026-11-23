@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstdlib>
 #include <source_location>
 #include <string>
@@ -571,6 +572,10 @@ namespace
       const std::string pairs = route.substr(from, route.rfind(" rail ") - from);
       for (const std::string& pair : Split(pairs, ", ")) {
         const std::vector<std::string> numbers = Split(pair, " ");
+        WXT_CHECK_EQ(numbers.size(), std::size_t{2});
+        if (numbers.size() < 2) {
+          continue;
+        }
         places.push_back({std::strtof(numbers[0].c_str(), nullptr), std::strtof(numbers[1].c_str(), nullptr)});
       }
       return places;
@@ -1927,6 +1932,17 @@ TOUCH_TEST(TouchATapClicksWhereItLanded)
   EXPECT_EVENTS("move 100 50", "left down 100 50", "left up 100 50");
 }
 
+TOUCH_TEST(TouchASlopGivenAnewHoldsForTheNextFinger)
+{
+  // The host gives the slop anew when the picture's size changes (FingersSdl.cpp, Picture): at twice as many pixels a move
+  // that would have been a drag stays a tap.
+  input.SetSlop(2 * kSlop);
+  Down(0, 100, 50, 1000);
+  MoveFirst(115, 50);
+  Up(0, 1000 + TouchInput::kSettleMilliseconds);
+  EXPECT_EVENTS("move 100 50", "left down 100 50", "left up 100 50");
+}
+
 TOUCH_TEST(TouchATapIsATapForTheGamesUiAndGivesAFingerItsHelp)
 {
   Down(0, 100, 50, 1000);
@@ -2154,6 +2170,20 @@ TOUCH_TEST(TouchTwoFingersMovingApartZoomInAndCloserOut)
   Up(0, 1500);
   Up(1, 1510);
   WXT_CHECK(FromEnd(mouse.events, 0).starts_with("wheel "));
+}
+
+TOUCH_TEST(TouchAFingerWithNoPlaceTurnsNoWheel)
+{
+  // Java's (int) of NaN is 0: no wheel, and the zoom goes on from where it was.
+  Down(0, 100, 100, 1000);
+  Down(1, 300, 100, 1040);
+  MoveBoth(89, 100, 311, 100);
+  MoveBoth(std::numeric_limits<float>::quiet_NaN(), 100, 444, 100);
+  WXT_CHECK_EQ(mouse.WheelTotal(), 0);
+  MoveBoth(0, 100, 444, 100);
+  WXT_CHECK(std::abs(mouse.WheelTotal() - touch::kWheelDelta / 0.4) <= 2);
+  Up(0, 1500);
+  Up(1, 1510);
 }
 
 TOUCH_TEST(TouchAPanCanBecomeAZoomAndAZoomAPan)

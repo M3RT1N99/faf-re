@@ -134,7 +134,9 @@ namespace
   /// goes where it is up; the text field with the focus comes into view above it (AskForField).
   int Keyboard(lua_State*)
   {
-    menufingers::AskForField();
+    if (!screenkeyboard::Shown()) {
+      menufingers::AskForField();
+    }
     screenkeyboard::Toggle();
     return 0;
   }

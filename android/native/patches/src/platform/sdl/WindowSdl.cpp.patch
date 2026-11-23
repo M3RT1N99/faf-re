@@ -1,8 +1,31 @@
 diff --git a/src/platform/sdl/WindowSdl.cpp b/src/platform/sdl/WindowSdl.cpp
-index 97a6abe..190f4e0 100644
+index 97a6abe..ee74c5c 100644
 --- a/src/platform/sdl/WindowSdl.cpp
 +++ b/src/platform/sdl/WindowSdl.cpp
-@@ -517,6 +517,16 @@ namespace
+@@ -42,6 +42,12 @@ namespace
+     float deltaY = 0.0f;
+   } gRelativeMouse;
+ 
++#if FAFRE_PLATFORM_ANDROID
++  // Android client build: SDL gives Android's one window the mouse's focus from its start, with the mouse at 0, 0, where
++  // no mouse has been. Its place says something once a mouse's move has come to the engine (GetMousePosition).
++  bool gMouseMoved = false;
++#endif
++
+   [[nodiscard]] SDL_Window* AsWindow(
+     void* const handle
+   )
+@@ -373,6 +379,9 @@ namespace
+       return true;
+     case SDL_EVENT_MOUSE_MOTION: {
+       SDL_Window* const window = SDL_GetWindowFromID(source.motion.windowID);
++#if FAFRE_PLATFORM_ANDROID
++      gMouseMoved = true;
++#endif
+       out.type = EventType::MouseMove;
+       out.window = window;
+       ToPixels(window, source.motion.x, source.motion.y, out.x, out.y);
+@@ -517,6 +526,16 @@ namespace
      SDL_Event source{};
      while (SDL_PollEvent(&source)) {
        if (gToolEventHook != nullptr && gToolEventHook(&source)) {
@@ -19,3 +42,16 @@ index 97a6abe..190f4e0 100644
          continue;
        }
        if (source.type == SDL_EVENT_TEXT_INPUT) {
+@@ -828,6 +847,12 @@ namespace platform::window
+     if (native == nullptr || SDL_GetMouseFocus() != native || SDL_GetKeyboardFocus() != native) {
+       return false;
+     }
++#if FAFRE_PLATFORM_ANDROID
++    // No mouse has moved: the view's edge scroll took 0, 0 for its place, and the camera went into the map's corner.
++    if (!gMouseMoved) {
++      return false;
++    }
++#endif
+     float mouseX = 0.0f;
+     float mouseY = 0.0f;
+     (void)SDL_GetMouseState(&mouseX, &mouseY);

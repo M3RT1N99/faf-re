@@ -67,6 +67,9 @@ namespace touch
     PageInput(const PageInput&) = delete;
     PageInput& operator=(const PageInput&) = delete;
 
+    /// How far a finger may wander and still stay, in the screen's pixels, when their size changes.
+    void SetSlop(float slop);
+
     void Down(int id, float x, float y, Millis time, bool first) override;
     void Move(int id, float x, float y) override;
     void Moved(Millis time) override;
@@ -110,7 +113,7 @@ namespace touch
     void FinishClick();
 
     Mouse& mMouse;
-    const float mSlop;
+    float mSlop;
     State mState = State::kNone;
     int mFirstId = -1;
     int mSecondId = -1;

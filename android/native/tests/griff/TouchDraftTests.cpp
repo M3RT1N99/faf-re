@@ -80,6 +80,8 @@ namespace
     if (aim.has_value()) {
       std::copy(aim->begin(), aim->end(), values.begin() + static_cast<long>(at));
     }
+    // The layout's own check, as the Java's: as many numbers as its counts say.
+    WXT_CHECK_EQ(at + (aim.has_value() ? 8 : 0), 6 + 8 * (plans.size() + line.size() + (aim.has_value() ? 1 : 0)));
     return values;
   }
 

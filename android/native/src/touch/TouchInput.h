@@ -400,6 +400,8 @@ namespace touch
     void SetGriff(bool griff);
     /// The screen's pixels in a mm on the glass, by which Griff measures its gestures.
     void SetMillimetre(float pixels);
+    /// How far a finger may wander and still stay, in the screen's pixels, when their size changes.
+    void SetSlop(float slop);
     void SetSwapped(bool swapped);
     void SetDeleting(bool deleting);
     /// The screen's size in its pixels, which a ghost does not leave.
@@ -645,7 +647,7 @@ namespace touch
     [[nodiscard]] float Distance() const;
 
     Mouse& mMouse;
-    const float mSlop;
+    float mSlop;
     State mState = State::kNone;
     bool mSwapped = false;
     bool mDeleting = false;
