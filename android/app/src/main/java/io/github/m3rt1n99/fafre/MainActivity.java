@@ -163,9 +163,11 @@ public final class MainActivity extends Screen {
             PictureSize.next(this);
             size.setText(PictureSize.label(this));
         });
-        // The game is SDL's activity, whose fingers are SDL's mouse until the touch schemes come back to it (android/CLIENT_PLAN.md).
-        Button touch = button(game, "Touch controls: a finger is the mouse (Griff and the bar come back later)", null);
-        touch.setEnabled(false);
+        Button touch = button(game, TouchScheme.label(this), null);
+        touch.setOnClickListener(v -> {
+            TouchScheme.next(this);
+            touch.setText(TouchScheme.label(this));
+        });
         mStartButtons.add(button(game, "Get FAF's newest version", v -> getNewestGameFiles()));
         mNewest = text("", 14, TEXT);
         game.addView(mNewest);
