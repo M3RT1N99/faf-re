@@ -2,9 +2,11 @@ package io.github.m3rt1n99.fafre;
 
 import android.content.Context;
 import android.graphics.Matrix;
+import android.os.Build;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowInsets;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
@@ -25,11 +27,28 @@ final class GameSurface extends SDLSurface {
         // In place of the one SDLSurface sets: the mouse's moves, its wheel and its buttons without a press.
         View.OnGenericMotionListener sdl = SDLActivity.getMotionListener();
         setOnGenericMotionListener((view, event) -> inPicture(event, picture -> sdl.onGenericMotion(view, picture)));
+        // SDL keeps the focus on the surface: after a keyboard's keys Android framed the whole picture as the focused view.
+        setDefaultFocusHighlightEnabled(false);
     }
 
     @Override
     public boolean onTouch(View view, MotionEvent event) {
         return inPicture(event, picture -> super.onTouch(view, picture));
+    }
+
+    /**
+     * SDL's watch of the keyboard (SDLSurface), and how much of the view's height the keyboard covers, which the program keeps
+     * a page's text field above (Game.keyboardCovers). Android 11 and later say it; before, the program takes half.
+     */
+    @Override
+    public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+        WindowInsets passed = super.onApplyWindowInsets(view, insets);
+        int height = getHeight();
+        if (Build.VERSION.SDK_INT >= 30 && height > 0 && Game.loadError() == null) {
+            boolean shown = insets.isVisible(WindowInsets.Type.ime());
+            Game.keyboardCovers(shown ? (float) insets.getInsets(WindowInsets.Type.ime()).bottom / height : 0f);
+        }
+        return passed;
     }
 
     /** SDL has the surface, from surfaceChanged to surfaceDestroyed: what a program needs to start on. */

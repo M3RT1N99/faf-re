@@ -1,0 +1,36 @@
+diff --git a/src/moho/render/d3d/CD3DFont.cpp b/src/moho/render/d3d/CD3DFont.cpp
+index b0d01c9..2521105 100644
+--- a/src/moho/render/d3d/CD3DFont.cpp
++++ b/src/moho/render/d3d/CD3DFont.cpp
+@@ -37,6 +37,9 @@
+ 
+ namespace moho
+ {
++  // Engine addition (touch, CD3DPrimBatcher.cpp): how many of the window's pixels a pixel of the UI covers.
++  [[nodiscard]] float UI_ViewScale() noexcept;
++
+   namespace
+   {
+     /**
+@@ -613,8 +616,9 @@ namespace moho
+       MsdfBinding& binding = bound->second;
+       if (binding.mIsMod) {
+         PollModFontBinding(font, binding);
+-        // Its small sizes have bitmaps, which GetCharInfo draws; scaled, they'd blur, and the atlas doesn't.
+-        if (binding.mStrike != nullptr && textScale == 1.0f) {
++        // Its small sizes have bitmaps, which GetCharInfo draws; scaled, they'd blur, and the atlas doesn't. A page
++        // the UI's view zooms (UI_SetView) scales them too.
++        if (binding.mStrike != nullptr && textScale == 1.0f && UI_ViewScale() == 1.0f) {
+           return false;
+         }
+       } else if (!binding.mAtlas) {
+@@ -694,7 +698,8 @@ namespace moho
+       const std::shared_ptr<CD3DDynamicTextureSheet>& sheet = page.mSheet;
+ 
+       const float size = static_cast<float>(binding.mPointSize) * textScale;
+-      const float pixelRange = atlas.mDistanceRange * size / atlas.mEmPixels;
++      // In the window's pixels, which a page the UI's view zooms (UI_SetView) makes more: the edge stays one pixel wide.
++      const float pixelRange = atlas.mDistanceRange * size * UI_ViewScale() / atlas.mEmPixels;
+ 
+       // One instanced draw from a GPU buffer where the backend has it; through the batcher otherwise.
+       MsdfTextGpuRenderer& instancedText = MsdfTextGpuRenderer::Get();

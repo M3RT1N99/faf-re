@@ -36,6 +36,12 @@ final class Game {
     static native void audioFocus(boolean held);
 
     /**
+     * How much of the screen's height the phone's keyboard covers (0: none), as the window's insets say (GameSurface): a page
+     * keeps the text field typed into above it.
+     */
+    static native void keyboardCovers(float share);
+
+    /**
      * Whether a network lobby or game has its socket open, or a peer link of its own (native mode): not a skirmish, not
      * the LAN screen's search for games.
      */

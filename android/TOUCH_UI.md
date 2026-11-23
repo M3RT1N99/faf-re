@@ -926,17 +926,20 @@ Pages nest: the one under comes back as it stood, and one that has closed opens 
 
 ### The view
 
-`PageView` works out how the picture lies on the screen. With a page the picture is larger, the page's width fitted to the screen's, at the
-page's left edge; a finger moves it up and down within the page's height and not sideways. The surface is laid out at that size,
-larger than the screen, and moved by `translationY`. `setFixedSize` keeps its buffers, so the swap chain does not notice: no new surface, and a
-scroll needs no frame of the game. On the emulator's composition two long swipes took 86 frames of the view system, 2 of them late, and
-Home and back leave the page as it stood; a screenshot cannot show a tear, so what the eye says on a phone is still to come. Fingers land on a layer of their own, which does not move, so their places stay the screen's, and `PageView` turns them
-into the picture's. The cost is sharpness: the picture stays 1647x768 and the compositor scales it up. A surface as high as the page
-would be sharp, and is not tried.
+`PageView` (`native/src/touch`) works out how FAF's UI lies on the screen. With a page it is larger, the page's width fitted to the
+screen's, at the page's left edge; a finger moves it up and down within the page's height and not sideways. The engine draws it so: the
+touch layer gives it `PageView`'s mapping as the UI's view, a scale and an offset that every UI pass draws with (`UI_SetView`, the patched
+`CD3DPrimBatcher.cpp`, `native/patches/README.md`). The picture keeps its size and the swap chain its images, and the text is drawn at the
+larger size, sharp, as its atlases are distances (MSDF), whose edge the patched `CD3DFont.cpp` keeps a pixel wide. What the engine draws
+beside FAF's UI (the world in a game, the build's label) is not zoomed. Fingers go back through `PageView`, so a tap lands where the
+control is drawn; so does a mouse on a page, whose wheel scrolls the list under it or else the page, as a finger's drag does. The bar
+(`fafre/bar.lua`) undoes the view (`FafreView`) and stays where it is on the glass, as large. Without the touch layer the view is the
+identity and FAF's UI is drawn as ever.
 
-With the on-screen keyboard up a page can go up that much further. A tap on a text field opens the keyboard, and *Keys* asks
-which field has the focus; either way the page goes where the field shows above the keyboard. Without a page the keyboard covers
-what it covers, and what is typed shows over the picture, as before.
+With the on-screen keyboard up a page can go up that much further: the activity says how much of the screen it covers (the window's
+insets, `Game.keyboardCovers`; before Android 11 half while SDL's keyboard is up). A tap on a text field opens the keyboard, and *Keys*
+asks which field has the focus; either way the page goes where the field shows above the keyboard. Without a page the keyboard covers
+what it covers.
 
 ### The fingers
 

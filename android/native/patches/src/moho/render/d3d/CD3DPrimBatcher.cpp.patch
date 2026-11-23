@@ -1,0 +1,67 @@
+diff --git a/src/moho/render/d3d/CD3DPrimBatcher.cpp b/src/moho/render/d3d/CD3DPrimBatcher.cpp
+index 941334b..47df436 100644
+--- a/src/moho/render/d3d/CD3DPrimBatcher.cpp
++++ b/src/moho/render/d3d/CD3DPrimBatcher.cpp
+@@ -1276,6 +1276,47 @@ namespace moho
+     }
+   }
+ 
++  namespace
++  {
++    /**
++     * Engine addition (touch): the UI's view in the window's pixels, x' = x * scaleX + offsetX and
++     * y' = y * scaleY + offsetY, which every UI pass draws with (SetToViewport). The identity unless a
++     * host sets it (UI_SetView): a page of the UI shown larger than the window, and scrolled, for fingers.
++     * The UI's input stays in the UI's pixels: a host that zooms gives it its pointer mapped back.
++     */
++    struct UiView
++    {
++      float scaleX = 1.0f;
++      float scaleY = 1.0f;
++      float offsetX = 0.0f;
++      float offsetY = 0.0f;
++    };
++
++    UiView sUiView;
++  } // namespace
++
++  /**
++   * Engine addition (touch): sets the UI's view (sUiView) for the frames to come, on the thread that
++   * draws them. A scale that is not a positive finite number, or an offset that is not finite, leaves
++   * the identity.
++   */
++  void UI_SetView(const float scaleX, const float scaleY, const float offsetX, const float offsetY) noexcept
++  {
++    const bool valid = std::isfinite(scaleX) && std::isfinite(scaleY) && scaleX > 0.0f && scaleY > 0.0f &&
++      std::isfinite(offsetX) && std::isfinite(offsetY);
++    sUiView = valid ? UiView{scaleX, scaleY, offsetX, offsetY} : UiView{};
++  }
++
++  /**
++   * Engine addition (touch): the UI view's scale, by which a pixel of the UI covers that many of the
++   * window's (CD3DFont.cpp's MSDF text). The page's scale is the same both ways; the smaller one, as a
++   * text's edge is as sharp as its coarser axis.
++   */
++  float UI_ViewScale() noexcept
++  {
++    return std::min(sUiView.scaleX, sUiView.scaleY);
++  }
++
+   /**
+    * Address: 0x0084D3E0 (FUN_0084D3E0)
+    *
+@@ -1325,7 +1366,13 @@ namespace moho
+     };
+ 
+     SetProjectionMatrix(projection);
+-    SetViewMatrix(UI_IdentityMatrix());
++    // Engine addition (touch): the UI's view, the identity unless a host zooms a page (UI_SetView).
++    VMatrix4 view = UI_IdentityMatrix();
++    view.r[0].x = sUiView.scaleX;
++    view.r[1].y = sUiView.scaleY;
++    view.r[3].x = sUiView.offsetX;
++    view.r[3].y = sUiView.offsetY;
++    SetViewMatrix(view);
+     this->mAlphaMultiplier = manager.mUIControlsAlpha;
+   }
+ } // namespace moho

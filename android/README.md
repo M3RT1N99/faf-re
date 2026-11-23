@@ -116,9 +116,10 @@ the game data they imported. Everything lives in the app's external files folder
     finger events (the [native README](native/README.md)'s `FingersSdl.cpp` and `src/touch`): in a game the
     touch scheme Griff, the default, or *a finger is the mouse* where the player chose it before (`TouchScheme`,
     passed as `FAF_TOUCH` with the screen's millimetres in `FAF_SCREEN_MM`), and in the menus a page's fingers.
-    The pages' zoom (the lobby and the LAN screen shown larger, scrolled by a finger) waits for its design: until
-    then those screens keep FAF's size, with choices of about 3 mm, as the package sizes them for the page's
-    zoom. A mouse plays as a mouse. The bar (`fafre/bar.lua`, buttons in FAF's UI) has *Keys* for the phone's
+    The lobby and the LAN screen are pages, shown larger and scrolled by a finger: the engine draws FAF's UI with
+    the page's view (the [native README](native/README.md)'s patches, `UI_SetView`), sharp, and fingers and a mouse
+    go back through it, so a tap lands where it is drawn; a page keeps the text field typed into above the
+    keyboard. A mouse plays as a mouse. The bar (`fafre/bar.lua`, buttons in FAF's UI) has *Keys* for the phone's
     keyboard in the menus' corner, and in a game where a finger is the mouse also *Order*, *Shift*, *Ctrl* and
     *Del* below FAF's top left panels; Griff's game has its rail instead.
   - A tap on a text field (the lobby's chat, a profile's name, the console's line) brings the phone's

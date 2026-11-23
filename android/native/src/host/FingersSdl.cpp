@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -52,6 +53,8 @@
 namespace moho
 {
   [[nodiscard]] bool UI_GamePlaying() noexcept;
+  // The patched CD3DPrimBatcher.cpp's (patches/README.md): the UI's view, x * scaleX + offsetX in the window's pixels.
+  void UI_SetView(float scaleX, float scaleY, float offsetX, float offsetY) noexcept;
 } // namespace moho
 
 namespace
@@ -97,6 +100,14 @@ namespace
   /// A stroke's numbers for FAF's UI (griffshown::kStroke): what lifting it gives, whether FAF's attack-move is armed, the
   /// label's place, how many places follow; then its start and its waypoints.
   constexpr int kStrokeHead = 5;
+  /// A mouse wheel's notch on a page, as a finger's drag: Android's scroll factor, 64 of its density-independent pixels.
+  constexpr float kWheelNotchMm = 25.4f * 64 / 160;
+  /// How much of the screen the keyboard covers where nothing says (Android before 11): in landscape about half.
+  constexpr float kKeyboardShareUnsaid = 0.5f;
+
+  /// How much of the screen's height the phone's keyboard covers, as the activity's window insets say (KeyboardCovers), 0
+  /// while it is not there; -1 where nothing says (Android before 11).
+  std::atomic<float> gKeyboardShare{-1};
 
   [[nodiscard]] Millis Now()
   {
@@ -361,6 +372,8 @@ namespace
     {
       mBarWanted = 0;
       ApplyBar();
+      (void)mView.ClearPage();
+      ApplyView();
       Release();
       mTimers.Stop(kTouchTimer);
       mTimers.Stop(kPageTimer);
@@ -412,6 +425,88 @@ namespace
       if (mGriff && mGriffPolling) {
         SetGriff();
       }
+      KeyboardAsNow();
+      ApplyView();
+    }
+
+    /// A mouse's event on a page the UI's view zooms: its place goes back to the UI's pixels, as a finger's does, and its
+    /// wheel to the list under it, or else to the page, as a finger's drag. False elsewhere, and for a button the game has
+    /// no use for: those keep SDL's way.
+    bool MouseOnPage(const SDL_Event& event)
+    {
+      if (!mView.Zoomed()) {
+        return false;
+      }
+      // The window's pixels, as the engine's window layer takes a mouse's place (WindowSdl.cpp, ToPixels).
+      const auto pixelsOf = [](const SDL_WindowID window) {
+        const float density = SDL_GetWindowPixelDensity(SDL_GetWindowFromID(window));
+        return density > 0 ? density : 1.0f;
+      };
+      switch (event.type) {
+        case SDL_EVENT_MOUSE_MOTION: {
+          const float pixels = pixelsOf(event.motion.windowID);
+          fingerinput::MouseMove(PictureX(event.motion.x * pixels), PictureY(event.motion.y * pixels));
+          return true;
+        }
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP: {
+          const int button = event.button.button == SDL_BUTTON_LEFT ? touch::kButtonLeft
+            : event.button.button == SDL_BUTTON_RIGHT                ? touch::kButtonRight
+            : event.button.button == SDL_BUTTON_MIDDLE               ? touch::kButtonMiddle
+                                                                     : -1;
+          if (button < 0) {
+            return false;
+          }
+          const float pixels = pixelsOf(event.button.windowID);
+          fingerinput::MouseButton(
+            button, event.type == SDL_EVENT_MOUSE_BUTTON_DOWN, PictureX(event.button.x * pixels),
+            PictureY(event.button.y * pixels)
+          );
+          return true;
+        }
+        case SDL_EVENT_MOUSE_WHEEL: {
+          // Away from the user is up the page, as a finger's drag downwards.
+          const float notches = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event.wheel.y : event.wheel.y;
+          if (notches != 0) {
+            const float pixels = pixelsOf(event.wheel.windowID);
+            LookForList(event.wheel.mouse_x * pixels, event.wheel.mouse_y * pixels);
+            mUnsentDrag += notches * kWheelNotchMm * Millimetre();
+            PassDrag();
+          }
+          return true;
+        }
+        default:
+          return false;
+      }
+    }
+
+    /// SDL's keyboard came or went (SDL_EVENT_SCREEN_KEYBOARD_SHOWN, _HIDDEN), which counts where the insets say nothing.
+    void Keyboard(const bool up)
+    {
+      mKeyboardUp = up;
+      KeyboardAsNow();
+    }
+
+    /// The keyboard as it covers the picture now: a page can go up that much further, and goes up as far as it takes to show
+    /// the field FAF's Lua asked for (FafreShowLines) above it.
+    void KeyboardAsNow()
+    {
+      const float said = gKeyboardShare.load();
+      const float share = said >= 0 ? std::min(said, 1.0f) : mKeyboardUp ? kKeyboardShareUnsaid : 0;
+      const int pixels = touch::Round(share * static_cast<float>(mPictureHeight));
+      if (pixels == mKeyboardPixels) {
+        return;
+      }
+      if (pixels == 0) {
+        // The keyboard went: the field it was for is done with.
+        mFieldKnown = false;
+      }
+      mKeyboardPixels = pixels;
+      mView.SetKeyboard(pixels);
+      if (pixels > 0 && mFieldKnown) {
+        mView.Reveal(mFieldTop, mFieldBottom);
+      }
+      ApplyView();
     }
 
     /// A finger came down, at `time`, in the picture's pixels.
@@ -537,14 +632,18 @@ namespace
     /// placed them (TouchLayer's readProgram and readGriff).
     void Read()
     {
-      // The page FAF's Lua declared: the view shows the whole picture until the page's zoom is the engine's (its design,
-      // buildstage/griff-cpp-views-design.md), as a page that the view mapped while the picture was not zoomed would put a
-      // finger elsewhere than it is. A new page still has no field the keyboard was for.
+      // The page FAF's Lua declared, which the engine draws larger (ApplyView); a new page has no field the keyboard was for.
       const menufingers::Page page = menufingers::PageNow();
       if (page.shown != mPageSeen.shown || page.left != mPageSeen.left || page.top != mPageSeen.top ||
           page.right != mPageSeen.right || page.bottom != mPageSeen.bottom) {
         mPageSeen = page;
+        mFieldKnown = false;
         screenkeyboard::Dismiss();
+        if (page.shown) {
+          (void)mView.SetPage(page.left, page.top, page.right, page.bottom);
+        } else {
+          (void)mView.ClearPage();
+        }
       }
       PlaceBarAsNow();
       if (mGriff) {
@@ -558,9 +657,43 @@ namespace
       const menufingers::ToShow toShow = menufingers::TakeToShow();
       if (toShow.why == menufingers::kLinesToShow) {
         mView.Reveal(toShow.top, toShow.bottom);
+      } else if (toShow.why != menufingers::kNoPlace) {
+        // The text field the keyboard comes for (a finger's tap, the bar's Keys): above the keyboard, now or as it comes.
+        mFieldKnown = true;
+        mFieldTop = toShow.top;
+        mFieldBottom = toShow.bottom;
+        if (mKeyboardPixels > 0) {
+          mView.Reveal(mFieldTop, mFieldBottom);
+        }
       }
+      ApplyView();
       if (mGriffPolling) {
         ReadGriff();
+      }
+    }
+
+    /// The view the engine draws FAF's UI with now (ApplyView): the scales and the offsets.
+    [[nodiscard]] const std::array<float, 4>& UiView() const
+    {
+      return mUiView;
+    }
+
+    /// The page's view, as the engine draws FAF's UI (UI_SetView): PageView's own mapping from the picture's pixels to the
+    /// screen's, whose inverse fingers and a mouse go through (PictureX, PictureY). The identity without a zoomed page.
+    void ApplyView()
+    {
+      std::array<float, 4> view{1, 1, 0, 0};
+      if (mView.Zoomed() && mPictureWidth > 0 && mPictureHeight > 0) {
+        view = {
+          static_cast<float>(mView.ViewWidth()) / static_cast<float>(mPictureWidth),
+          static_cast<float>(mView.ViewHeight()) / static_cast<float>(mPictureHeight),
+          mView.ViewLeft(),
+          mView.ViewTop(),
+        };
+      }
+      if (view != mUiView) {
+        mUiView = view;
+        moho::UI_SetView(view[0], view[1], view[2], view[3]);
       }
     }
 
@@ -1222,6 +1355,7 @@ namespace
       if (answer == menufingers::kNoList) {
         mView.ScrollBy(mUnsentDrag);
         mUnsentDrag = 0;
+        ApplyView();
       } else if (answer == menufingers::kList) {
         menufingers::ScrollList(mUnsentDrag / mView.Scale());
         mUnsentDrag = 0;
@@ -1254,6 +1388,14 @@ namespace
     int mPictureHeight;
     touch::PageView mView;
     menufingers::Page mPageSeen;
+    /// The view the engine draws FAF's UI with (ApplyView): the scales and the offsets.
+    std::array<float, 4> mUiView{1, 1, 0, 0};
+    /// SDL's keyboard is up, and covers this many of the picture's lines; the lines FAF's Lua asked to show above it.
+    bool mKeyboardUp = false;
+    int mKeyboardPixels = 0;
+    bool mFieldKnown = false;
+    int mFieldTop = 0;
+    int mFieldBottom = 0;
     OnScreen mOnScreen{mView};
     Timers mTimers;
     GameMouse mGameMouse;
@@ -1789,6 +1931,22 @@ namespace
 
   moho::CScrLuaBinder gTouchBinder(moho::SCR_UserLuaInitSet(), "FafreTouch", &Touch, nullptr, "<global>", kTouchHelp);
 
+  constexpr char kViewHelp[] =
+    "FafreView() - the view the engine draws FAF's UI with, a page's zoom: scale x, scale y, offset x, offset y, the window's "
+    "pixels of a UI's x * scale + offset";
+
+  /// What the bar (bar.lua) undoes, to stay where it is on the glass and as large while FAF's page is zoomed.
+  int View(lua_State* const lua)
+  {
+    static constexpr std::array<float, 4> kIdentity{1, 1, 0, 0};
+    for (const float number : gLayer != nullptr ? gLayer->UiView() : kIdentity) {
+      lua_pushnumber(lua, number);
+    }
+    return 4;
+  }
+
+  moho::CScrLuaBinder gViewBinder(moho::SCR_UserLuaInitSet(), "FafreView", &View, nullptr, "<global>", kViewHelp);
+
   constexpr char kTouchBarHelp[] =
     "FafreTouchBar(toggle) - turns the bar's toggle 'order', 'delete', 'shift' or 'ctrl' over and says whether it is on now; "
     "it holds while a game has the fingers, and only where a finger is the mouse";
@@ -1809,6 +1967,14 @@ namespace
   }
 
   moho::CScrLuaBinder gTouchBarBinder(moho::SCR_UserLuaInitSet(), "FafreTouchBar", &TouchBar, nullptr, "<global>", kTouchBarHelp);
+
+  /// The activity said how much the keyboard covers (fingers::KeyboardCovers), on the program's thread.
+  void KeyboardTask(std::uintptr_t)
+  {
+    if (gLayer != nullptr) {
+      gLayer->KeyboardAsNow();
+    }
+  }
 
   /// The listeners, once: before the first finger, on the program's thread.
   void Listen()
@@ -1831,6 +1997,12 @@ void fingers::SetScheme(const Scheme scheme)
   gScheme = scheme;
   // The layer of the scheme before goes with what it held; the next finger makes one of this.
   gLayer.reset();
+}
+
+void fingers::KeyboardCovers(const float share)
+{
+  gKeyboardShare.store(share > 0 ? share : 0);
+  host::RunNewestOnGameThread(&KeyboardTask, 0);
 }
 
 fingers::Scheme fingers::SchemeNow()
@@ -1885,14 +2057,21 @@ bool fingers::OnSdlEvent(const SDL_Event& event)
       }
       return true;
     }
+    // SDL's mouse made of a finger: the layer has the finger. SDL sends it ahead of the finger's own event. A mouse on a page
+    // the UI's view zooms goes back to the UI's pixels (MouseOnPage).
     case SDL_EVENT_MOUSE_MOTION:
-      // SDL's mouse made of a finger: the layer has the finger. SDL sends it ahead of the finger's own event.
-      return LayerWanted() && event.motion.which == SDL_TOUCH_MOUSEID;
+      return event.motion.which == SDL_TOUCH_MOUSEID ? LayerWanted() : gLayer != nullptr && gLayer->MouseOnPage(event);
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
-      return LayerWanted() && event.button.which == SDL_TOUCH_MOUSEID;
+      return event.button.which == SDL_TOUCH_MOUSEID ? LayerWanted() : gLayer != nullptr && gLayer->MouseOnPage(event);
     case SDL_EVENT_MOUSE_WHEEL:
-      return LayerWanted() && event.wheel.which == SDL_TOUCH_MOUSEID;
+      return event.wheel.which == SDL_TOUCH_MOUSEID ? LayerWanted() : gLayer != nullptr && gLayer->MouseOnPage(event);
+    case SDL_EVENT_SCREEN_KEYBOARD_SHOWN:
+    case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
+      if (gLayer != nullptr) {
+        gLayer->Keyboard(event.type == SDL_EVENT_SCREEN_KEYBOARD_SHOWN);
+      }
+      return false;
     case SDL_EVENT_WILL_ENTER_BACKGROUND:
       if (gLayer != nullptr) {
         gLayer->Release();

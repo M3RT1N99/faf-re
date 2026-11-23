@@ -24,7 +24,11 @@ namespace fingers
   [[nodiscard]] Scheme SchemeNow();
 
   /// The window system's hook (HostSdl.cpp): an SDL event before the engine translates it. True where it was the layer's and
-  /// is taken: a finger's, the layer's timer, SDL's mouse made of a finger while the layer takes fingers. On the program's
-  /// thread.
+  /// is taken: a finger's, the layer's timer, SDL's mouse made of a finger while the layer takes fingers, and a mouse on a page
+  /// the layer shows larger, which it gives the engine at the UI's places. On the program's thread.
   [[nodiscard]] bool OnSdlEvent(const SDL_Event& event);
+
+  /// How much of the screen's height the phone's keyboard covers (0: none), as the activity's window insets say: a page keeps
+  /// the field typed into above it. From any thread.
+  void KeyboardCovers(float share);
 } // namespace fingers

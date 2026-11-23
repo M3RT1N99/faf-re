@@ -7,6 +7,7 @@
 
 #include <SDL3/SDL_system.h>
 
+#include "../host/FingersSdl.h"
 #include "GameAndroid.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/net/NetPeerTransport.h"
@@ -29,6 +30,12 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_foreground(
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_audioFocus(JNIEnv*, jclass, const jboolean held)
 {
   platform::android::SetAudioFocus(held != JNI_FALSE);
+}
+
+/// How much of the screen's height the phone's keyboard covers (0: none), as the window's insets say.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_keyboardCovers(JNIEnv*, jclass, const jfloat share)
+{
+  fingers::KeyboardCovers(share);
 }
 
 /// Whether a network lobby or game has its connections: a UDP connector with its socket open, or a peer link of the

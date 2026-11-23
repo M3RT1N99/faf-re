@@ -130,9 +130,11 @@ namespace
 
   constexpr char kKeyboardHelp[] = "FafreKeyboard() - the phone's keyboard comes, or goes where it is up";
 
-  /// FAF's Menu tab's Keyboard (the hook of ui/game/tabs.lua): SDL's keyboard comes, or goes where it is up.
+  /// FAF's Menu tab's Keyboard (the hook of ui/game/tabs.lua) and the bar's Keys (fafre/bar.lua): SDL's keyboard comes, or
+  /// goes where it is up; the text field with the focus comes into view above it (AskForField).
   int Keyboard(lua_State*)
   {
+    menufingers::AskForField();
     screenkeyboard::Toggle();
     return 0;
   }
