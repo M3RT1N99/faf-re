@@ -1,7 +1,7 @@
 // Griff, the app's touch scheme (buildstage/touch-concept-v2.md, TouchInput): what its gestures do in the game, and where
 // the handle over the selection goes. FAF's Lua reports each frame where the selection is on the screen
-// (assets/fafre_ui/lua/fafre/griff.lua); the handle goes beside it where the map is free, and the activity reads it to draw it
-// and to know a finger on it (Game.griff). A gesture's clicks are a mouse's, and Plus is the keyboard's Shift: FAF decides
+// (assets/fafre_ui/lua/fafre/griff.lua); the handle goes beside it where the map is free, and the touch layer reads it to draw
+// it and to know a finger on it (GriffInput.h, FingersSdl.cpp). A gesture's clicks are a mouse's, and Plus is the keyboard's Shift: FAF decides
 // what they order, as for a mouse, and each click picks what is under it at its own place (CUIWorldView::HandleEvent). The
 // camera moves as the UI moves it (griff.lua: its glide, its flight to the group, the pinch), not the simulation. They come
 // to the program's thread as tasks, in the order of the rest of the input (GameHost.cpp). The draft holds buildings planned
@@ -12,10 +12,10 @@
 // messages, the waypoint a resting finger marked (fafre/griffhud.lua); the handle, a resting finger's ring, a stroke, the
 // draft's plans as FAF's build preview ghosts, Box's box and the loupe's frame (fafre/griffmap.lua, GriffShown.cpp); the
 // groups' icons (fafre/griffgroups.lua). While the draft is open the map's view draws the ground each building takes as FAF's
-// build mode does (include/GriffSkirts.h, DraftSkirts). The activity keeps the fingers and says how the buttons look
+// build mode does (include/GriffSkirts.h, DraftSkirts). The touch layer keeps the fingers and says how the buttons look
 // (FafreGriffHud).
 
-#include <jni.h>
+#include "GriffInput.h"
 
 #include <algorithm>
 #include <array>
@@ -48,7 +48,6 @@
 #include "GriffShown.h"
 #include "HostClicks.h"
 #include "HostSdl.h"
-#include "MenuFingers.h"
 #include "TaskPlaces.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/command/CommandIssueHelper.h"
@@ -118,19 +117,16 @@ namespace
   constexpr int kEndMinimap = 9;
   constexpr int kEndAttackMove = 64;
 
-  // Game's SAID_.
-  constexpr int kSaidTap = 1;
-  constexpr int kSaidGroupStored = 3;
-  constexpr int kSaidCommitted = 4;
-  constexpr int kSaidPan = 5;
-  constexpr int kSaidOrdered = 6;
-  constexpr int kSaidUndone = 7;
-  constexpr int kSaidFormation = 8;
-  constexpr int kSaidDraftRest = 9;
-  constexpr int kSaidDistributes = 10;
-
-  /// Game.GRIFF_VALUES: what Game.griff gives of the handle.
-  constexpr int kHandleValues = 11;
+  // What the program says to the touch layer (griffinput::Said).
+  constexpr int kSaidTap = griffinput::kSaidTap;
+  constexpr int kSaidGroupStored = griffinput::kSaidGroupStored;
+  constexpr int kSaidCommitted = griffinput::kSaidCommitted;
+  constexpr int kSaidPan = griffinput::kSaidPan;
+  constexpr int kSaidOrdered = griffinput::kSaidOrdered;
+  constexpr int kSaidUndone = griffinput::kSaidUndone;
+  constexpr int kSaidFormation = griffinput::kSaidFormation;
+  constexpr int kSaidDraftRest = griffinput::kSaidDraftRest;
+  constexpr int kSaidDistributes = griffinput::kSaidDistributes;
 
   // Game's HINT_: griff.lua's Hint words them where FAF prints its own messages. The control groups' (10 to 12) come from
   // their hook, the stroke's Cancelled from the activity.
@@ -253,15 +249,24 @@ namespace
 
   std::mutex gSaidMutex;
   std::deque<std::array<int, 3>> gSaid;
+  /// Who hears it (griffinput::SetListener).
+  std::atomic<void (*)()> gHeard{nullptr};
 
-  /// The activity hears it when it can (Game.griffSaid).
+  void HeardTask(const Argument)
+  {
+    if (void (*const heard)() = gHeard.load()) {
+      heard();
+    }
+  }
+
+  /// The touch layer hears it in a task of its own (griffinput::TakeSaid), after the task that says it.
   void Say(const int what, const int first, const int second)
   {
     {
       const std::lock_guard<std::mutex> lock(gSaidMutex);
       gSaid.push_back({what, first, second});
     }
-    menufingers::NotifyActivity();
+    host::RunNewestOnGameThread(&HeardTask, 0);
   }
 
   // --- The map ----------------------------------------------------------------------------------
@@ -1225,7 +1230,16 @@ namespace
   /// drew them. What the sim holds of the queues a gesture's orders replaced is read until their replacement landed. An undo
   /// the button asked for and a tick that wait for the sim, clicks or a finger's drag come now, the undo first, which was asked
   /// for the gesture before the tick.
+  void PlaceHandle();
+
+  /// After each frame's paint: the handle placed, then the touch layer reads it (griffinput::SetListener), in a task of its own.
   void PlaceTask(const Argument)
+  {
+    PlaceHandle();
+    host::RunNewestOnGameThread(&HeardTask, 0);
+  }
+
+  void PlaceHandle()
   {
     // The clicks' next step once a frame after the one it waits after is drawn: this task comes after each frame's paint, and
     // one of the frame the step began in may still wait.
@@ -1557,6 +1571,7 @@ namespace
   /// cross: left, top, right and bottom in the picture's pixels and 1 where something the player opened of FAF's lies over it,
   /// or FAF's UI is hidden, for each (Game.griffHudPlaces); all 0 until it said.
   constexpr std::size_t kHudPlaces = 25;
+  static_assert(kHudPlaces == griffinput::kHudPiece * griffinput::kHudPieces, "griffinput::HudPlaces holds them all");
   std::mutex gHudPlacesMutex;
   std::array<float, kHudPlaces> gHudPlaces{};
 
@@ -4790,55 +4805,37 @@ namespace
   }
 } // namespace
 
-/// The scheme is on or off; the handle's radius, how far from its middle a finger is on it, its room from the group's units and
-/// how far from its middle its arrow reaches; the tap help's reach and what counts as a small control; how far beside a unit a
-/// tap picks it, without troops and with them; the speed a second under which the camera's glide stops; how far from a finger
-/// the draft finds a deposit: in the picture's pixels.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_setGriff(
-  JNIEnv*, jclass, const jboolean on, const jfloat radius, const jfloat touchRadius, const jfloat gap, const jfloat arrowReach,
-  const jfloat tapReach, const jfloat tapSmallSide, const jfloat nearReach, const jfloat nearReachWithTroops, const jfloat glideStop,
-  const jfloat depositReach
-)
+void griffinput::SetGriff(const bool on, const Sizes& sizes)
 {
-  gRadius.store(radius);
-  gTouchRadius.store(touchRadius);
-  gGap.store(gap);
-  gArrowReach.store(arrowReach);
-  gTapReach.store(tapReach);
-  gTapSmallSide.store(tapSmallSide);
-  gNearReach.store(nearReach);
-  gNearReachWithTroops.store(nearReachWithTroops);
-  gGlideStop.store(glideStop);
-  gDepositReach.store(depositReach);
-  gOn.store(on != JNI_FALSE);
+  gRadius.store(sizes.radius);
+  gTouchRadius.store(sizes.touchRadius);
+  gGap.store(sizes.gap);
+  gArrowReach.store(sizes.arrowReach);
+  gTapReach.store(sizes.tapReach);
+  gTapSmallSide.store(sizes.tapSmallSide);
+  gNearReach.store(sizes.nearReach);
+  gNearReachWithTroops.store(sizes.nearReachWithTroops);
+  gGlideStop.store(sizes.glideStop);
+  gDepositReach.store(sizes.depositReach);
+  gOn.store(on);
 }
 
-/// Where the app's own pieces lie over the picture, `count` boxes of left, top, right and bottom in its pixels: the handle keeps
-/// clear of them, and a gesture finds none of the game's under them.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_setGriffCovers(JNIEnv* const env, jclass, const jintArray boxes, const jint count)
+void griffinput::SetCovers(const int* const boxes, const int count)
 {
-  const jint values = (std::max)(0, (std::min)(4 * count, env->GetArrayLength(boxes)));
-  std::vector<jint> numbers(static_cast<std::size_t>(values));
-  env->GetIntArrayRegion(boxes, 0, values, numbers.data());
   std::vector<Box> covers;
-  for (jint at = 0; at + 3 < values; at += 4) {
-    covers.push_back(Box{static_cast<float>(numbers[at]), static_cast<float>(numbers[at + 1]), static_cast<float>(numbers[at + 2]),
-                         static_cast<float>(numbers[at + 3])});
+  for (int at = 0; at < count; ++at) {
+    const int* const box = boxes + 4 * at;
+    covers.push_back(
+      Box{static_cast<float>(box[0]), static_cast<float>(box[1]), static_cast<float>(box[2]), static_cast<float>(box[3])}
+    );
   }
   const std::lock_guard<std::mutex> lock(gCoversMutex);
   gCovers = std::move(covers);
 }
 
-/// The handle as the last frame placed it, into x, y, the group's middle x and y, the selection's count and 1 if it points at
-/// the group from elsewhere, else 0; the free map's left, top and right at its middle; the stroke last answered for and what
-/// its end is on. False when there is no handle, or no room for it.
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griff(JNIEnv* const env, jclass, const jfloatArray handle)
+griffinput::Handle griffinput::HandleNow()
 {
-  if (env->GetArrayLength(handle) < kHandleValues) {
-    return JNI_FALSE;
-  }
-  Handle now;
+  ::Handle now;
   griffplace::Cross free;
   {
     const std::lock_guard<std::mutex> lock(gHandleMutex);
@@ -4846,314 +4843,240 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griff(J
     free = gFree;
   }
   const std::int64_t answer = gStrokeAnswer.load();
-  const jfloat values[kHandleValues] = {
-    now.x,     now.y,    now.groupX, now.groupY, static_cast<jfloat>(now.count), now.off ? 1.0f : 0.0f,
-    free.left, free.top, free.right, static_cast<jfloat>(answer >> 32), static_cast<jfloat>(answer & 0xFFFFFFFF),
-  };
-  env->SetFloatArrayRegion(handle, 0, kHandleValues, values);
-  return now.shown && gOn.load() ? JNI_TRUE : JNI_FALSE;
+  Handle handle;
+  handle.shown = now.shown && gOn.load();
+  handle.x = now.x;
+  handle.y = now.y;
+  handle.groupX = now.groupX;
+  handle.groupY = now.groupY;
+  handle.count = now.count;
+  handle.off = now.off;
+  handle.freeLeft = free.left;
+  handle.freeTop = free.top;
+  handle.freeRight = free.right;
+  handle.stroke = static_cast<int>(answer >> 32);
+  handle.strokeEnd = static_cast<int>(answer & 0xFFFFFFFF);
+  return handle;
 }
 
-/// What the program said since the last call, three numbers each, as many as fit into `said`; how many numbers.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffSaid(JNIEnv* const env, jclass, const jintArray said)
+std::vector<std::array<int, 3>> griffinput::TakeSaid()
 {
-  const jsize room = env->GetArrayLength(said) / 3;
-  std::vector<jint> values;
-  {
-    const std::lock_guard<std::mutex> lock(gSaidMutex);
-    while (!gSaid.empty() && static_cast<jsize>(values.size() / 3) < room) {
-      values.insert(values.end(), gSaid.front().begin(), gSaid.front().end());
-      gSaid.pop_front();
-    }
-  }
-  env->SetIntArrayRegion(said, 0, static_cast<jsize>(values.size()), values.data());
-  return static_cast<jint>(values.size());
+  const std::lock_guard<std::mutex> lock(gSaidMutex);
+  std::vector<std::array<int, 3>> said(gSaid.begin(), gSaid.end());
+  gSaid.clear();
+  return said;
 }
 
-/// A first finger came down here (DownTask); `box`: the rail's Box counts.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_griffDown(JNIEnv*, jclass, const jint x, const jint y, const jboolean box)
+void griffinput::SetListener(void (*const heard)())
 {
-  host::RunOnGameThread(&DownTask, Places(x, y, box != JNI_FALSE ? 1 : 0));
+  gHeard.store(heard);
 }
 
-/// A tap's click by what it lands on, or a step of its ladder (SmartTapTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_smartTap(
-  JNIEnv*, jclass, const jint x, const jint y, const jint rail, const jint step, const jint baseX, const jint baseY, const jint tap
-)
+void griffinput::Down(const int x, const int y, const bool box)
+{
+  host::RunOnGameThread(&DownTask, Places(x, y, box ? 1 : 0));
+}
+
+void griffinput::SmartTap(const int x, const int y, const int rail, const int step, const int baseX, const int baseY, const int tap)
 {
   {
     const std::lock_guard<std::mutex> lock(gTapsMutex);
-    gTaps.push_back(Tap{x, y, rail, step, baseX, baseY, tap});
+    gTaps.push_back(::Tap{x, y, rail, step, baseX, baseY, tap});
   }
   host::RunOnGameThread(&SmartTapTask, 0);
 }
 
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deselect(JNIEnv*, jclass)
+void griffinput::Deselect()
 {
   host::RunOnGameThread(&DeselectTask, 0);
 }
 
-/// The camera goes to the selection, by a flight or at once.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_toGroup(JNIEnv*, jclass, const jboolean fly)
+void griffinput::ToGroup(const bool fly)
 {
-  host::RunOnGameThread(&ToGroupTask, fly != JNI_FALSE ? 1 : 0);
+  host::RunOnGameThread(&ToGroupTask, fly ? 1 : 0);
 }
 
-/// A finger rests on the handle, rest number `rest` (HandleRestTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_handleRest(JNIEnv*, jclass, const jint rest)
+void griffinput::HandleRest(const int rest)
 {
   host::RunOnGameThread(&HandleRestTask, static_cast<Argument>(rest & 0xFFFF));
 }
 
-/// The lift of the handle's rest that distributes (DistributeTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_distribute(JNIEnv*, jclass)
+void griffinput::Distribute()
 {
   host::RunOnGameThread(&DistributeTask, 0);
 }
 
-/// A route's waypoints, `count` places as x, y pairs in the picture's pixels; `rail`: the RAIL_ bits that count for it; `patrol`:
-/// a loop.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_route(
-  JNIEnv* const env, jclass, const jintArray places, const jint count, const jint rail, const jboolean patrol
-)
+void griffinput::Route(const int* const places, const int count, const int rail, const bool patrol)
 {
-  if (count <= 0 || env->GetArrayLength(places) < 2 * count) {
+  if (count <= 0) {
     return;
   }
-  std::vector<jint> values(static_cast<std::size_t>(2 * count));
-  env->GetIntArrayRegion(places, 0, 2 * count, values.data());
-  Route route;
+  ::Route route;
   route.rail = rail;
-  route.patrol = patrol != JNI_FALSE;
-  for (jint at = 0; at < count; ++at) {
-    route.points.push_back(POINT{values[2 * at], values[2 * at + 1]});
+  route.patrol = patrol;
+  for (int at = 0; at < count; ++at) {
+    route.points.push_back(POINT{places[2 * at], places[2 * at + 1]});
   }
   {
     const std::lock_guard<std::mutex> lock(gRoutesMutex);
     gRoutes.push_back(std::move(route));
   }
   host::RunOnGameThread(&BeginRouteTask, 0);
-  for (jint at = 0; at < count; ++at) {
+  for (int at = 0; at < count; ++at) {
     host::RunOnGameThread(&RouteStepTask, 0);
   }
   host::RunOnGameThread(&EndRouteTask, 0);
 }
 
-/// The cursor hovers at a stroke's end (StrokeHoverTask), for stroke number `stroke`.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_strokeHover(JNIEnv*, jclass, const jint x, const jint y, const jint stroke)
+void griffinput::StrokeHover(const int x, const int y, const int stroke)
 {
   host::RunOnGameThread(&StrokeHoverTask, Places(x, y, stroke & 0xFFFF));
 }
 
-/// A finger's drag from here, the finger now at `nowX`, `nowY` (DragTask); `rail`: the RAIL_ bits that count for it; `drag`: its
-/// number, which the program says when it made a pan of it.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDrag(
-  JNIEnv*, jclass, const jint x, const jint y, const jint nowX, const jint nowY, const jboolean rested, const jint rail,
-  const jint drag
-)
+void griffinput::Drag(const int x, const int y, const int nowX, const int nowY, const bool rested, const int rail, const int drag)
 {
   {
     const std::lock_guard<std::mutex> lock(gDragsMutex);
-    gDrags.push_back(DragStart{x, y, nowX, nowY, rested != JNI_FALSE, rail, drag});
+    gDrags.push_back(DragStart{x, y, nowX, nowY, rested, rail, drag});
   }
   host::RunOnGameThread(&DragTask, 0);
 }
 
-/// The drag ends here; a pan's camera glides on at this velocity in the picture's pixels a second.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragEnd(
-  JNIEnv*, jclass, const jint x, const jint y, const jfloat velocityX, const jfloat velocityY
-)
+void griffinput::DragEnd(const int x, const int y, const float velocityX, const float velocityY)
 {
   host::RunOnGameThread(&DragEndTask, Places(x, y, Velocity(velocityX), Velocity(velocityY)));
 }
 
-/// The drag goes without its lift, here: FAF's formation given up, any other drag ended without a glide (DragGiveUpTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragGiveUp(JNIEnv*, jclass, const jint x, const jint y)
+void griffinput::DragGiveUp(const int x, const int y)
 {
   host::RunOnGameThread(&DragGiveUpTask, Places(x, y));
 }
 
-/// A finger rested here and lifted (RestTapTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_restTap(JNIEnv*, jclass, const jint x, const jint y, const jint rail)
+void griffinput::RestTap(const int x, const int y, const int rail)
 {
   host::RunOnGameThread(&RestTapTask, Places(x, y, rail));
 }
 
-/// A finger rests here on the map, without Box (RestTask): a waypoint marked, or the ground for a formation's right button.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffRest(JNIEnv*, jclass, const jint x, const jint y)
+void griffinput::Rest(const int x, const int y)
 {
   host::RunOnGameThread(&RestTask, Places(x, y));
 }
 
-/// The resting finger's gesture went without its lift or a drag (RestGoneTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffRestGone(JNIEnv*, jclass)
+void griffinput::RestGone()
 {
   host::RunOnGameThread(&RestGoneTask, 0);
 }
 
-/// The camera follows fingers: `start` keeps what lies at x, y under them, then fingers `distance` apart zoom it (0: one).
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_pinch(JNIEnv*, jclass, const jboolean start, const jint x, const jint y, const jint distance)
+void griffinput::Pinch(const bool start, const int x, const int y, const int distance)
 {
-  if (start != JNI_FALSE) {
+  if (start) {
     host::RunOnGameThread(&PinchStartTask, Places(x, y, distance));
   } else {
     host::RunNewestOnGameThread(&PinchTask, Places(x, y, distance));
   }
 }
 
-/// The fingers left the camera, which glides on at this velocity in the picture's pixels a second.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pinchEnd(JNIEnv*, jclass, const jfloat velocityX, const jfloat velocityY)
+void griffinput::PinchEnd(const float velocityX, const float velocityY)
 {
   host::RunOnGameThread(&PinchEndTask, Places(Velocity(velocityX), Velocity(velocityY)));
 }
 
-/// Plus held, or let go: Shift's key, in the order of the clicks.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_holdShift(JNIEnv*, jclass, const jboolean down)
+void griffinput::HoldShift(const bool down)
 {
-  host::RunOnGameThread(&ShiftTask, down != JNI_FALSE ? 1 : 0);
+  host::RunOnGameThread(&ShiftTask, down ? 1 : 0);
 }
 
-/// The draft as the last frame drew it into `values` (Game.DRAFT_ layout), as much as fits; how many numbers.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDraft(JNIEnv* const env, jclass, const jfloatArray values)
+std::vector<float> griffinput::DraftShown()
 {
-  std::vector<float> shown;
-  {
-    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
-    shown = gDraftShown;
-  }
-  const jsize count = (std::min)(env->GetArrayLength(values), static_cast<jsize>(shown.size()));
-  env->SetFloatArrayRegion(values, 0, count, shown.data());
-  return count;
+  const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+  return gDraftShown;
 }
 
-/// A tap in the draft, on the plan numbered `plan` (0: none) as the activity saw it (DraftTapTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftTap(JNIEnv*, jclass, const jint x, const jint y, const jint plan)
+void griffinput::DraftTap(const int x, const int y, const int plan)
 {
   host::RunOnGameThread(&DraftTapTask, Places(x, y, plan & 0xFFFF, (plan >> 16) & 0xFFFF));
 }
 
-/// The line from the newest plan to a finger here, by its phase (Game.DRAFT_).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftLine(JNIEnv*, jclass, const jint phase, const jint x, const jint y)
+void griffinput::DraftLine(const int phase, const int x, const int y)
 {
   RunDraft(phase, &DraftLineTask, &DraftLineEndTask, &DraftLineAbortTask, Places(x, y));
 }
 
-/// The whole draft follows a finger from where it came down to where it is, by its phase.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftMove(
-  JNIEnv*, jclass, const jint phase, const jint fromX, const jint fromY, const jint x, const jint y
-)
+void griffinput::DraftMove(const int phase, const int fromX, const int fromY, const int x, const int y)
 {
   RunDraft(phase, &DraftMoveTask, &DraftMoveEndTask, &DraftMoveAbortTask, Places(fromX, fromY, x, y));
 }
 
-/// A finger that rests here in the draft shows the plan its lift places, by its phase (the abort: none shown).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftAim(JNIEnv*, jclass, const jint phase, const jint x, const jint y)
+void griffinput::DraftAim(const int phase, const int x, const int y)
 {
   RunDraft(phase, &DraftAimTask, &DraftAimEndTask, &DraftAimGoneTask, Places(x, y));
 }
 
-/// A finger rests here in the draft, Griff's rest number `rest` (DraftRestTask).
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_draftRest(JNIEnv*, jclass, const jint x, const jint y, const jint rest)
+void griffinput::DraftRest(const int x, const int y, const int rest)
 {
   host::RunOnGameThread(&DraftRestTask, Places(x, y, rest));
 }
 
-/// Box from one corner to the other over deposits, with an extractor picked (DraftBoxTask).
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_draftBox(JNIEnv*, jclass, const jint x0, const jint y0, const jint x1, const jint y1)
+void griffinput::DraftBox(const int x0, const int y0, const int x1, const int y1)
 {
   host::RunOnGameThread(&DraftBoxTask, Places(x0, y0, x1, y1));
 }
 
-/// The tick, with Plus counting or not (DraftCommitTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftCommit(JNIEnv*, jclass, const jboolean plus)
+void griffinput::DraftCommit(const bool plus)
 {
-  host::RunOnGameThread(&DraftCommitTask, plus != JNI_FALSE ? 1 : 0);
+  host::RunOnGameThread(&DraftCommitTask, plus ? 1 : 0);
 }
 
-/// Two fingers' tap in the draft (DraftDropTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftDrop(JNIEnv*, jclass)
+void griffinput::DraftDrop()
 {
   host::RunOnGameThread(&DraftDropTask, 0);
 }
 
-/// A tap on the cross, Griff's Esc (EscapeTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscape(JNIEnv*, jclass)
+void griffinput::Escape()
 {
   host::RunOnGameThread(&EscapeTask, 0);
 }
 
-/// Whether the cross shows, as the last frame found Esc.
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscapes(JNIEnv*, jclass)
+bool griffinput::Escapes()
 {
-  return gEscapes.load() ? JNI_TRUE : JNI_FALSE;
+  return gEscapes.load();
 }
 
-/// What the player opened of FAF's that shows (FafreGriffOpened), into `values` as many whole boxes as fit, left, top, right and
-/// bottom of each in the picture's pixels; how many numbers.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOpened(JNIEnv* const env, jclass, const jfloatArray values)
+std::vector<float> griffinput::Opened()
 {
-  std::vector<float> opened;
-  {
-    const std::lock_guard<std::mutex> lock(gOpenedMutex);
-    opened = gOpened;
-  }
-  const jsize count = (std::min)(env->GetArrayLength(values) / 4 * 4, static_cast<jsize>(opened.size()));
-  env->SetFloatArrayRegion(values, 0, count, opened.data());
-  return count;
+  const std::lock_guard<std::mutex> lock(gOpenedMutex);
+  return gOpened;
 }
 
-/// A hint of the activity's (Game.HINT_, as a stroke given up), where FAF prints its own messages (griff.lua Hint).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHint(JNIEnv*, jclass, const jint kind, const jint number)
+void griffinput::Hint(const int kind, const int number)
 {
   host::RunOnGameThread(&HintTask, Places(kind, number));
 }
 
-/// How the rail's Box and Plus look (Rail.look, two bits each, Box's first) with a finger on the draft's tick, its cross and the
-/// undo's button (Game.HUD_HELD_), and the undo's button (Game.HUD_UNDO_, the part of its time left), which griffhud.lua draws in
-/// FAF's UI (FafreGriffHud).
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_setGriffHud(JNIEnv*, jclass, const jint looks, const jint undo, const jfloat undoLeft)
+void griffinput::SetHud(const int looks, const int undo, const float undoLeft)
 {
   gHudLooks.store(looks);
   gUndoShown.store(undo);
   gUndoLeft.store(undoLeft);
 }
 
-/// Where griffhud.lua drew Box, Plus, the undo's button, the draft's tick and its cross (FafreGriffHudPlaces), into `values`:
-/// left, top, right, bottom in the picture's pixels and 1 where something the player opened of FAF's lies over it or FAF's UI
-/// is hidden, for each; how many numbers.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHudPlaces(JNIEnv* const env, jclass, const jfloatArray values)
+std::array<float, griffinput::kHudPiece * griffinput::kHudPieces> griffinput::HudPlaces()
 {
-  std::array<float, kHudPlaces> places{};
-  {
-    const std::lock_guard<std::mutex> lock(gHudPlacesMutex);
-    places = gHudPlaces;
-  }
-  const jsize count = (std::min)(env->GetArrayLength(values), static_cast<jsize>(kHudPlaces));
-  env->SetFloatArrayRegion(values, 0, count, places.data());
-  return count;
+  const std::lock_guard<std::mutex> lock(gHudPlacesMutex);
+  return gHudPlaces;
 }
 
-/// The undo's button was tapped for record `number` (UndoTask).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffUndo(JNIEnv*, jclass, const jint number)
+void griffinput::Undo(const int number)
 {
   host::RunOnGameThread(&UndoTask, static_cast<Argument>(number));
 }
 
-/// Whether the program's clicks run, the draft's tick's or the undo's: the fingers rest meanwhile. Clicks that have waited for a
-/// frame past their patience count as over, which the next task makes them (ClicksRun; a finger's down is one).
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griffClicking(JNIEnv*, jclass)
+bool griffinput::Clicking()
 {
-  return gClicking.load() && !Outwaited(gClicksWaitSince.load(), Now()) ? JNI_TRUE : JNI_FALSE;
+  return gClicking.load() && !Outwaited(gClicksWaitSince.load(), Now());
 }
 
-/// How many runs of the program's clicks have begun: a finger's gesture that one began in gives nothing more (TouchInput).
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffClickRuns(JNIEnv*, jclass)
+int griffinput::ClickRuns()
 {
   return gClickRuns.load();
 }

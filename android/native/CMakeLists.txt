@@ -357,13 +357,14 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/app/SoundAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
   src/gal/VulkanSurfaceAndroid.cpp
+  src/host/FingerInput.cpp
+  src/host/FingersSdl.cpp
   src/host/GriffAndroid.cpp
   src/host/GriffShown.cpp
   src/host/HostSdl.cpp
-  src/host/InputAndroid.cpp
   src/host/MenuFingers.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings FAudio-static SDL3::SDL3-static faf_imgui_sdl faf_freetype
-  faf_msdfgen faf_netlink)
+  faf_msdfgen faf_netlink faf_touch)
 # Device.cpp includes the patched DeviceVulkan.h by its path; the header finds the neighbours it
 # includes by their bare names here. The patched UI file takes the choice of a finger's target from
 # include/ (TapTarget.h).
@@ -379,7 +380,7 @@ add_library(fafgame SHARED ${FAF_ANDROID_SIM_OBJECTS}
   $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_client_dxc> $<TARGET_OBJECTS:faf_client_imaging>
   $<TARGET_OBJECTS:faf_movie_player>)
 target_link_libraries(fafgame PRIVATE faf_android_settings faf_directxtex_android FAudio-static SDL3::SDL3-static
-  faf_imgui_sdl faf_freetype faf_msdfgen faf_netlink FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
+  faf_imgui_sdl faf_freetype faf_msdfgen faf_netlink faf_touch FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
 # The library exports what Java and SDL's activity look up in it (exports.map): the JNI entry points,
 # SDL's main and the app's. The static libraries' symbols stay local, and what nothing reaches is
 # dropped. The Windows import libraries the sources name (#pragma comment(lib, "psapi.lib")) do not
@@ -419,6 +420,7 @@ add_executable(faf_griff_tests
   tests/griff/HostQueueTests.cpp
   tests/griff/ListDragTests.cpp
   tests/griff/TapTargetTests.cpp
+  tests/griff/TouchCoversTests.cpp
   tests/griff/TouchDraftTests.cpp
   tests/griff/TouchGriffHandleTests.cpp
   tests/griff/TouchInputTests.cpp

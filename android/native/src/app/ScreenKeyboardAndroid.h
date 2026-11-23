@@ -10,6 +10,8 @@ namespace screenkeyboard
 
   /// The keyboard comes, or goes where it is up, as FAF's Menu tab's Keyboard asks. On the program's thread.
   void Toggle();
+  /// The keyboard goes, where it is up: a new page has no field it was for. On the program's thread.
+  void Dismiss();
   /// A finger's press the host gave the engine, in its pixels (src/host/HostSdl.cpp, which SDL does not see): the
   /// keyboard comes where it lands on a text field. On the program's thread.
   void FingerPressed(float x, float y);

@@ -145,6 +145,9 @@ namespace
     (void)SDL_SetHint(SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY, "1");
     (void)SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     (void)SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+    // A mouse plays as a mouse, as on a desktop: SDL makes no finger of it, which the touch layer would take
+    // (src/host/FingersSdl.cpp).
+    (void)SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     screenkeyboard::Install();
     host::Install();
     // Logged to until the process ends, which runs no destructors.

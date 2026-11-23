@@ -12,6 +12,7 @@
 #include <Windows.h>
 
 #include "../app/GameAndroid.h"
+#include "FingersSdl.h"
 #include "gpg/core/utils/Logging.h"
 #include "platform/Window.h"
 #include "platform/sdl/WindowSdlPlatform.h"
@@ -263,6 +264,9 @@ bool host::OnSdlEvent(const void* const sdlEvent)
     if (gQueue.Take(entry, &Wake)) {
       entry.task(entry.argument);
     }
+    return true;
+  }
+  if (fingers::OnSdlEvent(event)) {
     return true;
   }
   if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {

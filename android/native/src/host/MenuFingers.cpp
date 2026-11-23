@@ -1,14 +1,11 @@
-// What FAF's UI and the app tell each other about the fingers in the menus (android/TOUCH_UI.md). FAF's Lua declares a
+// What FAF's UI and the touch layer tell each other about the fingers in the menus (android/TOUCH_UI.md). FAF's Lua declares a
 // screen's page, whose the fingers are, the HUD's factor and what to bring into view, by four functions added to its UI's
-// globals, and the activity follows on its own thread (SDL's message wakes it, GameActivity.onUnhandledMessage, and it
-// reads what is new). The phone's keyboard is SDL's (src/app/ScreenKeyboardAndroid.cpp), which a finger's tap on a text
-// field brings. A finger that scrolls asks what list is under it, and a list takes its drag on the program's thread,
-// where FAF's lists live, in the order of the rest of the input; what a list cannot take goes back to the activity for the
-// page.
+// globals, and the layer hears of it in a task of its own (SetListener) and reads what is new. The phone's keyboard is SDL's
+// (src/app/ScreenKeyboardAndroid.cpp), which a finger's tap on a text field brings. A finger that scrolls asks what list is
+// under it, and a list takes its drag on the program's thread, where FAF's lists live, in the order of the rest of the input;
+// what a list cannot take goes back to the layer for the page.
 
 #include "MenuFingers.h"
-
-#include <jni.h>
 
 #include <atomic>
 #include <cstdint>
@@ -17,7 +14,6 @@
 #include <mutex>
 
 #include <ListDrag.h>
-#include <SDL3/SDL_system.h>
 
 #include "../app/ScreenKeyboardAndroid.h"
 #include "HostSdl.h"
@@ -30,31 +26,27 @@ namespace
 {
   using hosttask::Argument;
 
-  // --- The activity -----------------------------------------------------------------------------
+  // --- The touch layer --------------------------------------------------------------------------
 
-  /// The command of SDL's message to the activity by which the program wakes it (GameActivity.onUnhandledMessage): the
-  /// first that SDL leaves to the app.
-  constexpr Uint32 kFromProgram = 0x8000;
+  /// Who hears what is new (menufingers::SetListener).
+  std::atomic<void (*)()> gHeard{nullptr};
 
-  /// The activity reads what is new when it can.
-  void WakeActivity()
+  void HeardTask(const Argument)
   {
-    if (!SDL_SendAndroidMessage(kFromProgram, 0)) {
-      gpg::Warnf("MenuFingers: no word to the activity: %s", SDL_GetError());
+    if (void (*const heard)() = gHeard.load()) {
+      heard();
     }
+  }
+
+  /// The layer reads what is new in a task of its own, after the task or the Lua that has it.
+  void TellLayer()
+  {
+    host::RunNewestOnGameThread(&HeardTask, 0);
   }
 
   // --- What FAF's Lua declares ------------------------------------------------------------------
 
-  /// A screen's page, in the picture's pixels; none: the view is the whole picture.
-  struct Page
-  {
-    bool shown = false;
-    int left = 0;
-    int top = 0;
-    int right = 0;
-    int bottom = 0;
-  };
+  using menufingers::Page;
 
   std::mutex gPageMutex;
   Page gPage;
@@ -82,7 +74,7 @@ namespace
       const std::lock_guard<std::mutex> lock(gPageMutex);
       gPage = page;
     }
-    WakeActivity();
+    TellLayer();
     return 0;
   }
 
@@ -90,7 +82,7 @@ namespace
   {
     const bool menu = lua_toboolean(lua, 1) != 0;
     if (gMenuFingers.exchange(menu) != menu) {
-      WakeActivity();
+      TellLayer();
     }
     return 0;
   }
@@ -105,20 +97,13 @@ namespace
   moho::CScrLuaBinder gSetFingersBinder(moho::SCR_UserLuaInitSet(), "FafreSetFingers", &SetFingers, nullptr, "<global>", kSetFingersHelp);
   moho::CScrLuaBinder gSetHudBinder(moho::SCR_UserLuaInitSet(), "FafreSetHud", &SetHud, nullptr, "<global>", kSetHudHelp);
 
-  // --- What the activity has yet to bring into view ----------------------------------------------
+  // --- What is yet to be brought into view -------------------------------------------------------
 
-  constexpr jint kNoPlace = 0;
-  constexpr jint kFieldTapped = 1;
-  constexpr jint kFieldAskedFor = 2;
-  constexpr jint kLinesToShow = 3;
-
-  /// Why, and the place in the picture's lines.
-  struct ToShow
-  {
-    jint why = kNoPlace;
-    jint top = 0;
-    jint bottom = 0;
-  };
+  using menufingers::kFieldAskedFor;
+  using menufingers::kFieldTapped;
+  using menufingers::kLinesToShow;
+  using menufingers::kNoPlace;
+  using menufingers::ToShow;
 
   std::mutex gToShowMutex;
   ToShow gToShow;
@@ -129,12 +114,12 @@ namespace
       const std::lock_guard<std::mutex> lock(gToShowMutex);
       gToShow = toShow;
     }
-    WakeActivity();
+    TellLayer();
   }
 
   int ShowLines(lua_State* const lua)
   {
-    PublishToShow(ToShow{kLinesToShow, static_cast<jint>(lua_tonumber(lua, 1)), static_cast<jint>(lua_tonumber(lua, 2))});
+    PublishToShow(ToShow{kLinesToShow, static_cast<int>(lua_tonumber(lua, 1)), static_cast<int>(lua_tonumber(lua, 2))});
     return 0;
   }
 
@@ -201,9 +186,9 @@ namespace
 
   // --- A finger on a list -----------------------------------------------------------------------
 
-  constexpr jint kNotKnownYet = 0;
-  constexpr jint kNoList = 1;
-  constexpr jint kList = 2;
+  using menufingers::kList;
+  using menufingers::kNoList;
+  using menufingers::kNotKnownYet;
 
   /// The serial of the finger that has asked last, and the answer with the serial it is for.
   std::atomic<std::uint32_t> gListSerial{0};
@@ -221,7 +206,7 @@ namespace
       const std::lock_guard<std::mutex> lock(gPageDragMutex);
       gPageDrag += pixels;
     }
-    WakeActivity();
+    TellLayer();
   }
 
   /// On the program's thread: what list a finger that has come down here would scroll.
@@ -237,7 +222,7 @@ namespace
     gList.ResetFromObject(list);
     const std::uint64_t serial = static_cast<std::uint32_t>(place >> 32);
     gListAnswer.store(serial << 8 | static_cast<std::uint64_t>(list != nullptr ? kList : kNoList));
-    WakeActivity();
+    TellLayer();
   }
 
   /// On the program's thread: this much of a finger's drag, as a float's bits; the list takes what it can.
@@ -269,12 +254,12 @@ namespace
 
   // --- The text field ---------------------------------------------------------------------------
 
-  void PublishField(moho::CMauiControl* const control, const jint why)
+  void PublishField(moho::CMauiControl* const control, const int why)
   {
     if (dynamic_cast<moho::CMauiEdit*>(control) != nullptr) {
       PublishToShow(ToShow{
-        why, static_cast<jint>(moho::CScriptLazyVar_float::GetValue(&control->mTopLV)),
-        static_cast<jint>(moho::CScriptLazyVar_float::GetValue(&control->mBottomLV))
+        why, static_cast<int>(moho::CScriptLazyVar_float::GetValue(&control->mTopLV)),
+        static_cast<int>(moho::CScriptLazyVar_float::GetValue(&control->mBottomLV))
       });
     }
   }
@@ -286,9 +271,9 @@ namespace
   }
 } // namespace
 
-void menufingers::NotifyActivity()
+void menufingers::SetListener(void (*const heard)())
 {
-  WakeActivity();
+  gHeard.store(heard);
 }
 
 void menufingers::NoteTapOnField(const float x, const float y)
@@ -323,53 +308,42 @@ bool menufingers::OnScrollBar(const float x, const float y)
   }
 }
 
-/// The page FAF's Lua has declared, into left, top, right, bottom; false when there is none.
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_page(JNIEnv* const env, jclass, const jintArray rect)
+menufingers::Page menufingers::PageNow()
 {
-  Page page;
-  {
-    const std::lock_guard<std::mutex> lock(gPageMutex);
-    page = gPage;
-  }
-  const jint values[4] = {page.left, page.top, page.right, page.bottom};
-  env->SetIntArrayRegion(rect, 0, 4, values);
-  return page.shown ? JNI_TRUE : JNI_FALSE;
+  const std::lock_guard<std::mutex> lock(gPageMutex);
+  return gPage;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_menuFingers(JNIEnv*, jclass)
+bool menufingers::MenuFingers()
 {
-  return gMenuFingers.load() ? JNI_TRUE : JNI_FALSE;
+  return gMenuFingers.load();
 }
 
-extern "C" JNIEXPORT jfloat JNICALL Java_io_github_m3rt1n99_fafre_Game_hudFactor(JNIEnv*, jclass)
+float menufingers::HudFactor()
 {
   return gHudFactor.load();
 }
 
-/// A finger came down here: what list would it scroll? The answer comes as `listAnswer`.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_lookForList(JNIEnv*, jclass, const jint x, const jint y)
+void menufingers::LookForList(const int x, const int y)
 {
   const std::uint32_t serial = gListSerial.fetch_add(1) + 1;
-  host::RunOnGameThread(&LookForList, hosttask::Places(x, y) | static_cast<Argument>(serial) << 32);
+  host::RunOnGameThread(&::LookForList, hosttask::Places(x, y) | static_cast<Argument>(serial) << 32);
 }
 
-/// 0: not known yet; 1: no list is under the last finger; 2: one is.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_listAnswer(JNIEnv*, jclass)
+int menufingers::ListAnswer()
 {
   const std::uint64_t answer = gListAnswer.load();
-  return static_cast<std::uint32_t>(answer >> 8) == gListSerial.load() ? static_cast<jint>(answer & 0xFFU) : kNotKnownYet;
+  return static_cast<std::uint32_t>(answer >> 8) == gListSerial.load() ? static_cast<int>(answer & 0xFFU) : kNotKnownYet;
 }
 
-/// `drag`: in the picture's pixels, positive downwards, for the list of the last finger.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_scrollList(JNIEnv*, jclass, const jfloat drag)
+void menufingers::ScrollList(const float drag)
 {
   Argument bits = 0;
   std::memcpy(&bits, &drag, sizeof(drag));
-  host::RunOnGameThread(&ScrollList, bits);
+  host::RunOnGameThread(&::ScrollList, bits);
 }
 
-/// What no list took since the last call, in the picture's pixels.
-extern "C" JNIEXPORT jfloat JNICALL Java_io_github_m3rt1n99_fafre_Game_takePageDrag(JNIEnv*, jclass)
+float menufingers::TakePageDrag()
 {
   const std::lock_guard<std::mutex> lock(gPageDragMutex);
   const float drag = gPageDrag;
@@ -377,23 +351,15 @@ extern "C" JNIEXPORT jfloat JNICALL Java_io_github_m3rt1n99_fafre_Game_takePageD
   return drag;
 }
 
-/// The keyboard is coming: the answer comes as `takeToShow`, if a text field has the focus.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_askForField(JNIEnv*, jclass)
+void menufingers::AskForField()
 {
   host::RunOnGameThread(&LookForField, 0);
 }
 
-/// The lines the activity has yet to bring into view, into top, bottom; 0: none, 1: a finger tapped a text field, 2:
-/// askForField's text field, 3: FAF's Lua says so.
-extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_takeToShow(JNIEnv* const env, jclass, const jintArray place)
+menufingers::ToShow menufingers::TakeToShow()
 {
-  ToShow toShow;
-  {
-    const std::lock_guard<std::mutex> lock(gToShowMutex);
-    toShow = gToShow;
-    gToShow = ToShow{};
-  }
-  const jint values[2] = {toShow.top, toShow.bottom};
-  env->SetIntArrayRegion(place, 0, 2, values);
-  return toShow.why;
+  const std::lock_guard<std::mutex> lock(gToShowMutex);
+  const ToShow toShow = gToShow;
+  gToShow = ToShow{};
+  return toShow;
 }

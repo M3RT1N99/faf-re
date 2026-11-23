@@ -1,15 +1,11 @@
-// The activity's input on SDL's activity: the natives of the app's Game class that a finger's input comes by, as the earlier
-// host had them (android-client's GameHost.cpp). All of it comes to the program's thread as tasks (HostSdl.h), as a tap has
-// to (it looks at the controls there): so all of it stays in the order it was given, and the cursor moves on that thread
-// alone. Input that went straight to the engine from the activity's thread could overtake a task, or fall between its press
-// and release. That costs a drag no frame: the program takes its events until none is left before each frame, and the
-// moves of a long frame still make one move.
+// A finger's input for the engine (FingerInput.h): what the touch layer on SDL's fingers gives as a mouse's, as the earlier
+// host's natives had it (android-client's GameHost.cpp). All of it comes to the program's thread as tasks (HostSdl.h), as a
+// tap has to (it looks at the controls there): so all of it stays in the order it was given, and the cursor moves on that
+// thread alone.
 //
 // While Griff's own clicks run (the draft's tick's, the undo's), a finger's input does nothing: it would come between them
-// in their mode, with their selection and Shift, or move the cursor they aim with. The activity holds a finger back once it
-// knows of them (TouchInput), a moment after they began here; this is what it gave in that moment.
-
-#include <jni.h>
+// in their mode, with their selection and Shift, or move the cursor they aim with. The touch layer holds a finger back once
+// it knows of them (TouchInput), a moment after they began here; this is what it gave in that moment.
 
 #include <atomic>
 #include <cstdint>
@@ -17,11 +13,11 @@
 #include <GriffTap.h>
 #include <Windows.h>
 
+#include "FingerInput.h"
 #include "HostClicks.h"
 #include "HostSdl.h"
 #include "MenuFingers.h"
 #include "TaskPlaces.h"
-#include "gpg/core/utils/Logging.h"
 #include "moho/console/CConCommand.h"
 
 namespace moho
@@ -193,24 +189,6 @@ namespace
     }
   }
 
-  /// The keys of Android's (AKEYCODE_*) that the activity's bar holds, as Windows names them; 0 for any other.
-  [[nodiscard]] unsigned VirtualKeyOf(const int keyCode)
-  {
-    switch (keyCode) {
-    case 59: // AKEYCODE_SHIFT_LEFT
-    case 60: // AKEYCODE_SHIFT_RIGHT
-      return VK_SHIFT;
-    case 113: // AKEYCODE_CTRL_LEFT
-    case 114: // AKEYCODE_CTRL_RIGHT
-      return VK_CONTROL;
-    case 57: // AKEYCODE_ALT_LEFT
-    case 58: // AKEYCODE_ALT_RIGHT
-      return VK_MENU;
-    default:
-      return 0;
-    }
-  }
-
   void PressKey(const Argument key)
   {
     host::Key(static_cast<unsigned>(Coordinate(key, 0)), Coordinate(key, 1) != 0);
@@ -236,102 +214,72 @@ void hostclicks::ClickNear(const float x, const float y, const float reach, cons
   }
 }
 
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseMove(JNIEnv*, jclass, const jint x, const jint y)
+void fingerinput::MouseMove(const int x, const int y)
 {
   host::RunNewestOnGameThread(&MoveMouse, Places(x, y));
 }
 
-/// `button`: Game.BUTTON_LEFT and the rest, which are the host's numbers (host::kButtonLeft).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseButton(
-  JNIEnv*, jclass, const jint button, const jboolean down, const jint x, const jint y
-)
+void fingerinput::MouseButton(const int button, const bool down, const int x, const int y)
 {
-  host::RunOnGameThread(&PressMouseButton, Places(x, y, button, down != JNI_FALSE ? 1 : 0));
+  host::RunOnGameThread(&PressMouseButton, Places(x, y, button, down ? 1 : 0));
 }
 
-/// A finger's button (host::TouchButton): where a building's ghost waits, its press does not place the building
-/// (CUIWorldView::HandleEvent).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_touchButton(
-  JNIEnv*, jclass, const jint button, const jboolean down, const jint x, const jint y
-)
+void fingerinput::TouchButton(const int button, const bool down, const int x, const int y)
 {
-  host::RunOnGameThread(&PressTouchButton, Places(x, y, button, down != JNI_FALSE ? 1 : 0));
+  host::RunOnGameThread(&PressTouchButton, Places(x, y, button, down ? 1 : 0));
 }
 
-/// `delta` in WHEEL_DELTA units of 120 per notch, positive away from the user; less than 32768 at a time.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_mouseWheel(JNIEnv*, jclass, const jint delta, const jint x, const jint y)
+void fingerinput::MouseWheel(const int delta, const int x, const int y)
 {
   host::RunOnGameThread(&TurnWheel, Places(x, y, delta));
 }
 
-/// Whether a building's ghost waits to be placed: fingers then move it (TouchInput).
-extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_placingBuilding(JNIEnv*, jclass)
+bool fingerinput::PlacingBuilding()
 {
-  return moho::UI_PlacingBuilding() ? JNI_TRUE : JNI_FALSE;
+  return moho::UI_PlacingBuilding();
 }
 
-/// A finger tapped near a building's ghost (TapNearGhost).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_tapNearGhost(
-  JNIEnv*, jclass, const jint fingerX, const jint fingerY, const jint ghostX, const jint ghostY
-)
+void fingerinput::TapNearGhost(const int fingerX, const int fingerY, const int ghostX, const int ghostY)
 {
-  host::RunOnGameThread(&TapNearGhost, Places(fingerX, fingerY, ghostX, ghostY));
+  host::RunOnGameThread(&::TapNearGhost, Places(fingerX, fingerY, ghostX, ghostY));
 }
 
-/// A finger gave up the line of buildings it was drawing, after the input it gave so far.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_cancelLine(JNIEnv*, jclass)
+void fingerinput::CancelLine()
 {
-  host::RunOnGameThread(&CancelLine, 0);
+  host::RunOnGameThread(&::CancelLine, 0);
 }
 
-/// A finger's tap, the left button's click (Tap). `reach` and `smallSide` in the picture's pixels.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_tap(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
+void fingerinput::Tap(const int x, const int y, const int reach, const int smallSide)
 {
-  host::RunOnGameThread(&Tap, Places(x, y, reach, smallSide));
+  host::RunOnGameThread(&::Tap, Places(x, y, reach, smallSide));
 }
 
-/// A finger's press for a drag, the left button's (PressNear). `reach` and `smallSide` in the picture's pixels.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_pressNear(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
+void fingerinput::PressNear(const int x, const int y, const int reach, const int smallSide)
 {
-  host::RunOnGameThread(&PressNear, Places(x, y, reach, smallSide));
+  host::RunOnGameThread(&::PressNear, Places(x, y, reach, smallSide));
 }
 
-/// A finger's click of the right button (RightClickNear). `reach` and `smallSide` in the picture's pixels.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_rightClickNear(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
+void fingerinput::RightClickNear(const int x, const int y, const int reach, const int smallSide)
 {
-  host::RunOnGameThread(&RightClickNear, Places(x, y, reach, smallSide));
+  host::RunOnGameThread(&::RightClickNear, Places(x, y, reach, smallSide));
 }
 
-/// No finger is on the glass (PointerLeave).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pointerLeave(JNIEnv*, jclass)
+void fingerinput::PointerLeave()
 {
-  host::RunOnGameThread(&PointerLeave, gFingersDown.load());
+  host::RunOnGameThread(&::PointerLeave, gFingersDown.load());
 }
 
-/// A finger came down, ahead of what it sends (PointerLeave).
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pointerStay(JNIEnv*, jclass)
+void fingerinput::PointerStay()
 {
   gFingersDown.fetch_add(1);
 }
 
-/// Deletes the queued order of the selected units nearest to the cursor, which is at this place.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deleteOrder(JNIEnv*, jclass, const jint x, const jint y)
+void fingerinput::DeleteOrder(const int x, const int y)
 {
   host::RunOnGameThread(&DeleteOrderAtCursor, Places(x, y));
 }
 
-/// A key the activity's bar holds (`keyCode`, AKEYCODE_*: Shift, Ctrl, Alt) went down or up, in its place among the
-/// fingers' input. A keyboard's keys take SDL's own way.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_key(JNIEnv*, jclass, const jint keyCode, const jboolean down)
+void fingerinput::Key(const unsigned virtualKey, const bool down)
 {
-  const unsigned virtualKey = VirtualKeyOf(keyCode);
-  if (virtualKey == 0) {
-    gpg::Warnf("Host: the bar gave key %d, which only a keyboard has", static_cast<int>(keyCode));
-    return;
-  }
-  host::RunOnGameThread(&PressKey, Places(static_cast<int>(virtualKey), down != JNI_FALSE ? 1 : 0));
+  host::RunOnGameThread(&PressKey, Places(static_cast<int>(virtualKey), down ? 1 : 0));
 }

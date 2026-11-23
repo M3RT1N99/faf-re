@@ -19,4 +19,7 @@ namespace platform::android
   void SetAudioFocus(bool held);
   /// The sound engine has opened its output (GameMainAndroid.cpp sees it in the engine's log). On any thread.
   void SoundStarted();
+  /// What a finger feels: the activity's haptic feedback, a hold's or a rest's (GameActivity.onUnhandledMessage, Game.BUZZ).
+  /// On any thread.
+  void Buzz();
 } // namespace platform::android

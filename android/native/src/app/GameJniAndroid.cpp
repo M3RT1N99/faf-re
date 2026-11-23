@@ -1,12 +1,14 @@
 // The natives of the app's Game class (android/app/.../Game.java) that the game on SDL's activity has: what the activity
-// tells the program, and what NetworkGameService asks of it. The class's other natives are the earlier host's
-// (src/host), which SDL's activity does not call.
+// tells the program, and what NetworkGameService asks of it; and the program's word to the activity for a finger's buzz.
 
 #include <jni.h>
 
 #include <string>
 
+#include <SDL3/SDL_system.h>
+
 #include "GameAndroid.h"
+#include "gpg/core/utils/Logging.h"
 #include "moho/net/NetPeerTransport.h"
 
 namespace moho
@@ -52,4 +54,13 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_report(JNIE
   }
   platform::android::Report(text);
   env->ReleaseStringUTFChars(line, text);
+}
+
+void platform::android::Buzz()
+{
+  // Game.BUZZ: the second of the commands SDL leaves to the app.
+  constexpr Uint32 kBuzz = 0x8001;
+  if (!SDL_SendAndroidMessage(kBuzz, 0)) {
+    gpg::Warnf("Buzz: no word to the activity: %s", SDL_GetError());
+  }
 }

@@ -166,6 +166,14 @@ void screenkeyboard::Toggle()
   }
 }
 
+void screenkeyboard::Dismiss()
+{
+  SDL_Window* const window = GameWindow();
+  if (window != nullptr && SDL_ScreenKeyboardShown(window)) {
+    Hide(window);
+  }
+}
+
 void screenkeyboard::FingerPressed(const float x, const float y)
 {
   ShowForField(GameWindow(), x, y);

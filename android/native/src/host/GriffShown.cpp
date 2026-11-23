@@ -1,9 +1,7 @@
-// What the touch scheme Griff shows that the activity and the program know of (GriffShown.h): the numbers each piece had
+// What the touch scheme Griff shows that the touch layer and the program know of (GriffShown.h): the numbers each piece had
 // last, which FAF's UI reads each frame of the session's UI and draws in FAF's look (fafre/griffmap.lua, FafreGriffShown).
 
 #include "GriffShown.h"
-
-#include <jni.h>
 
 #include <algorithm>
 #include <array>
@@ -51,19 +49,4 @@ void griffshown::Set(const Piece piece, std::vector<float> values)
   }
   const std::lock_guard<std::mutex> lock(gShownMutex);
   gShown[static_cast<std::size_t>(piece)] = std::move(values);
-}
-
-/// A piece the activity shows (Game.SHOWN_), `count` of `values`, in the picture's pixels; none: it does not show.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_setGriffShown(JNIEnv* const env, jclass, const jint piece, const jfloatArray values, const jint count)
-{
-  const jint length = (std::max)(0, (std::min)(count, values != nullptr ? env->GetArrayLength(values) : 0));
-  std::vector<float> numbers(static_cast<std::size_t>(length));
-  if (length > 0) {
-    env->GetFloatArrayRegion(values, 0, length, numbers.data());
-  }
-  // The activity's pieces only: what a rest found is the program's.
-  if (piece >= griffshown::kHandle && piece < griffshown::kRest) {
-    griffshown::Set(static_cast<griffshown::Piece>(piece), std::move(numbers));
-  }
 }
