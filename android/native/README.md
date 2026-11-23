@@ -42,7 +42,8 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_dxc` | `libdxcompiler.so`, DXC built from source (see The shader compiler) |
 | `fafgame` | `libfafgame.so`: all of the above, which the app's game activity loads (card 5 of the app) |
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
-| `faf_griff_tests` | The touch scheme Griff's rules (`tests/griff`), linked statically |
+| `faf_touch` | The touch layer (`src/touch`): fingers made into a mouse's input, in a game (the touch scheme Griff among it) and in the menus' pages, platform-neutral C++ |
+| `faf_griff_tests` | The touch scheme Griff's rules and the touch layer's gestures (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
@@ -73,6 +74,11 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 
 `src/host` is the touch schemes' half in the engine, which the earlier host (the Win32 message layer of
 release 0.14) had: on SDL's activity its tasks and input go through the host (`HostSdl.cpp`).
+
+`src/touch` is the touch layer itself, ported 1:1 from the app's Java (`TouchInput`, `PageInput`,
+`PageView`, `Stroke`, `Draft`, `Rail`, `Undo`, `GriffHandle`): what a finger's down, moves and lift
+give the game, in its own pixels and milliseconds. It includes no header of Android, SDL or the engine,
+so it can serve any touchscreen and move to `src/` on its own, an upstream PR candidate.
 
 ### The program's start
 
@@ -197,7 +203,9 @@ patched stream counts them (`patches/README.md`, `CNetTCPBuf.cpp`), and an argum
 draft and its skirts, the groups, the handle's place, the reach of a tap, the undo), the camera's clamp
 past the map's edges (`include/CameraClear.h`), the choice of the small control a finger's tap meant
 (`include/TapTarget.h`), the sharing out of a finger's drag between a list and the page
-(`include/ListDrag.h`), and the host's order of tasks and its double click (`include/HostQueue.h`). It needs nothing of the engine and is linked statically, so the same program
+(`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), and the
+touch layer's gestures (`src/touch`; `Touch*Tests.cpp` are the app's Java tests of it, case by case,
+but for `PictureSize`'s, which stay with the activity). It needs nothing of the engine and is linked statically, so the same program
 runs on the emulator and on a Linux host; the app's workflow runs the arm64 build on an arm64 runner.
 
 ```sh

@@ -1,7 +1,8 @@
 // faf_griff_tests: the touch scheme Griff's rules (include/Griff*.h: the draft, the pins, the handle's
-// place, the tap's reach, the undo) and the choice of what a finger meant (include/TapTarget.h,
-// include/ListDrag.h), all of them headers that need nothing of the engine. Linked statically, so it
-// runs on the emulator and on Linux hosts alike. Exit code 0 when every check passes, 1 otherwise.
+// place, the tap's reach, the undo), the choice of what a finger meant (include/TapTarget.h,
+// include/ListDrag.h) and the touch layer's gestures (src/touch, Touch*Tests.cpp), all of them code that
+// needs nothing of the engine. Linked statically, so it runs on the emulator and on Linux hosts alike.
+// Exit code 0 when every check passes, 1 otherwise.
 
 #include <cstdio>
 #include <cstring>
@@ -58,6 +59,15 @@ std::string wxtest::Describe(const std::string& value)
 std::string wxtest::Describe(const char* const value)
 {
   return value != nullptr ? Describe(std::string(value)) : std::string("null");
+}
+
+std::string wxtest::Describe(const std::vector<std::string>& value)
+{
+  std::string out = "[";
+  for (std::size_t at = 0; at < value.size(); ++at) {
+    out += (at == 0 ? "" : ", ") + Describe(value[at]);
+  }
+  return out + "]";
 }
 
 int main()

@@ -37,6 +37,8 @@ namespace wxtest
   std::string Describe(const std::wstring& value);
   std::string Describe(const std::string& value);
   std::string Describe(const char* value);
+  /// A list of texts, as the touch layer's tests write down what reached the game.
+  std::string Describe(const std::vector<std::string>& value);
 
   template <class T>
   std::string Describe(const T& value)
@@ -73,6 +75,22 @@ namespace wxtest
   static void name();                                                           \
   static const ::wxtest::Registration name##Registration(#name, &name);       \
   static void name()
+
+/// A test with a fixture of its own, as a JUnit test has its own instance: the body is a member function of a struct made
+/// from `fixture` anew for the test, so it reaches the fixture's members by their names.
+#define WXT_FIXTURE_TEST(fixture, name)                                                                                   \
+  namespace                                                                                                               \
+  {                                                                                                                       \
+    struct name##Case final : fixture                                                                                    \
+    {                                                                                                                     \
+      void Run();                                                                                                         \
+    };                                                                                                                    \
+  }                                                                                                                       \
+  WXT_TEST(name)                                                                                                          \
+  {                                                                                                                       \
+    name##Case().Run();                                                                                                   \
+  }                                                                                                                       \
+  void name##Case::Run()
 
 #define WXT_CHECK(condition) ((condition) ? (void)0 : ::wxtest::Fail(__FILE__, __LINE__, #condition))
 

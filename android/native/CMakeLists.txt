@@ -334,6 +334,22 @@ target_link_libraries(faf_movie_player PUBLIC faf_android_settings)
 # FFmpeg's headers. Whoever takes these objects links the libraries itself.
 target_link_libraries(faf_movie_player PRIVATE FFmpeg::FFmpeg)
 
+# The touch layer (src/touch): fingers made into what a mouse gives the game, in a game (TouchInput,
+# the touch scheme Griff among it) and in the menus' pages (PageInput, PageView). Platform-neutral C++
+# that needs nothing of the engine, of SDL or of Android, so it can serve any touchscreen. No fused
+# multiply-add: its float rules give the same numbers on arm64 and x86_64, those its tests pin.
+add_library(faf_touch STATIC
+  src/touch/Draft.cpp
+  src/touch/PageInput.cpp
+  src/touch/PageView.cpp
+  src/touch/Rail.cpp
+  src/touch/Stroke.cpp
+  src/touch/TouchInput.cpp)
+target_include_directories(faf_touch PUBLIC "${FAF_ANDROID_DIR}/src")
+target_compile_features(faf_touch PUBLIC cxx_std_20)
+target_compile_options(faf_touch PRIVATE -Wall -Wextra -Wshadow -ffp-contract=off -fvisibility=hidden
+  -fvisibility-inlines-hidden)
+
 add_library(faf_client OBJECT ${_faf_client_files}
   src/app/GameJniAndroid.cpp
   src/app/GameMainAndroid.cpp
@@ -388,8 +404,9 @@ target_link_libraries(faf_movie_tests PRIVATE faf_android_settings faf_sim_archi
 target_link_options(faf_movie_tests PRIVATE -Wl,--gc-sections)
 
 # faf_griff_tests (tests/griff): the rules of the touch scheme Griff (../TOUCH_UI.md), headers of their
-# own (include/), and the choice of the small control a finger's tap meant. Linked statically, so it runs
-# on the emulator and on Linux hosts alike (CI's arm64 runner).
+# own (include/), the choice of the small control a finger's tap meant, and the touch layer's gestures
+# (src/touch; tests/griff/Touch*Tests.cpp are the app's Java tests of the layer, case by case). Linked
+# statically, so it runs on the emulator and on Linux hosts alike (CI's arm64 runner).
 add_executable(faf_griff_tests
   tests/griff/Main.cpp
   tests/griff/CameraClearTests.cpp
@@ -401,8 +418,17 @@ add_executable(faf_griff_tests
   tests/griff/GriffUndoTests.cpp
   tests/griff/HostQueueTests.cpp
   tests/griff/ListDragTests.cpp
-  tests/griff/TapTargetTests.cpp)
+  tests/griff/TapTargetTests.cpp
+  tests/griff/TouchDraftTests.cpp
+  tests/griff/TouchGriffHandleTests.cpp
+  tests/griff/TouchInputTests.cpp
+  tests/griff/TouchPageInputTests.cpp
+  tests/griff/TouchPageViewTests.cpp
+  tests/griff/TouchRailTests.cpp
+  tests/griff/TouchStrokeTests.cpp
+  tests/griff/TouchUndoTests.cpp)
 target_include_directories(faf_griff_tests PRIVATE "${FAF_ANDROID_DIR}/include")
+target_link_libraries(faf_griff_tests PRIVATE faf_touch)
 target_compile_features(faf_griff_tests PRIVATE cxx_std_20)
 target_link_options(faf_griff_tests PRIVATE -static -Wl,--gc-sections)
 
