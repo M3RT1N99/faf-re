@@ -61,6 +61,8 @@ public class GameFilesFetchTest {
     private final Download mDownload = new Download();
     private final Player mPlayer = new Player();
     private final List<String> mLines = new ArrayList<>();
+    /** The measures the fetch began: the updater's lengths come once, so HEAD requests do not count them. */
+    private int mMeasures;
     private final GameFiles.Log mLog = new GameFiles.Log() {
         @Override
         public void line(String text) {
@@ -69,6 +71,9 @@ public class GameFilesFetchTest {
 
         @Override
         public void step(String text) {
+            if (text.startsWith("Measuring ")) {
+                ++mMeasures;
+            }
         }
     };
 
@@ -175,6 +180,8 @@ public class GameFilesFetchTest {
         final Deque<Boolean> answers = new ArrayDeque<>();
         /** Back while the question shows. */
         boolean back;
+        /** What the app's own download of the version, the lock's other holder, got while the question showed. */
+        Step meanwhile;
         final List<Long> askedAbout = new ArrayList<>();
 
         @Override
@@ -182,6 +189,9 @@ public class GameFilesFetchTest {
             assertEquals(3840, version);
             assertEquals("the room is claimed after the yes", mDownload.downloads, mRoom.claims.size());
             askedAbout.add(bytes);
+            if (meanwhile != null) {
+                meanwhile.run();
+            }
             if (back) {
                 Cancellation.request();
                 Cancellation.check();
@@ -318,7 +328,7 @@ public class GameFilesFetchTest {
         assertEquals(Collections.emptyList(), mPlayer.askedAbout);
         assertEquals(1, mDownload.downloads);
         assertEquals(1, mConnectivity.closed);
-        assertEquals("not measured again", 10, mUpdater.heads.size());
+        assertEquals("not measured again", 1, mMeasures);
         assertFalse(mLines.contains("The network has become metered: the download stops, and the player is asked about the rest"));
     }
 
@@ -421,6 +431,45 @@ public class GameFilesFetchTest {
         assertEquals(Collections.singletonList(BYTES), mPlayer.askedAbout);
         assertEquals(Collections.emptyList(), mRoom.claims);
         assertEquals(0, mDownload.downloads);
+    }
+
+    /**
+     * The app's own download, the lock's other holder, finished the version while the player was asked, which took its room:
+     * nothing is claimed for it any more, and no NO_ROOM ends a start whose files are there.
+     */
+    @Test
+    public void aVersionTheAppGotWhileThePlayerWasAskedIsReadyWithoutAClaim() throws Exception {
+        mConnectivity.metered = true;
+        mPlayer.answers.add(true);
+        mPlayer.meanwhile = () -> GameFilesTest.makeReady(mStorage, 3840);
+        mRoom = new RoomTest.Fake(() -> mPlayer.askedAbout.isEmpty() ? 1_000_000_000L : 300_000_000L);
+
+        fetch(3840);
+
+        assertEquals(Collections.singletonList(BYTES), mPlayer.askedAbout);
+        assertEquals(Collections.emptyList(), mRoom.claims);
+        assertEquals(0, mDownload.downloads);
+        assertEquals("FAF game version 3840 is ready", mLines.get(mLines.size() - 1));
+    }
+
+    /**
+     * The lock's other holder got env and textures while the player was asked: the claim counts what is left now, from the
+     * HEAD requests' answers before the question, without asking the updater again (a second apart each).
+     */
+    @Test
+    public void whatTheAppGotWhileThePlayerWasAskedIsNotClaimed() throws Exception {
+        mConnectivity.metered = true;
+        mPlayer.answers.add(true);
+        mPlayer.meanwhile = this::envAndTexturesWhole;
+
+        fetch(3840);
+
+        assertTrue(GameFiles.ready(mStorage, 3840));
+        assertEquals(Collections.singletonList(BYTES), mPlayer.askedAbout);
+        assertEquals(Collections.singletonList(REST + Room.SPARE_BYTES), mRoom.claims);
+        assertEquals("measured again after the yes", 2, mMeasures);
+        assertEquals("the updater asked once", 10, mUpdater.heads.size());
+        assertEquals(1, mDownload.downloads);
     }
 
     /** Never another measure in its place: a room call that Android fails is the start's DOWNLOAD, before any byte. */

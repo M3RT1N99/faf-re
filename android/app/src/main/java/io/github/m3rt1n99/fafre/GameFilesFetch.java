@@ -1,6 +1,8 @@
 package io.github.m3rt1n99.fafre;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -8,10 +10,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * starts: from FAF's updater by the rules of the Game card's download of FAF's newest (NewestGameFilesJob). Their size
  * first, which must fit in the phone's room with room to spare (Room); then on a metered network the player's yes to it,
  * and without a yes the download runs only on a network that is not metered: one that becomes metered under it stops it,
- * and the player is asked about the rest. Right before each download the room is claimed. GameFiles.ensure keeps what the
- * phone has, the other versions and what an earlier try got of this one, and goes on from there. Its end is the start's:
- * the files are ready, or NO_GAME_FILES when FAF has none of the version, NO_ROOM when they do not fit, DOWNLOAD for the
- * network or the phone's storage, Android's calls for the room among it, CANCELLED for Back and for the player's no.
+ * and the player is asked about the rest. Right before each download the room is claimed for what is left then, measured
+ * again after a question, as the app's own download of the version (GameFiles.ensure's lock) may have gone on meanwhile.
+ * GameFiles.ensure keeps what the phone has, the other versions and what an earlier try got of this one, and goes on from
+ * there. Its end is the start's: the files are ready, or NO_GAME_FILES when FAF has none of the version, NO_ROOM when they
+ * do not fit, DOWNLOAD for the network or the phone's storage, Android's calls for the room among it, CANCELLED for Back
+ * and for the player's no.
  *
  * <p>A disk that becomes full under the download (ENOSPC) stays DOWNLOAD. Only the writes through java.io carry its errno
  * (an ErrnoException as the cause), not ensure's moves and lock through java.nio nor File.renameTo, so it cannot be told
@@ -34,12 +38,13 @@ final class GameFilesFetch {
         NewestGameFilesJob.Connectivity connectivity, Room room, NewestGameFilesJob.Download download, Question question)
         throws GameStart.Failure {
         String what = "FAF game version " + version;
+        Http.Requests lengths = lengthsOnce(requests);
         try {
             // Ready also when the app's own download (GameFiles.ensure's lock) got it since the start looked, or since the
-            // network became metered under this one: nothing to measure or ask about.
+            // network became metered under this one, or while the player was asked: nothing to measure, ask about or claim.
             for (boolean yes = false; !GameFiles.ready(storage, version);) {
                 log.step("Measuring the download of " + what);
-                long bytes = GameFiles.toDownload(storage.game(version), storage.downloads(), version, requests);
+                long bytes = GameFiles.toDownload(storage.game(version), storage.downloads(), version, lengths);
                 if (!yes && connectivity.metered()) {
                     // A yes to a download that cannot fit would only fill the phone.
                     room.check(what, NewestGameFiles.counted(bytes));
@@ -48,6 +53,9 @@ final class GameFilesFetch {
                         throw GameStart.Failure.notDownloaded(version, bytes);
                     }
                     yes = true;
+                    // Measured again: the app's own download may have got some of it, or all, while the player was asked, and
+                    // the claim is for what is left.
+                    continue;
                 }
                 log.line(what + " is not on the phone: " + NewestGameFiles.size(bytes) + " to download"
                     + (yes ? ", which the player said yes to on a metered network" : ""));
@@ -70,6 +78,45 @@ final class GameFilesFetch {
         } catch (IOException e) {
             throw GameStart.fetchFailure(e, GameStart.Code.NO_GAME_FILES, what);
         }
+    }
+
+    /**
+     * {@code requests} with FAF's updater asked once a package in a fetch: the measures after the first, after a question or a
+     * metered stop, count what the phone has now against the lengths it said, without a HEAD request a second apart (Http's
+     * pace) for each package again. A Back or a stop ends a measure as a request's own check would.
+     */
+    private static Http.Requests lengthsOnce(Http.Requests requests) {
+        Map<String, Long> lengths = new HashMap<>();
+        Map<String, Http.StatusException> statuses = new HashMap<>();
+        return new Http.Requests() {
+            @Override
+            public String text(String url) throws IOException {
+                return requests.text(url);
+            }
+
+            @Override
+            public long length(String url) throws IOException {
+                Long length = lengths.get(url);
+                Http.StatusException status = statuses.get(url);
+                if (length != null || status != null) {
+                    Cancellation.check();
+                    if (status != null) {
+                        throw status;
+                    }
+                    return length;
+                }
+                try {
+                    length = requests.length(url);
+                } catch (Http.StatusException e) {
+                    // A package that is not published, which GameFiles.toDownload passes over (a 404 of one not required);
+                    // any other status ends the fetch.
+                    statuses.put(url, e);
+                    throw e;
+                }
+                lengths.put(url, length);
+                return length;
+            }
+        };
     }
 
     /**

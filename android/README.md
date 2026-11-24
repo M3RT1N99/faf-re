@@ -426,10 +426,12 @@ FAF's content server has no file by uid, nor its API without a login: so the cli
 A `GAME_VERSION` the phone has not got comes after the map, the mods and the replay, as the largest by far (`GameFilesFetch`),
 from FAF's updater (`content.faforever.com/faf/updaterNew/updates_faf_files/`, no login) by the rules of the Game card's
 *Get FAF's newest version*: its size first, by HEAD requests, which must fit in the phone's room with 100 MB to spare,
-before a question and again right before the download, which claims the room (`NO_ROOM` says how much more to free);
-on a metered network the activity asks before it with that size, and a no ends the start (`CANCELLED`); without a yes
-it runs only on a network that is not metered, and one that
-becomes metered under it stops it and asks about the rest. `GameFiles.ensure` gets the files as the replay test does,
+before a question and again right before the download, which claims the room for what is left then (`NO_ROOM` says how
+much more to free): after a question, or a metered stop, the phone's files are counted again against the lengths the
+updater said, as the app's own download of the version may have gone on meanwhile, and a version it finished needs
+nothing more; on a metered network the activity asks before it with that size, and a no ends the start (`CANCELLED`);
+without a yes it runs only on a network that is not metered, and one that becomes metered under it stops it and asks
+about the rest. `GameFiles.ensure` gets the files as the replay test does,
 with the activity showing each package's progress, and keeps what is there: the other versions, side by side, and what an
 earlier start got of this one, which the next goes on from. One download of a version runs at a time: a start that asks
 for the version the app's own download is getting waits for it (a lock file in `parity/downloads`), and Back ends the
