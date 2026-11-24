@@ -1,0 +1,111 @@
+package io.github.m3rt1n99.fafre;
+
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+
+import org.junit.Test;
+
+/**
+ * What the report's END line quotes of the engine's log (GameReport.engineSummary): the Vulkan renderer's failure or a
+ * warning from the run's end alone, the log's last entries, and nothing from before them.
+ */
+public class GameReportTest {
+    /** The log's start on a phone: Direct3D 12 tried first, Vulkan up, a probe of the first frames. */
+    private static final List<String> START = Arrays.asList(
+        "info: graphics_api option: (unset)",
+        "info: renderer: trying Direct3D 12",
+        "warning: GAL Exception: file : c:\\work\\rts\\main\\code\\src\\libs\\gpggal\\Device.cpp(135)",
+        "         error: unknown API requested",
+        "warning: Direct3D 12 is unavailable; falling back to Vulkan",
+        "info: renderer: trying Vulkan",
+        "info: Vulkan: device created on 'Adreno (TM) 730'",
+        "warning: [COMPDIAG] RenderCompositeTerrain head=0 drewNormals=1 target=0x7af3816071c0 shadowCtx=0x7b04e1a07838");
+
+    /** {@code count} entries of a game that goes on, as FAF's UI logs them every 11 s or so. */
+    private static List<String> playing(int count) {
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < count; ++i) {
+            lines.add(String.format(Locale.ROOT, "debug: Session time: 00:%02d:%02d\tGame time: 00:00:%02d\tHeap: 87.05M / 87.05M",
+                i / 5, i % 5 * 11, i % 60));
+        }
+        return lines;
+    }
+
+    @SafeVarargs
+    private static String[] log(List<String>... parts) {
+        List<String> lines = new ArrayList<>();
+        for (List<String> part : parts) {
+            lines.addAll(part);
+        }
+        return lines.toArray(new String[0]);
+    }
+
+    @Test
+    public void aWarningOfTheFirstFramesSaysNothingOfAnEndAfterThem() {
+        assertEquals("", GameReport.engineSummary(log(START, playing(GameReport.END_OF_RUN_ENTRIES))));
+        assertEquals("the end's last entries hold it", "the engine's last warning: [COMPDIAG] RenderCompositeTerrain head=0 "
+                + "drewNormals=1 target=0x7af3816071c0 shadowCtx=0x7b04e1a07838",
+            GameReport.engineSummary(log(START, playing(GameReport.END_OF_RUN_ENTRIES - 1))));
+    }
+
+    @Test
+    public void theEndsLastWarningComesWithTheLineThatGoesOnWithIt() {
+        assertEquals("the engine's last warning: Vulkan: acquiring head 0's image failed (VK_ERROR_SURFACE_LOST_KHR)",
+            GameReport.engineSummary(log(START, playing(30),
+                Collections.singletonList("warning: Vulkan: acquiring head 0's image failed (VK_ERROR_SURFACE_LOST_KHR)"),
+                Collections.singletonList("info: Minimized true"), playing(3))));
+        assertEquals("the engine's last warning: Error running lua command: import.lua(164): Error importing '/lua/x.lua' "
+                + "stack traceback:",
+            GameReport.engineSummary(log(START, playing(30), Arrays.asList(
+                "warning: Error running lua command: import.lua(164): Error importing '/lua/x.lua'",
+                "         stack traceback:",
+                "         [C]: in function `error'"), playing(2))));
+    }
+
+    @Test
+    public void anEntrysIndentedLinesAreOfTheEntry() {
+        // The warning is the 10th entry from the log's end, with more lines after it than that.
+        List<String> traceback = new ArrayList<>(Collections.singletonList("warning: Error running '/lua/user/prefs.lua:GetOption'"));
+        for (int i = 0; i < 2 * GameReport.END_OF_RUN_ENTRIES; ++i) {
+            traceback.add("         [string \"x\"](" + i + "): in main chunk");
+        }
+        traceback.add("");
+        assertEquals("the engine's last warning: Error running '/lua/user/prefs.lua:GetOption' [string \"x\"](0): in main chunk",
+            GameReport.engineSummary(log(START, playing(30), traceback, playing(GameReport.END_OF_RUN_ENTRIES - 1))));
+    }
+
+    @Test
+    public void aVulkanRendererThatCouldNotStartIsTheEnd() {
+        assertEquals("Vulkan: no device with Vulkan 1.1", GameReport.engineSummary(log(Arrays.asList(
+            "info: renderer: trying Direct3D 12",
+            "warning: GAL Exception: file : c:\\work\\rts\\main\\code\\src\\libs\\gpggal\\Device.cpp(135)",
+            "         error: unknown API requested",
+            "warning: Direct3D 12 is unavailable; falling back to Vulkan",
+            "info: renderer: trying Vulkan",
+            "warning: GAL Exception: file : DeviceVulkan.cpp(812)",
+            "         error: no device with Vulkan 1.1",
+            "warning: GAL Exception: file : c:\\work\\rts\\main\\code\\src\\libs\\gpggal\\Device.cpp(135)",
+            "         error: unknown API requested"))));
+    }
+
+    @Test
+    public void aVulkanFailureTheGameWentOnFromIsNotTheEnds() {
+        assertEquals("", GameReport.engineSummary(log(Arrays.asList(
+            "info: renderer: trying Vulkan",
+            "warning: GAL Exception: file : DeviceVulkan.cpp(812)",
+            "         error: no device with Vulkan 1.1",
+            "warning: Vulkan is unavailable; falling back to Direct3D 11",
+            "info: renderer: trying Direct3D 11"), playing(GameReport.END_OF_RUN_ENTRIES))));
+    }
+
+    @Test
+    public void noLogSaysNothing() {
+        assertEquals("", GameReport.engineSummary(new String[0]));
+        assertEquals("", GameReport.engineSummary(log(playing(3))));
+    }
+}

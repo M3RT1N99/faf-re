@@ -60,6 +60,11 @@ final class GameReport {
     private static final Pattern FATAL = Pattern.compile("^\\d+ ms: fatal: (.*(?:\\n(?!\\d+ ms: ).*)*)", Pattern.MULTILINE);
     /** How much of the engine's log's end is read for its last warning. */
     private static final int LOG_TAIL = 1 << 16;
+    /**
+     * The run's end in the engine's log: its last entries, of which the END line quotes a warning or error, and none from
+     * before them. An entry is a line with the indented lines that go on with it.
+     */
+    static final int END_OF_RUN_ENTRIES = 10;
 
     private static long sLoaded = Long.MIN_VALUE;
     private static boolean sAwaiting;
@@ -299,7 +304,7 @@ final class GameReport {
         if (fatal.find()) {
             return END + FAILED + fatal.group(1).trim().replaceAll("\\s*\\n\\s*", " ") + saved;
         }
-        String engine = engineSummary(context);
+        String engine = engineSummary(logTail(context));
         String tail = engine.isEmpty() ? "" : MORE + engine;
         Matcher exit = EXIT.matcher(report);
         String code = null;
@@ -335,12 +340,13 @@ final class GameReport {
     }
 
     /**
-     * What the engine's log says of the end: why the Vulkan renderer could not start, when it was
-     * tried ("renderer: trying Vulkan" and the GAL exception's error line after it); else its last
-     * warning, with the line that continues it. "" without a log.
+     * What the engine's log, {@code lines}, says of the end, from the run's end alone (END_OF_RUN_ENTRIES): why the Vulkan
+     * renderer could not start, when it was tried ("renderer: trying Vulkan" and the GAL exception's error line after it);
+     * else its last warning, with the line that continues it. "" for neither there, as a warning from before the end, such
+     * as a probe of the first frames, says nothing of it.
      */
-    private static String engineSummary(Context context) {
-        String[] lines = logTail(context);
+    static String engineSummary(String[] lines) {
+        int end = endOfRun(lines);
         String vulkan = null;
         boolean tryingVulkan = false;
         String warning = null;
@@ -349,10 +355,10 @@ final class GameReport {
             if (line.startsWith("info: renderer: trying ")) {
                 tryingVulkan = line.equals("info: renderer: trying Vulkan");
             } else if (tryingVulkan && line.startsWith("error: ")) {
-                vulkan = line.substring("error: ".length());
+                vulkan = i >= end ? line.substring("error: ".length()) : null;
                 tryingVulkan = false;
             }
-            if (line.startsWith("warning: ")) {
+            if (i >= end && line.startsWith("warning: ")) {
                 warning = line.substring("warning: ".length());
                 // A message of several lines goes on indented, without a severity.
                 if (i + 1 < lines.length && lines[i + 1].startsWith(" ") && !lines[i + 1].trim().isEmpty()) {
@@ -364,6 +370,18 @@ final class GameReport {
             return "Vulkan: " + vulkan;
         }
         return warning != null ? "the engine's last warning: " + warning : "";
+    }
+
+    /** The first of {@code lines} in the log's last END_OF_RUN_ENTRIES entries: 0 for a log of no more. */
+    private static int endOfRun(String[] lines) {
+        int entries = 0;
+        for (int i = lines.length - 1; i >= 0; --i) {
+            // An entry's own line has its severity first; the lines that go on with it are indented.
+            if (!lines[i].isEmpty() && !Character.isWhitespace(lines[i].charAt(0)) && ++entries == END_OF_RUN_ENTRIES) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /** The lines of the engine log's last LOG_TAIL bytes; none without a log. */
