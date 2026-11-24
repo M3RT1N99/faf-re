@@ -11,6 +11,8 @@
 //   (ScreenKeyboardAndroid.cpp).
 // - argv[0] is the program's path, from which the engine takes its install's folder (DISK_GetLaunchDir):
 //   SDL's own is "app_process".
+// - `/vulkan`, the one renderer the engine has here: its Direct3D ones are Windows' (gpg/gal/Device.cpp), and
+//   the Graphics API option's `auto` would try Direct3D 12 first on each start.
 // - The display mode of `/fullscreen <width> <height>`, which the activity gives with its surface's size,
 //   also for a screen smaller than the 1024 x 768 the engine holds as the least a mode may be (CScApp's
 //   SetUpHeads clamps the mode to wnd_DefaultCreateWidth and wnd_DefaultCreateHeight).
@@ -37,6 +39,7 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_hints.h>
@@ -58,6 +61,10 @@ namespace
   constexpr char kLogTag[] = "faf";
   /// The x64 Windows program's stack (/STACK:4000000, src/CMakeLists.txt).
   constexpr std::size_t kMainThreadStackSize = 4000000;
+  /// The engine's one renderer here. A switch comes before FAF's Graphics API option (RendererAttemptOrder in
+  /// CScApp.cpp), whose `auto` tries Direct3D 12 first, which fails with a GAL exception and a fallback's warning,
+  /// and whose Direct3D choices would leave the game with no renderer at all.
+  char gVulkanSwitch[] = "/vulkan";
 
   std::int64_t gStartMilliseconds = 0;
   std::atomic<bool> gFirstFrameReported{false};
@@ -231,12 +238,16 @@ extern "C" __attribute__((visibility("default"))) int FafGameMain(const int argc
 {
   gStartMilliseconds = NowMilliseconds();
   TakeActivityEnvironment();
-  // argv[0] is SDL's; the activity's arguments follow, the program's path first.
+  // argv[0] is SDL's; the activity's arguments follow, the program's path first. The renderer's switch goes right after
+  // the path, where no switch of the activity's can take it for its value.
   if (argc < 2) {
     Report("fatal: the activity gave no program to start");
     return 1;
   }
-  Program program{argc - 1, argv + 1, 1};
+  std::vector<char*> arguments{argv[1], gVulkanSwitch};
+  arguments.insert(arguments.end(), argv + 2, argv + argc);
+  arguments.push_back(nullptr);
+  Program program{static_cast<int>(arguments.size()) - 1, arguments.data(), 1};
   FitLeastMode(program.argc, program.argv);
 
   pthread_attr_t attributes;
