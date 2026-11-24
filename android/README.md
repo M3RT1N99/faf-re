@@ -286,8 +286,9 @@ the game data they imported. Everything lives in the app's external files folder
   but not deployed yet gives way to the next lower numeric tag that is (`/tags`, at most five tried). The size is the
   updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 716 MB; every size
   the app shows is in MB of 1,000,000 bytes, from 1,000 MB on in GB, as Android's storage settings count them, and
-  rounded up, `Sizes`). It must fit in the phone's room with 100 MB to spare (750 MB counted when the updater does not
-  say), or the card says how much more to free and nothing is downloaded (`Room`). The room is what Android lets the app allocate
+  rounded up, but for what a download's progress has, rounded down, `Sizes`). It must fit in the phone's room with
+  100 MB to spare (750 MB counted when the updater does not say), or the card says how much more to free and nothing
+  is downloaded (`Room`). The room is what Android lets the app allocate
   (`StorageManager.getAllocatableBytes`), which keeps Android's own low reserve free (496 MB on the emulator's 10 GB,
   near which Android empties the apps' caches and installs fail) and counts the caches Android may clear for the app;
   right before the download the app claims it (`allocateBytes`), and Android clears those caches then. A call of
@@ -636,7 +637,8 @@ client), takes what the folder import takes, by its rules (`ScfaImport`):
   files), and stops when what it still has to write no longer fits, with how much more to free for the next import.
   The folder import goes by the same rule (`ScfaImport.ToWrite`): it lists the folder first, and its failure is the
   Progress card's `Error:` line; a stop leaves the files it wrote whole in `scfa/`, which the next import does not
-  write again, and a file whose size the provider does not say counts for nothing.
+  write again, and a file whose size the provider does not say counts for nothing, and is written again by each
+  import, as only a file of the same size counts as there already.
 - **All or nothing**: the files go to `scfa/.zip-import/`, and from there to their places once the whole ZIP has been
   read. A refusal, a Cancel or a failure leaves `scfa/` as it was, and what an import whose process ended left there goes
   as the next import begins, a ZIP's or the folder's, before its room is checked. The progress shows as the folder
