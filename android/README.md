@@ -68,7 +68,9 @@ the game data they imported. Everything lives in the app's external files folder
 - **Replay parity** follows `tools/parity-data/shard.py`: the replay from FAF's vault, decoded
   (zstd or zlib) and checked (featured mod `faf`, engine version, M28AI as the only sim mod); FAF's
   game files of its version from FAF's updater (about 700 MB once per version, kept whole for the
-  game); its map from `scfa/maps` or FAF's map vault; then `headless --replay`. The verdicts are shard.py's:
+  game), measured by HEAD requests and their room claimed right before the first byte, as the Game card's
+  are (`GameFiles.ensureInRoom`; a version that does not fit is the replay's error, with how much more to
+  free); its map from `scfa/maps` or FAF's map vault; then `headless --replay`. The verdicts are shard.py's:
   *pass*, *desync* (with the first beat whose checksum differs; a desync one live client had alone is
   not counted), *crash*, *incomplete*. Requests to FAF go one at a time, a second apart.
 - **Where the simulation ran**: once a second during a replay, the busiest thread of the headless
@@ -628,6 +630,9 @@ client), takes what the folder import takes, by its rules (`ScfaImport`):
   it writes it checks again at each file and every 64 MB, asking Android at most every 30 s (it counts the caches for
   each answer, seconds at worst, and `StorageManager` asks so of a write that goes on; an SCFA folder has some 1,800
   files), and stops when what it still has to write no longer fits, with how much more to free for the next import.
+  The folder import goes by the same rule (`ScfaImport.ToWrite`): it lists the folder first, and its failure is the
+  Progress card's `Error:` line; a stop leaves the files it wrote whole in `scfa/`, which the next import does not
+  write again, and a file whose size the provider does not say counts for nothing.
 - **All or nothing**: the files go to `scfa/.zip-import/`, and from there to their places once the whole ZIP has been
   read. A refusal, a Cancel or a failure leaves `scfa/` as it was, and what an import whose process ended left there goes
   as the next import begins, a ZIP's or the folder's, before its room is checked. The progress shows as the folder

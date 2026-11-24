@@ -462,6 +462,89 @@ public class GameFilesTest {
         assertTrue(GameFiles.ready(storage, 3840));
     }
 
+    /** Updater's download, which finds the room claimed before its first byte, the init file's. */
+    private static Http.Downloads claimedBefore(Updater updater, RoomTest.Fake room) {
+        return new Http.Downloads() {
+            @Override
+            public byte[] bytes(String url) {
+                assertEquals("claimed before the first byte", 1, room.claims.size());
+                return updater.bytes(url);
+            }
+
+            @Override
+            public void download(String url, File dest, Http.Progress progress) throws IOException {
+                updater.download(url, dest, progress);
+            }
+        };
+    }
+
+    /** The replay test's download measures what is still to download and claims its room with the spare, as a start's does. */
+    @Test
+    public void theReplayTestsDownloadClaimsItsRoomRightBeforeItsFirstByte() throws IOException {
+        Storage storage = new Storage(folder.getRoot());
+        Updater updater = new Updater();
+        RoomTest.Fake room = new RoomTest.Fake(4_000_000_000L);
+
+        GameFiles.ensureInRoom(storage, 3840, LOG, claimedBefore(updater, room), updater(109609228L), room);
+
+        assertTrue(GameFiles.ready(storage, 3840));
+        assertEquals(Collections.singletonList(715_047_073L + Room.SPARE_BYTES), room.claims);
+
+        // A version that is ready asks for no room.
+        RoomTest.Fake untouched = new RoomTest.Fake(0);
+        GameFiles.ensureInRoom(storage, 3840, LOG, updater, updater(109609228L), untouched);
+        assertEquals(0, untouched.asked);
+    }
+
+    /** A replay's version that does not fit is its error, with how much more to free, before any byte. */
+    @Test
+    public void theReplayTestsDownloadThatDoesNotFitGetsNoByte() {
+        Storage storage = new Storage(folder.getRoot());
+        Updater updater = new Updater();
+        RoomTest.Fake room = new RoomTest.Fake(300_000_000L);
+
+        Room.NoRoom noRoom = assertThrows(Room.NoRoom.class,
+            () -> GameFiles.ensureInRoom(storage, 3840, LOG, updater, updater(109609228L), room));
+
+        assertEquals("FAF game version 3840 needs 816 MB: free 516 MB more on the phone", noRoom.getMessage());
+        assertEquals(Collections.emptyList(), room.claims);
+        assertEquals(0, updater.initsDownloaded);
+        assertEquals(Collections.emptyList(), updater.downloaded);
+        assertFalse(storage.game(3840).exists());
+    }
+
+    /**
+     * A start's download in the game's process finishes the version while the replay test waits for it: measured under the
+     * lock, the version that is there needs no room, where a measure before the wait would have claimed all of it.
+     */
+    @Test
+    public void aVersionAnotherDownloadFinishedWhileTheReplayTestWaitedNeedsNoRoom() throws Exception {
+        Cancellation.reset();
+        Storage storage = new Storage(folder.getRoot());
+        Updater updater = new Updater();
+        RoomTest.Fake room = new RoomTest.Fake(300_000_000L);
+        CountDownLatch said = new CountDownLatch(1);
+        AtomicReference<Throwable> failed = new AtomicReference<>();
+        Thread replayTest = new Thread(() -> {
+            try {
+                GameFiles.ensureInRoom(storage, 3840, waiting(said), updater, updater(109609228L), room);
+            } catch (Throwable e) {
+                failed.set(e);
+            }
+        });
+        try (OtherProcess start = new OtherProcess(storage, 3840)) {
+            replayTest.start();
+            assertTrue("it says it waits", said.await(10, TimeUnit.SECONDS));
+            makeReady(storage, 3840);
+        }
+        replayTest.join(10_000);
+
+        assertFalse(replayTest.isAlive());
+        assertNull(failed.get());
+        assertEquals("not even asked", 0, room.asked);
+        assertEquals(0, updater.initsDownloaded);
+    }
+
     /** The Game card's job drops what its last download left, but not while a start's preparation is getting that version. */
     @Test
     public void aVersionAnotherDownloadHoldsIsNotDropped() throws Exception {

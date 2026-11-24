@@ -83,9 +83,10 @@ final class HeadlessRun {
      * Everything a replay needs from the network, into the caches: the replay, FAF's game files
      * of its version, its map and its M28AI version. A run fetches all its replays before it
      * plays the first, so a download problem shows at once, and the games need no network.
-     * False when the replay cannot be played; its state and note say why.
+     * False when the replay cannot be played; its state and note say why. The game files must
+     * fit in {@code room}, the phone's, which their download claims first (GameFiles.ensureInRoom).
      */
-    static boolean fetch(Storage storage, TestState.Replay replay, GameFiles.Log log) throws IOException {
+    static boolean fetch(Storage storage, TestState.Replay replay, GameFiles.Log log, Room room) throws IOException {
         replay.state = "downloading";
         TestState.touch();
         ReplayFile.Info info = load(storage, replay, log).info();
@@ -95,7 +96,7 @@ final class HeadlessRun {
             TestState.touch();
             return false;
         }
-        GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
+        GameFiles.ensureInRoom(storage, info.gameVersion, log, Http.WITH_RETRIES, Http.ONE_TRY, room);
         Vault.map(storage, info.map, log);
         if (info.m28 != null) {
             Vault.m28(storage, info.m28, log, Http.WITH_RETRIES);

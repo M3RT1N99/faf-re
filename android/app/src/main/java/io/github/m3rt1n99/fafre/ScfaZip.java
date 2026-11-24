@@ -13,7 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
@@ -21,10 +20,10 @@ import java.util.zip.ZipInputStream;
 
 /**
  * The SCFA import from a ZIP of the Supreme Commander: Forged Alliance folder (SetupActivity's "ZIP file"), which takes
- * what the folder import takes, by its rules (ScfaImport: target, imported, copy). The ZIP comes as a stream, a content
- * URI, read by ZipInputStream (ZIP64, stored or deflated): a stream cannot reach the list at the ZIP's end first, and an
- * entry's local header need not hold its size (a ZIP written as a stream has it after the data). So the import reads the
- * ZIP twice. First its list: that it is a ZIP at all, by its first bytes, whatever its name or type say; each entry's
+ * what the folder import takes, by its rules (ScfaImport: target, imported, copy, ToWrite). The ZIP comes as a stream, a
+ * content URI, read by ZipInputStream (ZIP64, stored or deflated): a stream cannot reach the list at the ZIP's end first,
+ * and an entry's local header need not hold its size (a ZIP written as a stream has it after the data). So the import
+ * reads the ZIP twice. First its list: that it is a ZIP at all, by its first bytes, whatever its name or type say; each entry's
  * path, refused where it would leave the ZIP's folder; the SCFA folder's place in it, the ZIP's top or one folder there,
  * where its gamedata folder is; what the import takes; and whether that fits in the phone's room (Room), which it says and
  * claims before it writes anything. Then the files, into a folder of scfa/'s own with the room checked again as they go,
@@ -39,14 +38,6 @@ final class ScfaZip {
     static final String STAGING = ".zip-import";
     /** Far more entries than an SCFA folder has files (1,826 on Steam): the list stays in memory. */
     static final int MOST_ENTRIES = 100_000;
-    /** How often, in bytes written, the import checks the phone's room again within a file. */
-    static final long CHECK_ROOM_EVERY = 64 * Sizes.MB;
-    /**
-     * The least time between two of the import's questions for the room while it writes, as StorageManager asks of a write
-     * that goes on: Android counts the caches it may clear for each answer (getAllocatableBytes, seconds at worst), and an
-     * SCFA folder has some 1,800 files.
-     */
-    static final long ASK_ROOM_EVERY_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     /** A ZIP's first bytes: its first entry's local header. */
     private static final byte[] LOCAL_HEADER = {'P', 'K', 3, 4};
@@ -136,8 +127,8 @@ final class ScfaZip {
     /**
      * The import of the ZIP that {@code source} reads into {@code storage}'s scfa/, with {@code room} the phone's where it
      * writes. The Progress card's step says where it is and its log what came of it, as the folder import's do. Refused
-     * when the ZIP is not one it takes or cannot be read, or when the room ran short as it wrote; Room.NoRoom when it does
-     * not fit, and Android's failure when the room cannot be said or claimed.
+     * when the ZIP is not one it takes or cannot be read; Room.NoRoom when it does not fit, ToWrite's failure when the
+     * room ran short as it wrote, and Android's failure when the room cannot be said or claimed.
      */
     static void run(Storage storage, Source source, Room room) throws IOException {
         run(storage, source, room, System::nanoTime);
@@ -157,7 +148,7 @@ final class ScfaZip {
             if (plan.files > 0) {
                 // With the spare that FAF's game files leave too, claimed: Android clears the caches it counted now.
                 room.claim("the import", plan.bytes);
-                write(source, entries, plan, storage.scfa, new ToWrite(room, plan.bytes, clock));
+                write(source, entries, plan, storage.scfa, new ScfaImport.ToWrite(room, plan.bytes, clock));
             }
         } catch (ZipException | EOFException e) {
             // A damaged or cut-off ZIP, or one Android 14's ZipInputStream refuses (ZipPathValidator: a name with "..").
@@ -187,7 +178,8 @@ final class ScfaZip {
      * leaves it, which they leave for their places once all are whole. Its entries must be the list's, and the phone's room
      * must hold what is still to write.
      */
-    private static void write(Source source, List<Entry> entries, Plan plan, File scfa, ToWrite toWrite) throws IOException {
+    private static void write(Source source, List<Entry> entries, Plan plan, File scfa, ScfaImport.ToWrite toWrite)
+        throws IOException {
         File staging = new File(scfa, STAGING);
         try {
             byte[] buffer = new byte[1 << 16];
@@ -208,8 +200,8 @@ final class ScfaZip {
                     }
                     TestState.step("Importing " + entry.shortName());
                     toWrite.check();
-                    Sized data = new Sized(zip, entry.size, toWrite);
-                    ScfaImport.copy(data, under(staging, target));
+                    Sized data = new Sized(zip, entry.size);
+                    ScfaImport.copy(toWrite.counted(data, entry.size), under(staging, target));
                     if (data.left != 0) {
                         throw changed();
                     }
@@ -243,60 +235,13 @@ final class ScfaZip {
         }
     }
 
-    /**
-     * What the import still has to write while it writes, which must fit in the phone's room: checked at each file and every
-     * CHECK_ROOM_EVERY bytes in one, Android asked at most every ASK_ROOM_EVERY_NANOS, so that it stops before the storage is
-     * full where something else took the room. The spare that the claim before held takes what the file system adds of its
-     * own, and what something else takes between two questions.
-     */
-    private static final class ToWrite {
-        private final Room room;
-        private final LongSupplier clock;
-        private long left;
-        private long unchecked;
-        /** When Android was asked last: the claim's question, right before the import writes. */
-        private long asked;
-
-        ToWrite(Room room, long bytes, LongSupplier clock) {
-            this.room = room;
-            this.clock = clock;
-            left = bytes;
-            asked = clock.getAsLong();
-        }
-
-        void check() throws IOException {
-            unchecked = 0;
-            long time = clock.getAsLong();
-            if (time - asked < ASK_ROOM_EVERY_NANOS) {
-                return;
-            }
-            asked = time;
-            long now = room.allocatable();
-            if (now < left) {
-                // A new import finds this and what this one wrote, which goes with it, and needs all of it and the spare.
-                throw new Refused("the phone's storage ran short while the import wrote: "
-                    + Room.free(left + Room.SPARE_BYTES - now));
-            }
-        }
-
-        void wrote(long bytes) throws IOException {
-            left -= bytes;
-            unchecked += bytes;
-            if (unchecked >= CHECK_ROOM_EVERY) {
-                check();
-            }
-        }
-    }
-
-    /** An entry's data as the import writes it: no more than the list read of it, with the room checked as it goes. */
+    /** An entry's data as the import writes it: no more than the list read of it. */
     private static final class Sized extends FilterInputStream {
-        private final ToWrite toWrite;
         long left;
 
-        Sized(InputStream in, long size, ToWrite toWrite) {
+        Sized(InputStream in, long size) {
             super(in);
             left = size;
-            this.toWrite = toWrite;
         }
 
         @Override
@@ -313,7 +258,6 @@ final class ScfaZip {
                 if (left < 0) {
                     throw changed();
                 }
-                toWrite.wrote(read);
             }
             return read;
         }

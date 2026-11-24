@@ -152,6 +152,7 @@ public final class TestService extends Service {
         TestState.replays(replays);
         // First everything from the network: a download problem shows while the tester is still
         // there, and the games, which can take hours, need no network.
+        Room room = new PhoneRoom(this, storage);
         List<TestState.Replay> ready = new ArrayList<>();
         for (TestState.Replay replay : replays) {
             if (Cancellation.requested()) {
@@ -159,7 +160,7 @@ public final class TestService extends Service {
                 continue;
             }
             try {
-                if (HeadlessRun.fetch(storage, replay, LOG)) {
+                if (HeadlessRun.fetch(storage, replay, LOG, room)) {
                     ready.add(replay);
                 }
             } catch (Cancellation.Cancelled e) {

@@ -102,6 +102,33 @@ final class GameFiles {
 
     /** The pack folder for {@code version}, downloading and packing what is missing. */
     static File ensure(Storage storage, int version, Log log, Http.Downloads downloads) throws IOException {
+        return ensure(storage, version, log, downloads, () -> {
+        });
+    }
+
+    /**
+     * The pack folder for {@code version} as {@link #ensure} gets it, for a download that has measured nothing before, the
+     * replay test's: once it holds the version's lock and finds the version not ready, what is still to download is
+     * measured by {@code requests} and claimed in the phone's room with the spare (Room.claim), right before the first
+     * byte, as a start's and the Game card's are. A download that does not fit gets no byte (Room.NoRoom), and a version
+     * that another download finished while this one waited for it needs no room.
+     */
+    static File ensureInRoom(Storage storage, int version, Log log, Http.Downloads downloads, Http.Requests requests,
+        Room room) throws IOException {
+        String what = "FAF game version " + version;
+        return ensure(storage, version, log, downloads, () -> {
+            log.step("Measuring the download of " + what);
+            room.claim(what, NewestGameFiles.counted(toDownload(storage.game(version), storage.downloads(), version, requests)));
+        });
+    }
+
+    /** What a download of a version does under its lock right before its first byte. */
+    private interface BeforeDownload {
+        void run() throws IOException;
+    }
+
+    private static File ensure(Storage storage, int version, Log log, Http.Downloads downloads, BeforeDownload before)
+        throws IOException {
         File dir = storage.game(version);
         if (ready(storage, version)) {
             return dir;
@@ -110,6 +137,7 @@ final class GameFiles {
         // jobs may be getting the same one, and the two would write the same files.
         try (FileChannel lock = lock(storage, version, log)) {
             if (!ready(storage, version)) {
+                before.run();
                 fetch(storage, version, dir, log, downloads);
             }
         }

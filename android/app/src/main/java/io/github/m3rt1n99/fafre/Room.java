@@ -4,7 +4,8 @@ import java.io.IOException;
 
 /**
  * The room for the app's big writes where its files are: a start's game files of a version the phone has not got
- * (GameFilesFetch), the Game card's download of FAF's newest (NewestGameFilesJob) and the SCFA import's ZIP (ScfaZip).
+ * (GameFilesFetch), the Game card's download of FAF's newest (NewestGameFilesJob), the replay test's of a replay's
+ * version (GameFiles.ensureInRoom), and the SCFA import of the folder (ScfaImport) and of its ZIP (ScfaZip).
  * It is what Android lets the app allocate there, which keeps Android's own low reserve free and counts the caches
  * Android may clear for the app, and a write must fit in it with SPARE_BYTES on top. By the free space alone, a start's
  * download of 3840 (716 MB) on the emulator's 10 GB left the phone near that reserve: installd emptied the apps' caches,

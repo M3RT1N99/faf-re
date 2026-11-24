@@ -142,7 +142,7 @@ public class ScfaZipTest {
     }
 
     /** Every file under {@code dir}, as paths relative to it with "/", sorted. */
-    private static List<String> files(File dir) {
+    static List<String> files(File dir) {
         List<String> out = new ArrayList<>();
         collect(dir, "", out);
         out.sort(null);
@@ -422,9 +422,9 @@ public class ScfaZipTest {
     }
 
     /** A clock that has gone on by the time between two of the import's questions for the room at each look at it. */
-    private static LongSupplier everyLookAQuestion() {
+    static LongSupplier everyLookAQuestion() {
         AtomicLong clock = new AtomicLong();
-        return () -> clock.addAndGet(ScfaZip.ASK_ROOM_EVERY_NANOS);
+        return () -> clock.addAndGet(ScfaImport.ASK_ROOM_EVERY_NANOS);
     }
 
     @Test
@@ -433,7 +433,7 @@ public class ScfaZipTest {
         AtomicInteger asked = new AtomicInteger();
         // Room at the claim, then 10 bytes, as another app fills the phone while the import writes: the next import needs
         // the 53 bytes of the files and the spare, and finds these 10 bytes.
-        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(scfaInAFolder()),
+        IOException refused = assertThrows(IOException.class, () -> ScfaZip.run(storage, source(scfaInAFolder()),
             new RoomTest.Fake(() -> asked.incrementAndGet() == 1 ? 1L << 40 : 10), everyLookAQuestion()));
         assertEquals("the phone's storage ran short while the import wrote: free 101 MB more on the phone", refused.getMessage());
         assertEquals(Arrays.asList(), files(storage.scfa));
@@ -445,13 +445,13 @@ public class ScfaZipTest {
         File big = folder.newFile("big.zip");
         try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(big))) {
             out.putNextEntry(new ZipEntry("gamedata/env.scd"));
-            zeros(out, 3 * ScfaZip.CHECK_ROOM_EVERY);
+            zeros(out, 3 * ScfaImport.CHECK_ROOM_EVERY);
             out.closeEntry();
         }
         AtomicInteger asked = new AtomicInteger();
         // At the claim and at the file's start there is room; after 64 MB of it there is none, and the next import needs the
         // 128 MB still to write and the spare.
-        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(big),
+        IOException refused = assertThrows(IOException.class, () -> ScfaZip.run(storage, source(big),
             new RoomTest.Fake(() -> asked.incrementAndGet() <= 2 ? 1L << 40 : 0), everyLookAQuestion()));
         assertEquals(3, asked.get());
         assertEquals("the phone's storage ran short while the import wrote: free 228 MB more on the phone", refused.getMessage());
