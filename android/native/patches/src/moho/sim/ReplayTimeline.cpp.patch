@@ -1,0 +1,17 @@
+diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
+index e4f93ae..070409d 100644
+--- a/src/moho/sim/ReplayTimeline.cpp
++++ b/src/moho/sim/ReplayTimeline.cpp
+@@ -589,6 +589,12 @@ namespace moho
+       if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
+         return;
+       }
++#if FAFRE_PLATFORM_ANDROID
++      // The game is a library in an app's process: this exe is the app runtime's (/system/bin/app_process64), which
++      // plays no replay, and the fork would copy the app's whole process first. The viewer's sim saves each keyframe.
++      gpg::Logf("Replay timeline: no keyframes prepared ahead: on Android the game is a library, with no exe to start");
++      return;
++#endif
+       wchar_t exePath[MAX_PATH] = {};
+       fa::vector<fa::string> initArgs;
+       if (
