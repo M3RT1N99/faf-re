@@ -8,9 +8,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
-import android.net.ConnectivityManager;
-import android.net.Network;
-import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -131,7 +128,7 @@ public final class TestService extends Service {
                 playReplays(storage, intent.getLongArrayExtra(EXTRA_IDS), intent.getIntExtra(EXTRA_WORKERS, 1),
                     intent.getBooleanExtra(EXTRA_HINT, true));
             } else if (ACTION_GAME_FILES.equals(action)) {
-                NewestGameFilesJob.run(storage, intent.getIntExtra(EXTRA_VERSION, -1), Http.ONE_TRY, connectivity(),
+                NewestGameFilesJob.run(storage, intent.getIntExtra(EXTRA_VERSION, -1), Http.ONE_TRY, new PhoneNetwork(this),
                     new NewestGameFilesJob.Download() {
                         @Override
                         public long room() {
@@ -215,43 +212,6 @@ public final class TestService extends Service {
             replay.state = "error";
             replay.note = what + e.getMessage();
         }
-    }
-
-    /**
-     * The phone's network for the Game card's job, by Android's rule for a download that should not run on a metered
-     * one. A default-network callback hears of the network as it is right after it is registered, then of its changes.
-     */
-    private NewestGameFilesJob.Connectivity connectivity() {
-        ConnectivityManager manager = getSystemService(ConnectivityManager.class);
-        return new NewestGameFilesJob.Connectivity() {
-            @Override
-            public boolean metered() {
-                Network network = manager.getActiveNetwork();
-                return network == null || TestService.metered(manager.getNetworkCapabilities(network));
-            }
-
-            @Override
-            public NewestGameFilesJob.Watch watch(Runnable onMetered) {
-                ConnectivityManager.NetworkCallback callback = new ConnectivityManager.NetworkCallback() {
-                    @Override
-                    public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
-                        if (TestService.metered(capabilities)) {
-                            onMetered.run();
-                        }
-                    }
-                };
-                manager.registerDefaultNetworkCallback(callback);
-                return () -> manager.unregisterNetworkCallback(callback);
-            }
-        };
-    }
-
-    /** Android's rule for a download that should not run on a metered network, also for a plan unmetered for a while. */
-    private static boolean metered(NetworkCapabilities capabilities) {
-        return capabilities == null
-            || !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-                && !(Build.VERSION.SDK_INT >= 30
-                    && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED));
     }
 
     private void goForeground(String text) {

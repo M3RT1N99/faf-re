@@ -1,5 +1,6 @@
 package io.github.m3rt1n99.fafre;
 
+import android.app.AlertDialog;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
@@ -51,7 +52,8 @@ import java.util.Locale;
  * the replay test downloads them), or of the version a launcher's start asks for (GameStart: its extras, and the
  * result of a start that fails), on the user's Supreme Commander: Forged Alliance. Not exported: a launcher in
  * another app comes through LaunchGameActivity, which checks it; what its start needs fetched or copied first (the
- * map, the mods, its replay) the Preparation gets on SDL's thread before the program, shown on the activity.
+ * map, the mods, its replay, the game files of a version the phone has not got) the Preparation gets on SDL's thread
+ * before the program, shown on the activity.
  *
  * <p>SDL gives the program the screen (the activity's surface, through Vulkan), the fingers as the mouse,
  * the keys and the sound. The app gives the command line (getArguments, the program's path first, as FAF's
@@ -84,6 +86,9 @@ public final class GameActivity extends SDLActivity {
     private GameStart.Failure mFailure;
     /** The preparation's step over the surface, while it runs. */
     private TextView mPreparing;
+    /** The preparation's question this activity shows (showQuestion), and its dialog; null while none waits. */
+    private Preparation.Question mAsked;
+    private AlertDialog mQuestion;
     /** A launcher's start refused while the program runs, for which SDL set nothing up (refuseBesideProgram). */
     private boolean mBesideProgram;
     /** The lines the user chose (PictureSize), which the picture has on any screen. */
@@ -281,6 +286,7 @@ public final class GameActivity extends SDLActivity {
 
     /** The preparation's step over the surface while it runs, which the poll keeps up to date; gone when it ends. */
     private void showPreparation() {
+        showQuestion(Preparation.question());
         String step = Preparation.step();
         if (step == null) {
             if (mPreparing != null) {
@@ -302,6 +308,33 @@ public final class GameActivity extends SDLActivity {
         mPreparing.setText(step + "\n\nBack cancels the start");
     }
 
+    /**
+     * The preparation's question as a dialog while it waits for the answer, which its buttons and Back give; gone when it
+     * no longer waits. An activity made anew meanwhile shows it again.
+     */
+    private void showQuestion(Preparation.Question question) {
+        if (question == mAsked) {
+            return;
+        }
+        if (mQuestion != null) {
+            mQuestion.dismiss();
+            mQuestion = null;
+        }
+        mAsked = question;
+        if (question == null) {
+            return;
+        }
+        mQuestion = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(question.title)
+            .setMessage(question.message)
+            .setPositiveButton("Download", (dialog, which) -> question.answer(true))
+            .setNegativeButton("Cancel the start", (dialog, which) -> question.answer(false))
+            .setOnCancelListener(dialog -> question.answer(false))
+            .create();
+        mQuestion.setCanceledOnTouchOutside(false);
+        mQuestion.show();
+    }
+
     /** The program's command line without its display mode, with its environment set; or why the game cannot start. */
     private List<String> prepare() throws GameStart.Failure {
         Storage storage;
@@ -318,6 +351,8 @@ public final class GameActivity extends SDLActivity {
             throw GameStart.Failure.noFonts();
         }
         int version = GameStart.version(storage, extra(GameStart.EXTRA_GAME_VERSION));
+        // A version the phone has not got the preparation fetches, and the init file comes after its files.
+        boolean fetch = !GameFiles.ready(storage, version);
         // A launcher's map and mods, which LaunchGameActivity has checked already; a test's are checked here.
         String map = Launch.map(extra(Launch.EXTRA_MAP));
         String[] mods = Launch.mods(extra(Launch.EXTRA_MODS));
@@ -327,12 +362,14 @@ public final class GameActivity extends SDLActivity {
         File vault = Storage.mkdirs(new File(folder, "vault"));
         Storage.mkdirs(new File(vault, "maps"));
         Storage.mkdirs(new File(vault, "mods"));
-        File init;
-        try {
-            // With the UI package for fingers (android/TOUCH_UI.md), from the APK.
-            init = GameFiles.gameInit(getAssets(), game, vault);
-        } catch (IOException e) {
-            throw GameStart.Failure.initFile(e.getMessage());
+        File init = GameFiles.gameInitFile(game);
+        if (!fetch) {
+            try {
+                // With the UI package for fingers (android/TOUCH_UI.md), from the APK.
+                GameFiles.gameInit(getAssets(), game, vault);
+            } catch (IOException e) {
+                throw GameStart.Failure.initFile(e.getMessage());
+            }
         }
         File home = Storage.mkdirs(GameReport.home(storage));
         try {
@@ -355,12 +392,13 @@ public final class GameActivity extends SDLActivity {
         Uri replay = getIntent().getData();
         File copy = null;
         if (replay != null) {
-            // The launcher's replay, which the preparation copies here through the grant its start passed on.
-            copy = new File(getCacheDir(), Preparation.REPLAY_COPY);
+            // The launcher's replay, which the preparation copies here through the grant its start passed on. Not into the
+            // cache, which Android empties when the storage runs low, as the game files' download after the copy can make it.
+            copy = new File(getFilesDir(), Preparation.REPLAY_COPY);
             arguments.addAll(Arrays.asList("/replay", copy.getPath()));
         }
-        sPreparation = map != null || mods.length > 0 || replay != null
-            ? new Preparation(this, storage, vault, map, mods, modFiles, replay, copy) : null;
+        sPreparation = fetch || map != null || mods.length > 0 || replay != null
+            ? new Preparation(this, storage, vault, fetch ? version : -1, map, mods, modFiles, replay, copy) : null;
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
         GameReport.append(this, "game: HUD scale " + hudScale + " on " + screenInWords());
         return arguments;
@@ -494,6 +532,10 @@ public final class GameActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         mHandler.removeCallbacks(mPoll);
+        if (mQuestion != null) {
+            // Its window goes with the activity; the next activity asks again.
+            mQuestion.dismiss();
+        }
         if (mBesideProgram) {
             // SDL set nothing up for this activity (refuseBesideProgram): the HID manager that its onDestroy lets go of is the
             // one of the activity that shows the program.

@@ -2,20 +2,26 @@ package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -189,15 +195,17 @@ public class GameFilesTest {
     }
 
     /** FAF's updater as ensure downloads from it: 3840's packages as small archives (mods not published), its init file. */
-    private static final class Updater implements Http.Downloads {
+    static final class Updater implements Http.Downloads {
         String init = INIT;
         /** A package whose download fails as the network's, after all its tries. */
         String failing;
         final List<String> downloaded = new ArrayList<>();
+        int initsDownloaded;
 
         @Override
         public byte[] bytes(String url) {
             assertEquals(Http.GAME_URL + "init_faf_3840.lua", url);
+            ++initsDownloaded;
             return init.getBytes(StandardCharsets.UTF_8);
         }
 
@@ -283,5 +291,114 @@ public class GameFilesTest {
         assertFalse(GameFiles.dropUnfinished(storage, 3840));
 
         assertTrue(GameFiles.ready(storage, 3840));
+    }
+
+    /** Another download's hold on {@code version}, as the other process has it: its lock file, open and locked till closed. */
+    private static FileChannel hold(Storage storage, int version) throws IOException {
+        FileChannel channel = FileChannel.open(GameFiles.lockFile(storage, version).toPath(), StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE);
+        channel.lock();
+        return channel;
+    }
+
+    /** {@code version}'s download on a thread of its own, which records how it ended. */
+    private static Thread ensureAside(Storage storage, int version, GameFiles.Log log, Http.Downloads updater,
+        AtomicReference<Throwable> failed) {
+        Thread thread = new Thread(() -> {
+            try {
+                GameFiles.ensure(storage, version, log, updater);
+            } catch (Throwable e) {
+                failed.set(e);
+            }
+        });
+        thread.start();
+        return thread;
+    }
+
+    /** A log that hears when ensure says it waits for another download of 3840. */
+    private static GameFiles.Log waiting(CountDownLatch said) {
+        return new GameFiles.Log() {
+            @Override
+            public void line(String text) {
+            }
+
+            @Override
+            public void step(String text) {
+                if (text.equals("Waiting for another download of FAF game version 3840")) {
+                    said.countDown();
+                }
+            }
+        };
+    }
+
+    /**
+     * The app's job gets 3840 while a start's preparation asks for it in the game's process: the second waits until the first
+     * lets go, and takes what it got without a request of its own.
+     */
+    @Test
+    public void aDownloadOfAVersionAnotherDownloadHoldsWaitsAndTakesWhatItGot() throws Exception {
+        Cancellation.reset();
+        Storage storage = new Storage(folder.getRoot());
+        Updater updater = new Updater();
+        CountDownLatch said = new CountDownLatch(1);
+        AtomicReference<Throwable> failed = new AtomicReference<>();
+        Thread second;
+        try (FileChannel other = hold(storage, 3840)) {
+            second = ensureAside(storage, 3840, waiting(said), updater, failed);
+            assertTrue("it says it waits", said.await(10, TimeUnit.SECONDS));
+            assertTrue("still waiting", second.isAlive());
+            // The other download finishes it, and lets go.
+            makeReady(storage, 3840);
+        }
+        second.join(10_000);
+
+        assertFalse(second.isAlive());
+        assertNull(failed.get());
+        assertTrue(GameFiles.ready(storage, 3840));
+        assertEquals("nothing downloaded", 0, updater.initsDownloaded);
+        assertEquals(Collections.emptyList(), updater.downloaded);
+    }
+
+    @Test
+    public void theUsersCancelEndsAWaitForAnotherDownload() throws Exception {
+        Cancellation.reset();
+        Storage storage = new Storage(folder.getRoot());
+        Updater updater = new Updater();
+        CountDownLatch said = new CountDownLatch(1);
+        AtomicReference<Throwable> failed = new AtomicReference<>();
+        try (FileChannel other = hold(storage, 3840)) {
+            Thread second = ensureAside(storage, 3840, waiting(said), updater, failed);
+            assertTrue(said.await(10, TimeUnit.SECONDS));
+            Cancellation.request();
+            second.join(10_000);
+            assertFalse(second.isAlive());
+        } finally {
+            Cancellation.reset();
+        }
+
+        assertTrue("a Cancelled, not " + failed.get(), failed.get() instanceof Cancellation.Cancelled);
+        assertEquals(0, updater.initsDownloaded);
+        // It let go of the lock file: the next download gets it.
+        GameFiles.ensure(storage, 3840, LOG, updater);
+        assertTrue(GameFiles.ready(storage, 3840));
+    }
+
+    /** The Game card's job drops what its last download left, but not while a start's preparation is getting that version. */
+    @Test
+    public void aVersionAnotherDownloadHoldsIsNotDropped() throws IOException {
+        Storage storage = new Storage(folder.getRoot());
+        File unfinished = storage.game(3840);
+        GameFiles.write(new File(unfinished, "manifest.json"), "{\"pack_format\": " + GameFiles.PACK_FORMAT + "}");
+        File part = new File(storage.downloads(), "env.3840.nx2.part");
+        touch(part);
+
+        try (FileChannel other = hold(storage, 3840)) {
+            assertFalse(GameFiles.dropUnfinished(storage, 3840));
+        }
+
+        assertTrue(unfinished.exists());
+        assertTrue(part.exists());
+        assertTrue("dropped once it is let go", GameFiles.dropUnfinished(storage, 3840));
+        assertFalse(unfinished.exists());
     }
 }

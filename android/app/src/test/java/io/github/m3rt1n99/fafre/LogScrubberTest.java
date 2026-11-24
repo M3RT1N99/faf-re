@@ -62,9 +62,9 @@ public class LogScrubberTest {
             // FAF's Lua names the game it saves the replay of.
             "info: REPLAY ID: 24000001", "info: REPLAY ID: <game>",
             "game: command line " + EXTERNAL + "/files/parity/game/3835/bin/ForgedAlliance.exe /replay /data/user/0/" + APP
-                + "/cache/launcher-replay.SCFAreplay /fullscreen 1707 768",
+                + "/files/launcher-replay.SCFAreplay /fullscreen 1707 768",
             "game: command line <external>/files/parity/game/3835/bin/ForgedAlliance.exe /replay "
-                + "<internal>/cache/launcher-replay.SCFAreplay /fullscreen 1707 768",
+                + "<internal>/files/launcher-replay.SCFAreplay /fullscreen 1707 768",
             // A launcher's replay that could not be read, in Android's words.
             "game: the start failed, REPLAY: the replay: java.io.FileNotFoundException: "
                 + "content://com.example.client.replays/replays/24000001-Kestrel.SCFAreplay",

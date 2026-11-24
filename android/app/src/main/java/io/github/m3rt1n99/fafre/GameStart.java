@@ -44,7 +44,10 @@ final class GameStart {
         NO_SCFA,
         /** The import has no fonts. */
         NO_FONTS,
-        /** No ready FAF game files, or none of the version the start asks for. */
+        /**
+         * No ready FAF game files for a start that asks for no version, a version FAF's updater has no files of, or another
+         * featured mod.
+         */
         NO_GAME_FILES,
         /** The game's init file could not be written. */
         INIT_FILE,
@@ -67,21 +70,34 @@ final class GameStart {
         NO_MAP,
         /** A mod of the start's MODS is not on the phone, and FAF has no file of it that MOD_FILES names. */
         NO_MOD,
-        /** A download of the start's map or mods failed: the network, or the phone's storage. */
+        /**
+         * A download of the start's game files, map or mods failed, or the game files do not fit: the network, or the phone's
+         * storage.
+         */
         DOWNLOAD,
         /** The start's replay (the intent's data) could not be read or copied. */
         REPLAY,
-        /** Back ended the start while it fetched what the game needs (MAP, MODS, its replay). */
+        /**
+         * Back ended the start while it fetched what the game needs (its version's game files, MAP, MODS, its replay), or the
+         * player said no to the game files' download on a metered network.
+         */
         CANCELLED
     }
 
     /** A start that runs no program of its own: its code, and its line as the message, which names none of the test app's cards. */
     static final class Failure extends Exception {
         final Code code;
+        /** The phone has no FAF game files at all, which the test app's cards get: FAF's newest, not a version FAF has not. */
+        private final boolean mCardsGetThem;
 
         private Failure(Code code, String message) {
+            this(code, message, false);
+        }
+
+        private Failure(Code code, String message, boolean cardsGetThem) {
             super(message);
             this.code = code;
+            mCardsGetThem = cardsGetThem;
         }
 
         static Failure noScfa() {
@@ -146,6 +162,12 @@ final class GameStart {
             return new Failure(Code.CANCELLED, "Back ended the start while it fetched what the game needs");
         }
 
+        /** The player's no to {@code bytes} of {@code version} on a metered network (GameFilesFetch); -1: the updater did not say. */
+        static Failure notDownloaded(int version, long bytes) {
+            return new Failure(Code.CANCELLED, "the player did not download FAF game version " + version + " ("
+                + NewestGameFiles.size(bytes) + ") on a metered network");
+        }
+
         /** The test app's line, which its Game card (the report's end) and its toast show: with the cards that help, as before. */
         String cardLine() {
             switch (code) {
@@ -155,7 +177,9 @@ final class GameStart {
                     return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder or a ZIP of it again (card 2), "
                         + "which takes fonts/ too";
                 case NO_GAME_FILES:
-                    return "FAIL: " + getMessage() + "; \"Get FAF's newest version\" on card 5 downloads them, as does the replay test (card 3)";
+                    return mCardsGetThem
+                        ? "FAIL: " + getMessage() + "; \"Get FAF's newest version\" on card 5 downloads them, as does the replay test (card 3)"
+                        : "FAIL: " + getMessage();
                 default:
                     return "FAIL: " + getMessage();
             }
@@ -177,8 +201,8 @@ final class GameStart {
 
     /**
      * A failed fetch of what a launcher's start needs, {@code what} ("the map x"), as the start's code: Back (CANCELLED); FAF
-     * has no such file, or its file holds none of the name or uid asked for ({@code missing}: NO_MAP, NO_MOD); else
-     * DOWNLOAD, the network or the phone's storage.
+     * has no such file, or its file holds none of the name or uid asked for ({@code missing}: NO_GAME_FILES, NO_MAP,
+     * NO_MOD); else DOWNLOAD, the network or the phone's storage.
      */
     static Failure fetchFailure(IOException e, Code missing, String what) {
         if (e instanceof Cancellation.Cancelled) {
@@ -215,14 +239,15 @@ final class GameStart {
     }
 
     /**
-     * The version the start plays: the one it asks for, whose files must be ready (no other: a lobby would refuse it, or
-     * desync with it); without one the newest ready version. {@code asked} is the extra as the start gives it, null for none.
+     * The version the start plays: the one it asks for, also when its files are not on the phone, which the start's
+     * preparation then fetches (GameFilesFetch), and no other, as a lobby would refuse it or desync with it; without one the
+     * newest ready version. {@code asked} is the extra as the start gives it, null for none.
      */
     static int version(Storage storage, Object asked) throws Failure {
         if (asked == null) {
             List<Integer> ready = GameFiles.readyVersions(storage);
             if (ready.isEmpty()) {
-                throw new Failure(Code.NO_GAME_FILES, "no whole FAF game files yet");
+                throw new Failure(Code.NO_GAME_FILES, "no whole FAF game files yet", true);
             }
             return ready.get(ready.size() - 1);
         }
@@ -230,8 +255,9 @@ final class GameStart {
             throw new Failure(Code.ARGUMENTS, "GAME_VERSION has the type " + asked.getClass().getSimpleName() + ", not int");
         }
         int version = (Integer) asked;
-        if (!GameFiles.ready(storage, version)) {
-            throw new Failure(Code.NO_GAME_FILES, "no whole FAF game files of version " + version + " yet");
+        if (version < 1) {
+            // Not worth a request to FAF's updater.
+            throw Failure.noGameFiles("FAF has no game version " + version);
         }
         return version;
     }

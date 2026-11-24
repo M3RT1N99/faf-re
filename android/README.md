@@ -135,8 +135,9 @@ the game data they imported. Everything lives in the app's external files folder
     same extras from the app itself, from the trampoline after its checks and from a test through a root shell, as the
     [native README](native/README.md)'s GPGNet check does, where only the activity's own switches are refused among the
     launcher's arguments. Those go after the activity's arguments and a test's, before `/fullscreen`. What a start needs
-    first, its map and mods fetched and its replay copied, the activity gets on SDL's thread before the program starts
-    (`Preparation`), with the step over the black surface; Back cancels it. A start that fails before the program runs,
+    first, its map and mods fetched, its replay copied and the game files of a `GAME_VERSION` the phone has not got, the
+    activity gets on SDL's thread before the program starts (`Preparation`), with the step over the black surface and its
+    question on a metered network; Back cancels it. A start that fails before the program runs,
     the Game card's too, ends with the result the contract gives; the report has its code and line, and its end, like the
     toast of a start that waits for no result, keeps the card's words. Any start but a launcher's while the program runs
     shows it, as above.
@@ -288,10 +289,12 @@ the game data they imported. Everything lives in the app's external files folder
   cancel and log. On a metered network (mobile data, a hotspot, a Wi-Fi set so) the card asks first, and while it asks
   the button asks again with the size it knows, without a new check; without that yes the download runs only on a
   network that is not metered and stops when it becomes metered, and the next run goes on from where it stopped. When a
-  later check settles on another version, what the button's unfinished download of the old one left goes; a replay
-  test's partial downloads of other versions and every ready version stay. A phone with a version above FAF's newest
+  later check settles on another version, what the button's unfinished download of the old one left goes, unless a
+  start is getting that version; a replay test's partial downloads of other versions and every ready version stay. A
+  phone with a version above FAF's newest
   downloads nothing, and the card says the game starts the phone's. The card's line shows both versions, `FAF game files: 3835 (newest at FAF: 3840)`; if GitHub is unreachable or at its
-  limit, the line says so and nothing is downloaded. Older versions stay for the replay test. The UI package's hooks are
+  limit, the line says so and nothing is downloaded. Older versions stay, for the replay test and for the starts that ask
+  for them (the launcher's contract, `GAME_VERSION`). The UI package's hooks are
   appended to FAF's files of whatever version, each in a pcall, so a change in FAF's files shows as a `fafre_ui:`
   warning in `engine.sclog` rather than a broken game: a hook says once what it misses of FAF's, and as each UI state is set
   up each hook whose FAF file is gone is named. FAF 3841 moved its chat to `ui/game/chat/` and its patch notes to
@@ -397,7 +400,7 @@ with the same result.
 | Extra `io.github.m3rt1n99.fafre.extra.` | Type | What |
 |---|---|---|
 | `TOKEN` | String | The status provider's `play_token` for this start, which it spends |
-| `GAME_VERSION` | int | The version the game plays, the lobby's or the replay's, whose files must be ready (no other: a lobby would refuse it or desync); without it the newest ready one |
+| `GAME_VERSION` | int | The version the game plays, the lobby's or the replay's, and no other (a lobby would refuse it or desync): when the phone has not got its files, they come from FAF's updater before the program starts (below); without it the newest ready one |
 | `LAUNCHER_ARGUMENTS` | String[] | The launcher's switches, by the whitelist below; never split, a value is one element |
 | `FEATURED_MOD` | String | `faf`, also when absent; any other gives `NO_GAME_FILES` for now |
 | `REJOIN_OFFER` | boolean | The game offers its return after a crash: this side adds `/rejoinoffer /rejoinkeyfile <noBackupFilesDir>/faf_rejoin_seat.key /con net_PeerFeatures=1;net_RejoinAccept=1` |
@@ -406,7 +409,7 @@ with the same result.
 | `MAP` | String `^[a-z0-9_.-]{1,64}$`, not `.` or `..` | FAF's map folder name: unless the SCFA import or the game's vault has it, it comes from `content.faforever.com/maps/<MAP>.zip` into `game/vault/maps` before the program starts |
 | `MODS` | String[] of uids, `^[0-9A-Za-z_.-]{8,64}$`, not first a `.`, each once | The mods the game needs in `game/vault/mods`: a folder there whose `mod_info.lua` has the uid, in any case, or else its file |
 | `MOD_FILES` | String[], one for each of `MODS` in its order | That mod version's file in `content.faforever.com/mods/`, the last segment of FAF's `downloadUrl`: `<name>.zip`, no folder. It must hold the uid; it takes the place of a folder of its name |
-| the intent's data (REPLAY) | `content://` URI, with `FLAG_GRANT_READ_URI_PERMISSION` on the start | A replay in SCFA's format, copied into the app's cache before the program, which plays it (`/replay <copy>`); `GAME_VERSION` names its version, `MAP` its map where the phone may not have it. Android lets a start with the grant through only when its app may read the URI itself, and the game reads nothing for a start without it, with access of its own |
+| the intent's data (REPLAY) | `content://` URI, with `FLAG_GRANT_READ_URI_PERMISSION` on the start | A replay in SCFA's format, copied into the app's files before the program, which plays it (`/replay <copy>`): not its cache, which Android empties when the storage runs low, as a download of the game files can make it; `GAME_VERSION` names its version, `MAP` its map where the phone may not have it. Android lets a start with the grant through only when its app may read the URI itself, and the game reads nothing for a start without it, with access of its own |
 
 Another extra of the prefix, and an extra of another type, give `ARGUMENTS`. Map and mods come as the replay test's do,
 one request a second, a download tried again for about ten minutes when the network drops; the game's activity shows
@@ -414,6 +417,20 @@ the step and Back cancels it, also while a zip unpacks. A zip unpacks beside its
 folder joins whole, and an older folder of its name (a mod's older version) leaves whole, to be deleted beside the
 download: a process that ends meanwhile leaves no half of a map or mod there. `MODS` names uids, as FAF's lobby does, and
 FAF's content server has no file by uid, nor its API without a login: so the client, which has both, names the files.
+
+A `GAME_VERSION` the phone has not got comes after the map, the mods and the replay, as the largest by far (`GameFilesFetch`),
+from FAF's updater (`content.faforever.com/faf/updaterNew/updates_faf_files/`, no login) by the rules of the Game card's
+*Get FAF's newest version*: its size first, by HEAD requests, which must fit in the free space with 100 MB to spare
+(`DOWNLOAD` says how much is free and how much it needs); on a metered network the activity asks before it with that
+size, and a no ends the start (`CANCELLED`); without a yes it runs only on a network that is not metered, and one that
+becomes metered under it stops it and asks about the rest. `GameFiles.ensure` gets the files as the replay test does,
+with the activity showing each package's progress, and keeps what is there: the other versions, side by side, and what an
+earlier start got of this one, which the next goes on from. One download of a version runs at a time: a start that asks
+for the version the app's own download is getting waits for it (a lock file in `parity/downloads`), and Back ends the
+wait. A version FAF has no files of gives `NO_GAME_FILES` at its first missing package, before any download; a version
+below 1 at once. The game's init file is written once the files are there. The download runs in the game's process,
+which has no service for it: on the emulator's Android 16 it stood still in the back (the process cached) and went on
+from where it stood about 40 s after the game came back to the front.
 
 The whitelist of `LAUNCHER_ARGUMENTS`: each switch spelled so, once, followed by its value. Anything else gives
 `ARGUMENTS`: any other switch, among them `/init`, `/log`, `/prefs`, `/fullscreen`, `/nomovie`, `/notelemetry`,
@@ -445,16 +462,16 @@ which ends its process, or any other end of the process there, which takes the a
 |---|---|
 | `CALLER` | The caller is not allowed, did not wait for a result, or gave no token of the game's (none, spent, or older than 60 s) |
 | `ARGUMENTS` | An extra or a switch is not what the contract says |
-| `NO_GAME_FILES` | No ready FAF game files, none of `GAME_VERSION`, or a featured mod other than `faf` |
+| `NO_GAME_FILES` | No ready FAF game files and no `GAME_VERSION`, a `GAME_VERSION` FAF's updater has no files of, or a featured mod other than `faf` |
 | `NO_SCFA`, `NO_FONTS` | No SCFA imported, or the import has no fonts |
 | `INIT_FILE`, `ENVIRONMENT`, `STORAGE` | The game's init file, its environment or the app's shared storage failed |
 | `RUNNING` | A game runs already, which this start's version and arguments would not reach: the running game goes on, and its report gets the line but no end |
 | `PROCESS_ENDED` | Android brought back (Recents) the activity of a launcher's game whose process ended in the back (ended by Android, by a crash or by the program's end): it would start the game anew on a GPGNet session the launcher saw end; the gone game's report, `game-previous.txt`, says how |
 | `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name |
 | `NO_MOD` | A mod of `MODS` is not on the phone, and `MOD_FILES` names none of it, FAF has no such file, or it holds another uid |
-| `DOWNLOAD` | A download of the map or a mod failed: the network, after its tries, or the phone's storage |
+| `DOWNLOAD` | A download of `GAME_VERSION`'s game files, the map or a mod failed: the network, after its tries, or the phone's storage; or the game files do not fit in the free space |
 | `REPLAY` | The data is no `content://` URI of another app's, the start does not grant reading it (`FLAG_GRANT_READ_URI_PERMISSION`), or it could not be copied (empty, more than 256 MB) |
-| `CANCELLED` | Back ended the start while it fetched, unpacked or copied what the game needs |
+| `CANCELLED` | Back ended the start while it fetched, unpacked or copied what the game needs, or the player said no to the game files' download on a metered network |
 
 The game connects to the `/gpgnet` port; when nothing listens there, or the launcher closes the connection before its
 `CreateLobby`, the game says so in a box and ends after its OK (`RESULT_CANCELED`), unless it was started with `/rejoin`
@@ -569,7 +586,7 @@ and no URI (the intent's data is not read), and no job starts without the player
 | `STEP` (String) | The screen |
 |---|---|
 | `scfa` | The SCFA import: *Folder…*, the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`), as the Game data card's, or *ZIP file…*, the file picker (`ACTION_OPEN_DOCUMENT`, `application/zip` and `application/x-zip-compressed`) |
-| `game_files` | FAF's newest game files, *Get FAF's newest version* as on the Game card, with its question before a download on a metered network; no other version (a replay's) |
+| `game_files` | FAF's newest game files, *Get FAF's newest version* as on the Game card, with its question before a download on a metered network; no other version: a start fetches the one its `GAME_VERSION` names |
 | none | Both |
 
 Another value or type of `STEP`, or another extra of the prefix, ends the screen at once with `RESULT_FIRST_USER`,

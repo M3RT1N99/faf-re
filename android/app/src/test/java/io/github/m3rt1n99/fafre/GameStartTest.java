@@ -128,14 +128,24 @@ public class GameStartTest {
         assertEquals(3841, GameStart.version(storage, 3841));
     }
 
+    /** The start's preparation fetches it (GameFilesFetch): no other version is taken in its place, not the ready ones. */
     @Test
-    public void aVersionThatIsNotReadyFailsWithNoGameFilesAndNoOtherIsTaken() throws Exception {
-        Storage storage = storage(3841);
+    public void aVersionThatIsNotReadyIsTakenForThePreparationToFetch() throws Exception {
+        Storage storage = storage(3835, 3841);
         // A download that stopped: the version's folder is there, its init file is not (GameFiles' ready check).
         GameFiles.write(new File(storage.game(3840), "manifest.json"), "{\"pack_format\": " + GameFiles.PACK_FORMAT + "}");
-        for (int asked : new int[] {3840, 3842, 0, -1}) {
-            assertFailure(GameStart.Code.NO_GAME_FILES, "no whole FAF game files of version " + asked + " yet",
-                () -> GameStart.version(storage, asked));
+        for (int asked : new int[] {3840, 3842, 3634, 1}) {
+            assertEquals(asked, GameStart.version(storage, asked));
+            assertFalse(GameFiles.ready(storage, asked));
+        }
+    }
+
+    /** No version is below 1: no request to FAF's updater is worth it. */
+    @Test
+    public void aVersionBelowOneFailsWithNoGameFilesAtOnce() throws Exception {
+        Storage storage = storage(3841);
+        for (int asked : new int[] {0, -1, Integer.MIN_VALUE}) {
+            assertFailure(GameStart.Code.NO_GAME_FILES, "FAF has no game version " + asked, () -> GameStart.version(storage, asked));
         }
     }
 
@@ -159,7 +169,9 @@ public class GameStartTest {
     public void eachFailureHasItsCodeAndALineThatNamesNoCard() throws IOException {
         Storage storage = storage();
         List<GameStart.Failure> failures = Arrays.asList(GameStart.Failure.noScfa(), GameStart.Failure.noFonts(),
-            failure(() -> GameStart.version(storage, null)), failure(() -> GameStart.version(storage, 3841)),
+            failure(() -> GameStart.version(storage, null)), failure(() -> GameStart.version(storage, 0)),
+            GameStart.fetchFailure(new Http.StatusException(Http.GAME_URL + "lua.1.nx2", 404), GameStart.Code.NO_GAME_FILES,
+                "FAF game version 1"),
             GameStart.Failure.initFile("no room left"), GameStart.Failure.environment("setenv failed: EINVAL (Invalid argument)"),
             GameStart.Failure.storage("shared storage is not available"),
             failure(() -> arguments(false, null, new String[] {"/init", "x"})),
@@ -169,13 +181,14 @@ public class GameStartTest {
             GameStart.fetchFailure(new Vault.Missing("y.zip holds the mod 1234abcd, not 5678abcd"), GameStart.Code.NO_MOD,
                 "the mod 5678abcd"),
             GameStart.fetchFailure(new IOException("Connection reset"), GameStart.Code.NO_MAP, "the map x"),
-            GameStart.Failure.replay("it is empty"), GameStart.Failure.cancelled());
+            GameStart.Failure.replay("it is empty"), GameStart.Failure.cancelled(), GameStart.Failure.notDownloaded(3840, 715_047_073L));
         String[][] expected = {
             {"NO_SCFA", "no Supreme Commander: Forged Alliance imported yet"},
             {"NO_FONTS", "no fonts of Supreme Commander: Forged Alliance yet: import its folder or a ZIP of it again, which takes "
                 + "fonts/ too"},
             {"NO_GAME_FILES", "no whole FAF game files yet"},
-            {"NO_GAME_FILES", "no whole FAF game files of version 3841 yet"},
+            {"NO_GAME_FILES", "FAF has no game version 0"},
+            {"NO_GAME_FILES", "FAF game version 1: HTTP 404 for https://content.faforever.com/faf/updaterNew/updates_faf_files/lua.1.nx2"},
             {"INIT_FILE", "the init file: no room left"},
             {"ENVIRONMENT", "the program's environment: setenv failed: EINVAL (Invalid argument)"},
             {"STORAGE", "shared storage is not available"},
@@ -192,6 +205,7 @@ public class GameStartTest {
             {"DOWNLOAD", "the map x: Connection reset"},
             {"REPLAY", "the replay: it is empty"},
             {"CANCELLED", "Back ended the start while it fetched what the game needs"},
+            {"CANCELLED", "the player did not download FAF game version 3840 (682 MB) on a metered network"},
         };
         EnumSet<GameStart.Code> codes = EnumSet.noneOf(GameStart.Code.class);
         for (int i = 0; i < expected.length; ++i) {
@@ -270,10 +284,13 @@ public class GameStartTest {
             GameStart.Failure.environment("setenv failed: EINVAL (Invalid argument)").cardLine());
         assertEquals("FAIL: shared storage is not available", GameStart.Failure.storage("shared storage is not available").cardLine());
         // The new failures, which no start had before.
-        assertEquals("FAIL: no whole FAF game files of version 3841 yet; \"Get FAF's newest version\" on card 5 downloads them, as does "
-            + "the replay test (card 3)", failure(() -> GameStart.version(storage, 3841)).cardLine());
         assertEquals("FAIL: LAUNCHER_ARGUMENTS has /log, which the activity gives the program itself",
             failure(() -> arguments(false, null, new String[] {"/log", "x"})).cardLine());
+        // A version FAF has not, which the cards' download of FAF's newest does not get either.
+        assertEquals("FAIL: FAF has no game version 0", failure(() -> GameStart.version(storage, 0)).cardLine());
+        assertEquals("FAIL: FAF game version 1: HTTP 404 for https://content.faforever.com/faf/updaterNew/updates_faf_files/lua.1.nx2",
+            GameStart.fetchFailure(new Http.StatusException(Http.GAME_URL + "lua.1.nx2", 404), GameStart.Code.NO_GAME_FILES,
+                "FAF game version 1").cardLine());
     }
 
     @Test

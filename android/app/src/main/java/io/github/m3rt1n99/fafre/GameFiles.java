@@ -10,9 +10,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -104,6 +107,58 @@ final class GameFiles {
         if (ready(storage, version)) {
             return dir;
         }
+        // One download of a version at a time: the game's process gets a start's version (Preparation) while the app's
+        // jobs may be getting the same one, and the two would write the same files.
+        try (FileChannel lock = lock(storage, version, log)) {
+            if (!ready(storage, version)) {
+                fetch(storage, version, dir, log, downloads);
+            }
+        }
+        return dir;
+    }
+
+    /** Held while a download of {@code version} runs. It stays, as a download that waits for it has it open. */
+    static File lockFile(Storage storage, int version) {
+        return new File(storage.downloads(), "game-" + version + ".lock");
+    }
+
+    /**
+     * {@code version}'s lock file, open, once this holds its lock: while another download of the version holds it (the
+     * other process's, or another thread's of this one) this waits, which Cancel ends. Closing the channel lets go.
+     */
+    private static FileChannel lock(Storage storage, int version, Log log) throws IOException {
+        FileChannel channel = FileChannel.open(lockFile(storage, version).toPath(), StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE);
+        boolean locked = false;
+        try {
+            for (boolean said = false; !tryLock(channel); said = true) {
+                if (!said) {
+                    String waiting = "Waiting for another download of FAF game version " + version;
+                    log.line(waiting);
+                    log.step(waiting);
+                }
+                Http.sleep(500);
+            }
+            locked = true;
+            return channel;
+        } finally {
+            if (!locked) {
+                channel.close();
+            }
+        }
+    }
+
+    /** Whether this now holds {@code channel}'s lock: false while another download holds it. */
+    private static boolean tryLock(FileChannel channel) throws IOException {
+        try {
+            return channel.tryLock() != null;
+        } catch (OverlappingFileLockException e) {
+            // Another thread of this process holds it.
+            return false;
+        }
+    }
+
+    private static void fetch(Storage storage, int version, File dir, Log log, Http.Downloads downloads) throws IOException {
         // The init file first, so that one the app cannot use fails before 700 MB of packages, and nothing on the phone
         // changes. It is written last of all.
         String initName = "init_faf_" + version + ".lua";
@@ -161,24 +216,30 @@ final class GameFiles {
         } catch (JSONException e) {
             throw new IOException(e);
         }
-        return dir;
     }
 
     /**
      * What {@link #ensure} left of {@code version} when it is not ready: its folder and its partial downloads. A ready
-     * version stays whole, and false says so.
+     * version stays whole, and so does one that another download is getting; false says so.
      */
     static boolean dropUnfinished(Storage storage, int version) {
-        if (ready(storage, version)) {
+        try (FileChannel lock = FileChannel.open(lockFile(storage, version).toPath(), StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE)) {
+            // Ready asked under the lock: a download that held it may have finished the version.
+            if (!tryLock(lock) || ready(storage, version)) {
+                return false;
+            }
+            Storage.deleteTree(storage.game(version));
+            for (String name : PACKAGES) {
+                File download = new File(storage.downloads(), name + "." + version + ".nx2");
+                download.delete();
+                new File(download.getPath() + ".part").delete();
+            }
+            return true;
+        } catch (IOException e) {
+            // Without the lock another download may be getting it.
             return false;
         }
-        Storage.deleteTree(storage.game(version));
-        for (String name : PACKAGES) {
-            File download = new File(storage.downloads(), name + "." + version + ".nx2");
-            download.delete();
-            new File(download.getPath() + ".part").delete();
-        }
-        return true;
     }
 
     /**
@@ -259,9 +320,14 @@ final class GameFiles {
         File folder = new File(gameDir, UI_PACKAGE);
         Storage.deleteTree(folder);
         copyAssets(assets, UI_PACKAGE, folder);
-        File init = new File(gameDir, "bin/init_game.lua");
+        File init = gameInitFile(gameDir);
         write(init, withUiPackage(runInitText(gameDir, vault)));
         return init;
+    }
+
+    /** Where {@link #gameInit} writes, which the command line names before a start's preparation has fetched the version. */
+    static File gameInitFile(File gameDir) {
+        return new File(gameDir, "bin/init_game.lua");
     }
 
     private static String runInitText(File gameDir, File vault) throws IOException {

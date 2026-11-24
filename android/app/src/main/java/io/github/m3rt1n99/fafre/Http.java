@@ -353,7 +353,7 @@ final class Http {
     }
 
     /** A wait between tries, up to 5 minutes, which the user's Cancel ends within half a second. */
-    private static void sleep(long ms) throws IOException {
+    static void sleep(long ms) throws IOException {
         long end = System.currentTimeMillis() + ms;
         for (long left = ms; left > 0; left = end - System.currentTimeMillis()) {
             try {
