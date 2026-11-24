@@ -16,8 +16,14 @@ final class Sizes {
 
     /** "716 MB", or from 1,000 MB on "7.6 GB": {@code bytes} rounded up to the figure. */
     static String of(long bytes) {
+        long shown = shown(bytes);
+        return shown < 1000 * MB ? shown / MB + " MB" : figure(shown / TENTH_GB, true) + " GB";
+    }
+
+    /** The bytes that the figure of {@code bytes} says (of), at least as many: 716,000,000 for 715,047,073. */
+    static long shown(long bytes) {
         long mb = up(bytes, MB);
-        return mb < 1000 ? mb + " MB" : figure(up(bytes, TENTH_GB), true) + " GB";
+        return mb < 1000 ? mb * MB : up(bytes, TENTH_GB) * TENTH_GB;
     }
 
     /**

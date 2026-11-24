@@ -27,4 +27,12 @@ public class NewestGameFilesSizeTest {
         assertEquals("716 MB", NewestGameFiles.size(715_047_073L));
         assertEquals("1 MB", NewestGameFiles.size(Sizes.MB));
     }
+
+    /** A yes to a size covers what its figure names: no more, so that a start downloads no more than the player said. */
+    @Test
+    public void aYesToASizeCoversWhatItsFigureNames() {
+        assertEquals("716 MB", 716 * Sizes.MB, NewestGameFiles.named(715_047_073L));
+        assertEquals("less than 1 MB", Sizes.MB - 1, NewestGameFiles.named(26_887));
+        assertEquals("about 700 MB, as the room counts it", NewestGameFiles.UNSAID_BYTES, NewestGameFiles.named(-1));
+    }
 }

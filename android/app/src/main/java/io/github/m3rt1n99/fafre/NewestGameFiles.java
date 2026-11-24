@@ -168,4 +168,16 @@ final class NewestGameFiles {
         }
         return bytes < Sizes.MB ? "less than 1 MB" : Sizes.of(bytes);
     }
+
+    /**
+     * The most that a download of {@code bytes} (-1: the updater did not say) may come to as its size names it (size),
+     * which a yes to that size covers: the figure's bytes, 716,000,000 for "716 MB"; less than 1 MB for "less than 1 MB";
+     * and for "about 700 MB" what the room counts of it (counted).
+     */
+    static long named(long bytes) {
+        if (bytes < 0) {
+            return UNSAID_BYTES;
+        }
+        return bytes < Sizes.MB ? Sizes.MB - 1 : Sizes.shown(bytes);
+    }
 }

@@ -44,6 +44,7 @@ public class SizesTest {
                 long said = said(Sizes.of(near));
                 long step = said <= GB ? Sizes.MB : GB / 10;
                 assertTrue(near + " bytes as " + Sizes.of(near), near <= said && said - near < step);
+                assertEquals("the bytes the figure says", said, Sizes.shown(near));
             }
         }
     }

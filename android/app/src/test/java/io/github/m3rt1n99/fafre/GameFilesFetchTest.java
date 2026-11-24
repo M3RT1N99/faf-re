@@ -472,6 +472,87 @@ public class GameFilesFetchTest {
         assertEquals(1, mDownload.downloads);
     }
 
+    /**
+     * While the player was asked about the rest, 123 MB, the Game card's job settled on another version and dropped this
+     * one's unfinished files (GameFiles.dropUnfinished), so that 716 MB are left: more than the yes was to, which the
+     * player is asked about again before a byte.
+     */
+    private void droppedWhileThePlayerIsAsked() throws IOException {
+        envAndTexturesWhole();
+        mConnectivity.metered = true;
+        mPlayer.meanwhile = () -> {
+            mPlayer.meanwhile = null;
+            assertTrue(GameFiles.dropUnfinished(mStorage, 3840));
+        };
+    }
+
+    @Test
+    public void aRestThatGrewPastTheYesWhileThePlayerWasAskedIsAskedAboutAgain() throws Exception {
+        droppedWhileThePlayerIsAsked();
+        mPlayer.answers.add(true);
+        mPlayer.answers.add(true);
+
+        fetch(3840);
+
+        assertTrue(GameFiles.ready(mStorage, 3840));
+        assertEquals(Arrays.asList(REST, BYTES), mPlayer.askedAbout);
+        assertEquals("the whole, after the second yes", Collections.singletonList(BYTES + Room.SPARE_BYTES), mRoom.claims);
+        assertEquals(1, mDownload.downloads);
+        assertTrue(mLines.toString(), mLines.contains("The player said yes to 123 MB of FAF game version 3840, and 716 MB are to "
+            + "download now: the player is asked again"));
+    }
+
+    @Test
+    public void aNoToTheRestThatGrewCancelsTheStartWithItsSize() throws Exception {
+        droppedWhileThePlayerIsAsked();
+        mPlayer.answers.add(true);
+        mPlayer.answers.add(false);
+
+        assertFailure(GameStart.Code.CANCELLED, "the player did not download FAF game version 3840 (716 MB) on a metered network",
+            failure(3840));
+
+        assertEquals(Collections.emptyList(), mRoom.claims);
+        assertEquals(0, mDownload.downloads);
+    }
+
+    /** The network is no longer metered after the yes, which covers none of the rest that grew past it: watched, as without one. */
+    @Test
+    public void aRestThatGrewPastTheYesOnANetworkNoLongerMeteredIsWatched() throws Exception {
+        envAndTexturesWhole();
+        mConnectivity.metered = true;
+        mPlayer.meanwhile = () -> {
+            assertTrue(GameFiles.dropUnfinished(mStorage, 3840));
+            mConnectivity.metered = false;
+        };
+        mPlayer.answers.add(true);
+
+        fetch(3840);
+
+        assertEquals(Collections.singletonList(REST), mPlayer.askedAbout);
+        assertEquals(Collections.singletonList(BYTES + Room.SPARE_BYTES), mRoom.claims);
+        assertEquals(1, mConnectivity.watches);
+    }
+
+    /**
+     * A rest that grew within the figure the question named needs no new question: 40 KB of units' part left 122,004,463
+     * bytes, "123 MB", and the part's end (the app's own download began it anew) leaves 122,044,463, which the yes covers.
+     */
+    @Test
+    public void aRestThatGrewWithinTheSizeTheQuestionNamedNeedsNoNewQuestion() throws Exception {
+        envAndTexturesWhole();
+        File part = new File(mStorage.downloads(), "units.3840.nx2.part");
+        Files.write(part.toPath(), new byte[40_000]);
+        mConnectivity.metered = true;
+        mPlayer.meanwhile = part::delete;
+        mPlayer.answers.add(true);
+
+        fetch(3840);
+
+        assertEquals(Collections.singletonList(REST - 40_000), mPlayer.askedAbout);
+        assertEquals(Collections.singletonList(REST + Room.SPARE_BYTES), mRoom.claims);
+        assertEquals("the yes covers it, on any network", 0, mConnectivity.watches);
+    }
+
     /** Never another measure in its place: a room call that Android fails is the start's DOWNLOAD, before any byte. */
     @Test
     public void aRoomCallThatAndroidFailsEndsTheStartWithDownloadBeforeAQuestionAndAnyByte() {
