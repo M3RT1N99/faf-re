@@ -1,0 +1,13 @@
+diff --git a/src/moho/app/StartupClientHelpers.cpp b/src/moho/app/StartupClientHelpers.cpp
+index 7ecef91..8e39ff1 100644
+--- a/src/moho/app/StartupClientHelpers.cpp
++++ b/src/moho/app/StartupClientHelpers.cpp
+@@ -435,7 +435,7 @@ int moho::cfunc_GetCommandLineArgL(
+ 
+   LuaPlus::LuaStackObject optionArg(state, 1);
+   const char* const optionText = optionArg.GetString();
+-  gpg::Logf(optionText != nullptr ? optionText : "");
++  gpg::Logf("%s", optionText != nullptr ? optionText : "");
+ 
+   LuaPlus::LuaStackObject requestedCountArg(state, 2);
+   const int requestedArgCount = requestedCountArg.GetInteger();
