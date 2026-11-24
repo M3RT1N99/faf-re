@@ -6,12 +6,15 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -293,12 +296,60 @@ public class GameFilesTest {
         assertTrue(GameFiles.ready(storage, 3840));
     }
 
-    /** Another download's hold on {@code version}, as the other process has it: its lock file, open and locked till closed. */
+    /**
+     * Another thread's hold on {@code version} in this process: its lock file, open and locked till closed. A second channel
+     * of this JVM's meets the JVM's own lock table (OverlappingFileLockException), not the system's lock: for the phone's two
+     * processes, where tryLock gives null, a test needs {@link OtherProcess}.
+     */
     private static FileChannel hold(Storage storage, int version) throws IOException {
         FileChannel channel = FileChannel.open(GameFiles.lockFile(storage, version).toPath(), StandardOpenOption.CREATE,
             StandardOpenOption.WRITE);
         channel.lock();
         return channel;
+    }
+
+    /** Another process's hold on {@code version}, as the game's process has it while its start downloads: a JVM of its own. */
+    private static final class OtherProcess implements AutoCloseable {
+        private final Process mProcess;
+
+        OtherProcess(Storage storage, int version) throws Exception {
+            File java = new File(System.getProperty("java.home"),
+                System.getProperty("os.name").startsWith("Windows") ? "bin/java.exe" : "bin/java");
+            String classes = new File(LockHolder.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getPath();
+            mProcess = new ProcessBuilder(java.getPath(), "-cp", classes, LockHolder.class.getName(),
+                GameFiles.lockFile(storage, version).getPath()).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+            String said = new BufferedReader(new InputStreamReader(mProcess.getInputStream(), StandardCharsets.UTF_8)).readLine();
+            if (!LockHolder.LOCKED.equals(said)) {
+                close();
+                throw new AssertionError("the other process holds no lock: " + said);
+            }
+        }
+
+        /** The end of its input ends it, and the system lets go of its lock. */
+        @Override
+        public void close() throws Exception {
+            mProcess.getOutputStream().close();
+            if (!mProcess.waitFor(10, TimeUnit.SECONDS)) {
+                mProcess.destroyForcibly();
+                throw new AssertionError("the other process did not end");
+            }
+        }
+    }
+
+    /** The other process's program: locks the file it is given, says so, and holds it until its input ends. */
+    static final class LockHolder {
+        static final String LOCKED = "locked";
+
+        public static void main(String[] args) throws IOException {
+            try (FileChannel channel = FileChannel.open(Paths.get(args[0]), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                channel.lock();
+                System.out.println(LOCKED);
+                System.out.flush();
+                while (System.in.read() >= 0) {
+                    // Held.
+                }
+            }
+        }
     }
 
     /** {@code version}'s download on a thread of its own, which records how it ended. */
@@ -343,7 +394,7 @@ public class GameFilesTest {
         CountDownLatch said = new CountDownLatch(1);
         AtomicReference<Throwable> failed = new AtomicReference<>();
         Thread second;
-        try (FileChannel other = hold(storage, 3840)) {
+        try (OtherProcess other = new OtherProcess(storage, 3840)) {
             second = ensureAside(storage, 3840, waiting(said), updater, failed);
             assertTrue("it says it waits", said.await(10, TimeUnit.SECONDS));
             assertTrue("still waiting", second.isAlive());
@@ -359,6 +410,7 @@ public class GameFilesTest {
         assertEquals(Collections.emptyList(), updater.downloaded);
     }
 
+    /** Here the other download is another thread's of this process, whose hold the wait meets as the JVM's own. */
     @Test
     public void theUsersCancelEndsAWaitForAnotherDownload() throws Exception {
         Cancellation.reset();
@@ -378,21 +430,21 @@ public class GameFilesTest {
 
         assertTrue("a Cancelled, not " + failed.get(), failed.get() instanceof Cancellation.Cancelled);
         assertEquals(0, updater.initsDownloaded);
-        // It let go of the lock file: the next download gets it.
+        // Nothing of the wait is left in this process: once the other has let go, the next download gets the lock.
         GameFiles.ensure(storage, 3840, LOG, updater);
         assertTrue(GameFiles.ready(storage, 3840));
     }
 
     /** The Game card's job drops what its last download left, but not while a start's preparation is getting that version. */
     @Test
-    public void aVersionAnotherDownloadHoldsIsNotDropped() throws IOException {
+    public void aVersionAnotherDownloadHoldsIsNotDropped() throws Exception {
         Storage storage = new Storage(folder.getRoot());
         File unfinished = storage.game(3840);
         GameFiles.write(new File(unfinished, "manifest.json"), "{\"pack_format\": " + GameFiles.PACK_FORMAT + "}");
         File part = new File(storage.downloads(), "env.3840.nx2.part");
         touch(part);
 
-        try (FileChannel other = hold(storage, 3840)) {
+        try (OtherProcess other = new OtherProcess(storage, 3840)) {
             assertFalse(GameFiles.dropUnfinished(storage, 3840));
         }
 

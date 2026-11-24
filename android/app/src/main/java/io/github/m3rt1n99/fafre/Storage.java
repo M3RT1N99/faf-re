@@ -20,7 +20,8 @@ import java.io.IOException;
  *   parity/maps/, m28/     vault maps and M28AI versions
  *   parity/runs/&lt;id&gt;/      one replay's run: replay.scfareplay, its vault, headless.out, engine.log
  *   parity/downloads/      partial downloads; newest-target, the version the Game card's last
- *                          download was for (NewestGameFilesJob)
+ *                          download was for (NewestGameFilesJob); game-&lt;v&gt;.lock, held while
+ *                          a download of version v runs (GameFiles.ensure)
  * </pre>
  */
 final class Storage {

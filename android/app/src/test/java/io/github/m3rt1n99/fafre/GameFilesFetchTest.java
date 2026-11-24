@@ -90,9 +90,11 @@ public class GameFilesFetchTest {
             throw new AssertionError("no text: " + url);
         }
 
+        /** As Http.ONE_TRY's, a Cancelled while a Back or a stop is there. */
         @Override
         public long length(String url) throws IOException {
             heads.add(url);
+            Cancellation.check();
             String name = url.substring(Http.GAME_URL.length());
             String nx2 = name.substring(0, name.indexOf('.'));
             if (!name.endsWith(".3840.nx2") || !LENGTHS.containsKey(nx2)) {
@@ -207,6 +209,15 @@ public class GameFilesFetchTest {
         assertEquals(message, failure.getMessage());
     }
 
+    /** Neither a Back nor a stop left behind: the start's next step runs. */
+    private static void assertNothingStops() {
+        try {
+            Cancellation.check();
+        } catch (Cancellation.Cancelled e) {
+            throw new AssertionError(Cancellation.requested() ? "a Back left behind" : "a stop left behind");
+        }
+    }
+
     /** What a download stopped half way leaves: env and textures whole, as ensure keeps them. */
     private void envAndTexturesWhole() throws IOException {
         File game = mStorage.game(3840);
@@ -284,8 +295,57 @@ public class GameFilesFetchTest {
         assertEquals(2, mDownload.downloads);
         assertEquals("the second, with the yes, unwatched", 1, mConnectivity.watches);
         assertEquals(1, mConnectivity.closed);
-        assertFalse("no Cancel left behind", Cancellation.requested());
+        assertNothingStops();
         assertTrue(mLines.contains("The network has become metered: the download stops, and the player is asked about the rest"));
+    }
+
+    /** Back in the same moment as the network's word: the start ends, as the activity says Back does, and nothing asks. */
+    @Test
+    public void backAsTheNetworkBecomesMeteredUnderTheDownloadCancelsTheStart() {
+        mDownload.during.add(() -> {
+            mConnectivity.becomeMetered();
+            Cancellation.request();
+            Cancellation.check();
+        });
+
+        assertFailure(GameStart.Code.CANCELLED, "Back ended the start while it fetched what the game needs", failure(3840));
+
+        assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+        assertEquals(1, mDownload.downloads);
+        assertEquals(1, mConnectivity.closed);
+        assertEquals("not measured again", 10, mUpdater.heads.size());
+        assertFalse(mLines.contains("The network has become metered: the download stops, and the player is asked about the rest"));
+    }
+
+    /** The app's own download got the version since the start looked: nothing is measured, asked about or downloaded. */
+    @Test
+    public void aVersionTheAppGotSinceTheStartLookedIsReadyWithoutAQuestion() throws Exception {
+        GameFilesTest.makeReady(mStorage, 3840);
+        mConnectivity.metered = true;
+
+        fetch(3840);
+
+        assertEquals(Collections.emptyList(), mUpdater.heads);
+        assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+        assertEquals(0, mDownload.downloads);
+        assertEquals(Collections.singletonList("FAF game version 3840 is ready"), mLines);
+    }
+
+    /** The app's own download, which the stopped one waited for, finished it: no question about a rest there is not. */
+    @Test
+    public void aVersionTheAppGotAfterAMeteredStopIsReadyWithoutAQuestion() throws Exception {
+        mDownload.during.add(() -> {
+            mConnectivity.becomeMetered();
+            GameFilesTest.makeReady(mStorage, 3840);
+            Cancellation.check();
+        });
+
+        fetch(3840);
+
+        assertTrue(GameFiles.ready(mStorage, 3840));
+        assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+        assertEquals(1, mDownload.downloads);
+        assertNothingStops();
     }
 
     @Test
@@ -312,7 +372,7 @@ public class GameFilesFetchTest {
         fetch(3840);
 
         assertTrue(GameFiles.ready(mStorage, 3840));
-        assertFalse(Cancellation.requested());
+        assertNothingStops();
         assertEquals(1, mDownload.downloads);
         assertEquals(Collections.emptyList(), mPlayer.askedAbout);
     }

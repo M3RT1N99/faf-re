@@ -123,8 +123,12 @@ final class GameFiles {
     }
 
     /**
-     * {@code version}'s lock file, open, once this holds its lock: while another download of the version holds it (the
-     * other process's, or another thread's of this one) this waits, which Cancel ends. Closing the channel lets go.
+     * {@code version}'s lock file, open, once this holds its lock: while another download of the version holds it, the other
+     * process's, this waits, which Cancel ends. Closing the channel lets go. Another thread's hold in this process is waited
+     * for too (OverlappingFileLockException), but each process downloads on one thread (TestService's job, the game's
+     * preparation), and so it should stay: on Linux the end of any channel of a process on the file lets go of the process's
+     * lock, also one that another channel took, and the other process would download beside it (so on the emulator's Android
+     * 16, 2026-11-24).
      */
     private static FileChannel lock(Storage storage, int version, Log log) throws IOException {
         FileChannel channel = FileChannel.open(lockFile(storage, version).toPath(), StandardOpenOption.CREATE,

@@ -30,7 +30,9 @@ final class GameFilesFetch {
         throws GameStart.Failure {
         String what = "FAF game version " + version;
         try {
-            for (boolean yes = false;;) {
+            // Ready also when the app's own download (GameFiles.ensure's lock) got it since the start looked, or since the
+            // network became metered under this one: nothing to measure or ask about.
+            for (boolean yes = false; !GameFiles.ready(storage, version);) {
                 log.step("Measuring the download of " + what);
                 long bytes = GameFiles.toDownload(storage.game(version), storage.downloads(), version, requests);
                 String noRoom = NewestGameFiles.noRoom(bytes, download.room());
@@ -52,9 +54,9 @@ final class GameFilesFetch {
                     // Measured again: the rest is what the player is asked about.
                     continue;
                 }
-                log.line(what + " is ready");
-                return;
+                break;
             }
+            log.line(what + " is ready");
         } catch (Cancellation.Cancelled e) {
             throw GameStart.Failure.cancelled();
         } catch (IOException e) {
@@ -64,14 +66,14 @@ final class GameFilesFetch {
 
     /**
      * The files on a network that is not metered: false when it became metered under the download, which stopped it as Cancel
-     * does, though it is no Cancel.
+     * does, though it is no Cancel (Cancellation.stop). A Back meanwhile, even in the same moment, is the start's Cancelled.
      */
     private static boolean downloadedUnmetered(int version, NewestGameFilesJob.Connectivity connectivity,
         NewestGameFilesJob.Download download, GameFiles.Log log) throws IOException {
         AtomicBoolean becameMetered = new AtomicBoolean();
         NewestGameFilesJob.Watch watch = connectivity.watch(() -> {
             if (!becameMetered.getAndSet(true)) {
-                Cancellation.request();
+                Cancellation.stop();
             }
         });
         boolean ready;
@@ -79,7 +81,7 @@ final class GameFilesFetch {
             download.files(version);
             ready = true;
         } catch (Cancellation.Cancelled e) {
-            if (!becameMetered.get()) {
+            if (Cancellation.requested() || !becameMetered.get()) {
                 throw e;
             }
             ready = false;
@@ -87,8 +89,8 @@ final class GameFilesFetch {
             watch.close();
         }
         if (becameMetered.get()) {
-            // Its stop, or its word after the last file, which nothing has to stop any more.
-            Cancellation.reset();
+            // Its stop, or its word after the last file, which nothing has to stop any more. A Back stays.
+            Cancellation.clearStop();
             if (!ready) {
                 log.line("The network has become metered: the download stops, and the player is asked about the rest");
             }
