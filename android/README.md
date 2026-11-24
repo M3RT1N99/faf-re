@@ -402,9 +402,9 @@ have its version code: either installs over the other, and over 0.16.0, and keep
   and App info's *Open* lead there (*The setup*, below). It shows SCFA's logo, read at run time from the player's own
   SCFA import, wherever Android lets an app choose its picture then: its entry in Recents (`setTaskDescription`), a
   notification's large icon, and the setup screen. The APK's own icon stays this project's neutral one, and nothing of
-  the game's art goes into the APK ([LEGAL.md](../LEGAL.md)). Open: whether `engine` keeps FAF's LAN screen, and with it
-  `NetworkGameService`, which keeps a LAN game going in the back, and the permissions they need; nothing of this
-  contract depends on it.
+  the game's art goes into the APK ([LEGAL.md](../LEGAL.md)). `engine` keeps FAF's LAN screen, and with it
+  `NetworkGameService`, which keeps a LAN game going in the back, and the permissions they need: a LAN game is FAF's own
+  menu's, started in the game, not a launcher's start, so `start_kinds` does not name it.
 - **`cards`**, `faf-re-android-<version>-<abis>.apk` as now, for testers: the status, the inbox and the SCFA import as
   `engine` has them, the test cards with their icon, and contract 1's start, which takes lobby games too and fetches
   what the phone lacks.
@@ -622,10 +622,10 @@ and finish what lands there, made as `start_needs` is: off the main thread, as a
 allowed callers only. A failure answers as a start's result does: `failure`, its code, and `message`, with `NO_ROOM`
 also `bytes_to_free`. Nothing is locked while the client downloads, as nothing else writes the inbox; a version's lock
 is held for the moves alone. Only in `cards` can the app drop a version's inbox itself, when the Game card's job
-settles on another version and drops what is unfinished of the last one. The calls are the same whatever the client's
-source: FAF's API, whose list of a version's files has their MD5s, for a player who signed in, or FAF's updater, whose
-names carry the version (`lua.3840.nx2`, `init_faf_3840.lua`, as this app's own downloads take them) and which has no
-MD5s.
+settles on another version and drops what is unfinished of the last one. A version's files come from FAF's API, whose
+list of a version's files has their MD5s, for a player who signed in, as the desktop client gets them: so each
+`game/` entry comes with its MD5. FAF's updater, whose names carry the version (`lua.3840.nx2`, `init_faf_3840.lua`)
+and which has no MD5s, stays the source of `cards`' own downloads alone.
 
 | Entry | The file |
 |---|---|
@@ -635,8 +635,9 @@ MD5s.
 | `mods/<uid>/<file>` | A mod's zip, `<uid>` by `MODS`' rule and `<file>` by `MOD_FILES`' |
 
 - **`files_begin`**, with `version` (int, 0 when no entry is a version's), `entries` (String[]), `sizes` (long[]: for
-  each entry the length its server said, -1 for none) and, optional, `md5s` (String[]: for each entry FAF's MD5, 32 hex
-  digits, `""` for none; left out, none has one); a version's entries are of `version` alone. The app skips what the
+  each entry the length its server said, -1 for none) and `md5s` (String[]: for each entry FAF's MD5, 32 hex digits,
+  required for a `game/` entry, `""` for a map's or a mod's without one; a `game/` entry without it gives `ARGUMENTS`);
+  a version's entries are of `version` alone. The app skips what the
   phone has whole; keeps each entry's size and MD5 beside its part for the entry's commit, also after either app's
   process ended (a later begin's replace them, and a part longer than its new size starts over); claims the room for
   what is left with 100 MB to spare, before any grant (each size less its part's length, and the sizes that no server
