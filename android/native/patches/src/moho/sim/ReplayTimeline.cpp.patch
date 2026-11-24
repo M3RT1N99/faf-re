@@ -1,5 +1,5 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..070409d 100644
+index e4f93ae..c36d9c8 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
 @@ -589,6 +589,12 @@ namespace moho
@@ -15,3 +15,20 @@ index e4f93ae..070409d 100644
        wchar_t exePath[MAX_PATH] = {};
        fa::vector<fa::string> initArgs;
        if (
+@@ -1179,9 +1185,13 @@ namespace moho
+     }
+     // Or will be: a save stops the sim, which shows.
+ #if !FAFRE_PLATFORM_WINDOWS
+-    // Still running: waitpid reaps nothing yet.
+-    if (replay_KeyframeQuietDisk && sPreparePid > 0 && ::waitpid(sPreparePid, nullptr, WNOHANG) == 0) {
+-      return;
++    // Still running: waitpid reaps nothing yet. A process it has reaped is forgotten: its id is free for another one,
++    // which StopKeyframePreparation's kill would hit.
++    if (replay_KeyframeQuietDisk && sPreparePid > 0) {
++      if (::waitpid(sPreparePid, nullptr, WNOHANG) == 0) {
++        return;
++      }
++      sPreparePid = 0;
+     }
+ #else
+     if (
