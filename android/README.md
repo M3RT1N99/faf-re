@@ -622,8 +622,9 @@ client), takes what the folder import takes, by its rules (`ScfaImport`):
   `ZipInputStream` does with `/` alone (`ZipPathValidator`), and every file the import writes is resolved under `scfa/`.
 - **Room**: before it writes anything, the files it writes must fit in the phone's room with 100 MB to spare, as FAF's
   game files' must, and the import claims it (`Room`), or the log says how much they need and how much more to free; as
-  it writes it checks again at each file and every 64 MB, and stops when what it still has to write no longer fits,
-  with how much more to free for the next import.
+  it writes it checks again at each file and every 64 MB, asking Android at most every 30 s (it counts the caches for
+  each answer, seconds at worst, and `StorageManager` asks so of a write that goes on; an SCFA folder has some 1,800
+  files), and stops when what it still has to write no longer fits, with how much more to free for the next import.
 - **All or nothing**: the files go to `scfa/.zip-import/`, and from there to their places once the whole ZIP has been
   read. A refusal, a Cancel or a failure leaves `scfa/` as it was, and what an import whose process ended left there goes
   as the next import begins, a ZIP's or the folder's, before its room is checked. The progress shows as the folder

@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipInputStream;
@@ -39,6 +41,12 @@ final class ScfaZip {
     static final int MOST_ENTRIES = 100_000;
     /** How often, in bytes written, the import checks the phone's room again within a file. */
     static final long CHECK_ROOM_EVERY = 64L << 20;
+    /**
+     * The least time between two of the import's questions for the room while it writes, as StorageManager asks of a write
+     * that goes on: Android counts the caches it may clear for each answer (getAllocatableBytes, seconds at worst), and an
+     * SCFA folder has some 1,800 files.
+     */
+    static final long ASK_ROOM_EVERY_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     /** A ZIP's first bytes: its first entry's local header. */
     private static final byte[] LOCAL_HEADER = {'P', 'K', 3, 4};
@@ -132,6 +140,11 @@ final class ScfaZip {
      * not fit, and Android's failure when the room cannot be said or claimed.
      */
     static void run(Storage storage, Source source, Room room) throws IOException {
+        run(storage, source, room, System::nanoTime);
+    }
+
+    /** The import, with {@code clock} the nanoseconds that space its questions for the room as it writes. */
+    static void run(Storage storage, Source source, Room room, LongSupplier clock) throws IOException {
         // First, as the room it holds counts against this import's own, whatever comes of the ZIP.
         dropStaging(storage.scfa);
         Plan plan;
@@ -144,7 +157,7 @@ final class ScfaZip {
             if (plan.files > 0) {
                 // With the spare that FAF's game files leave too, claimed: Android clears the caches it counted now.
                 room.claim("the import", plan.bytes);
-                write(source, entries, plan, storage.scfa, room);
+                write(source, entries, plan, storage.scfa, new ToWrite(room, plan.bytes, clock));
             }
         } catch (ZipException | EOFException e) {
             // A damaged or cut-off ZIP, or one Android 14's ZipInputStream refuses (ZipPathValidator: a name with "..").
@@ -174,10 +187,9 @@ final class ScfaZip {
      * leaves it, which they leave for their places once all are whole. Its entries must be the list's, and the phone's room
      * must hold what is still to write.
      */
-    private static void write(Source source, List<Entry> entries, Plan plan, File scfa, Room room) throws IOException {
+    private static void write(Source source, List<Entry> entries, Plan plan, File scfa, ToWrite toWrite) throws IOException {
         File staging = new File(scfa, STAGING);
         try {
-            ToWrite toWrite = new ToWrite(room, plan.bytes);
             byte[] buffer = new byte[1 << 16];
             try (ZipInputStream zip = open(source)) {
                 for (int i = 0; i <= plan.last; ++i) {
@@ -233,21 +245,32 @@ final class ScfaZip {
 
     /**
      * What the import still has to write while it writes, which must fit in the phone's room: checked at each file and every
-     * CHECK_ROOM_EVERY bytes in one, so that it stops before the storage is full where something else took the room. The
-     * spare that the claim before held takes what the file system adds of its own.
+     * CHECK_ROOM_EVERY bytes in one, Android asked at most every ASK_ROOM_EVERY_NANOS, so that it stops before the storage is
+     * full where something else took the room. The spare that the claim before held takes what the file system adds of its
+     * own, and what something else takes between two questions.
      */
     private static final class ToWrite {
         private final Room room;
+        private final LongSupplier clock;
         private long left;
         private long unchecked;
+        /** When Android was asked last: the claim's question, right before the import writes. */
+        private long asked;
 
-        ToWrite(Room room, long bytes) {
+        ToWrite(Room room, long bytes, LongSupplier clock) {
             this.room = room;
+            this.clock = clock;
             left = bytes;
+            asked = clock.getAsLong();
         }
 
         void check() throws IOException {
             unchecked = 0;
+            long time = clock.getAsLong();
+            if (time - asked < ASK_ROOM_EVERY_NANOS) {
+                return;
+            }
+            asked = time;
             long now = room.allocatable();
             if (now < left) {
                 // A new import finds this and what this one wrote, which goes with it, and needs all of it and the spare.

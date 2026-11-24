@@ -25,7 +25,10 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
@@ -418,6 +421,12 @@ public class ScfaZipTest {
         assertEquals(Arrays.asList(), files(storage.scfa));
     }
 
+    /** A clock that has gone on by the time between two of the import's questions for the room at each look at it. */
+    private static LongSupplier everyLookAQuestion() {
+        AtomicLong clock = new AtomicLong();
+        return () -> clock.addAndGet(ScfaZip.ASK_ROOM_EVERY_NANOS);
+    }
+
     @Test
     public void roomThatRunsShortAsTheImportWritesStopsItCleanly() throws IOException {
         Storage storage = storage();
@@ -425,7 +434,7 @@ public class ScfaZipTest {
         // Room at the claim, then 10 bytes, as another app fills the phone while the import writes: the next import needs
         // the 53 bytes of the files and the spare, and finds these 10 bytes.
         ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(scfaInAFolder()),
-            new RoomTest.Fake(() -> asked.incrementAndGet() == 1 ? 1L << 40 : 10)));
+            new RoomTest.Fake(() -> asked.incrementAndGet() == 1 ? 1L << 40 : 10), everyLookAQuestion()));
         assertEquals("the phone's storage ran short while the import wrote: free 101 MB more on the phone", refused.getMessage());
         assertEquals(Arrays.asList(), files(storage.scfa));
     }
@@ -443,10 +452,28 @@ public class ScfaZipTest {
         // At the claim and at the file's start there is room; after 64 MB of it there is none, and the next import needs the
         // 128 MB still to write and the spare.
         ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(big),
-            new RoomTest.Fake(() -> asked.incrementAndGet() <= 2 ? 1L << 40 : 0)));
+            new RoomTest.Fake(() -> asked.incrementAndGet() <= 2 ? 1L << 40 : 0), everyLookAQuestion()));
         assertEquals(3, asked.get());
         assertEquals("the phone's storage ran short while the import wrote: free 228 MB more on the phone", refused.getMessage());
         assertEquals(Arrays.asList(), files(storage.scfa));
+    }
+
+    /**
+     * Android answers by counting the caches it may clear (StorageManager.getAllocatableBytes, which may take seconds): an
+     * import of an SCFA folder's 1,800 files asks at its claim and then at most every 30 s, not at each file.
+     */
+    @Test
+    public void theRoomIsAskedAgainAtMostEvery30SecondsNotAtEachFile() throws IOException {
+        RoomTest.Fake room = new RoomTest.Fake(1L << 40);
+        ScfaZip.run(storage(), source(scfaInAFolder()), room);
+        assertEquals("the claim's question alone for 7 files written at once", 1, room.asked);
+
+        // 10 s on at each look at the clock: the claim's at 10 s, then the 7 files at 20 to 80 s.
+        AtomicLong clock = new AtomicLong();
+        RoomTest.Fake paced = new RoomTest.Fake(1L << 40);
+        ScfaZip.run(new Storage(folder.newFolder()), source(scfaInAFolder()), paced,
+            () -> clock.addAndGet(TimeUnit.SECONDS.toNanos(10)));
+        assertEquals("the claim's, the third file's at 40 s and the sixth's at 70 s", 3, paced.asked);
     }
 
     @Test
