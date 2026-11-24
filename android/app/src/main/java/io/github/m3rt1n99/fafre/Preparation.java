@@ -8,7 +8,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Locale;
 
 /**
  * What a start fetches or copies before its program starts: the map and the mods it names into the game's vault, from
@@ -21,7 +20,7 @@ final class Preparation {
     /** The replay's copy in the app's files, which the command line's /replay names. */
     static final String REPLAY_COPY = "launcher-replay.SCFAreplay";
     /** Far more than any FAF replay: what a launcher's replay may be at most. */
-    static final long REPLAY_LIMIT = 256L << 20;
+    static final long REPLAY_LIMIT = 256 * Sizes.MB;
 
     /** What the activity shows while a preparation runs; null while none does. */
     private static volatile String sStep;
@@ -105,7 +104,7 @@ final class Preparation {
                     GameReport.append(mContext, "game: " + text);
                 }
             };
-            Http.Progress progress = (done, total) -> sStep = mDownload + "\n" + megabytes(done, total);
+            Http.Progress progress = (done, total) -> sStep = mDownload + "\n" + Sizes.progress(done, total);
             if (mMap != null && !Vault.inScfa(mStorage, mMap)) {
                 try {
                     Vault.fetchMap(mStorage, Storage.mkdirs(new File(mVault, "maps")), mMap, log, Http.WITH_RETRIES, progress);
@@ -197,7 +196,7 @@ final class Preparation {
                 while ((read = in.read(buffer)) > 0) {
                     copied += read;
                     if (copied > REPLAY_LIMIT) {
-                        throw GameStart.Failure.replay("it is larger than " + (REPLAY_LIMIT >> 20) + " MB");
+                        throw GameStart.Failure.replay("it is larger than " + REPLAY_LIMIT / Sizes.MB + " MB");
                     }
                     out.write(buffer, 0, read);
                     Cancellation.check();
@@ -217,11 +216,5 @@ final class Preparation {
             }
         }
         GameReport.append(mContext, "game: the launcher's replay, " + copied + " bytes, copied for /replay");
-    }
-
-    private static String megabytes(long done, long total) {
-        return total > 0
-            ? String.format(Locale.ROOT, "%.1f of %.1f MB", done / 1048576.0, total / 1048576.0)
-            : String.format(Locale.ROOT, "%.1f MB", done / 1048576.0);
     }
 }

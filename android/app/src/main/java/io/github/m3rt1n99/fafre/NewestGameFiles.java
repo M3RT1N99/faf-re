@@ -1,7 +1,5 @@
 package io.github.m3rt1n99.fafre;
 
-import java.util.Locale;
-
 /**
  * The Game card's "Get FAF's newest version": where its job (NewestGameFilesJob, TestService's ACTION_GAME_FILES) is,
  * and the card's line on it. The job's thread sets it and MainActivity polls it; every access holds the class lock. No
@@ -33,8 +31,8 @@ final class NewestGameFiles {
         DOWNLOAD
     }
 
-    /** A download's size when the updater does not say it: more than any version's so far (3840: 682 MB). */
-    static final long UNSAID_BYTES = 750L << 20;
+    /** A download's size when the updater does not say it: more than any version's so far (3840: 716 MB). */
+    static final long UNSAID_BYTES = 750 * Sizes.MB;
 
     final Phase phase;
     /** FAF's newest version, -1 until a check has found it. */
@@ -160,13 +158,14 @@ final class NewestGameFiles {
     }
 
     /**
-     * "682 MB" in MB of 1,048,576 bytes, as Android's data usage counts them; "less than 1 MB" rather than "0 MB"; or the
-     * order of size that every version has when the updater did not say.
+     * A download's size: "716 MB" as every line of the app says sizes (Sizes), rounded up, also on a metered network,
+     * though Android's data usage counts MB of 1,048,576 bytes; "less than 1 MB" where only the init file is left, which
+     * toDownload does not count; or the order of size that every version has when the updater did not say.
      */
     static String size(long bytes) {
         if (bytes < 0) {
             return "about 700 MB";
         }
-        return bytes < 1048576 ? "less than 1 MB" : String.format(Locale.ROOT, "%.0f MB", bytes / 1048576.0);
+        return bytes < Sizes.MB ? "less than 1 MB" : Sizes.of(bytes);
     }
 }

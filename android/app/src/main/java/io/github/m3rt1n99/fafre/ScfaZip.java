@@ -40,7 +40,7 @@ final class ScfaZip {
     /** Far more entries than an SCFA folder has files (1,826 on Steam): the list stays in memory. */
     static final int MOST_ENTRIES = 100_000;
     /** How often, in bytes written, the import checks the phone's room again within a file. */
-    static final long CHECK_ROOM_EVERY = 64L << 20;
+    static final long CHECK_ROOM_EVERY = 64 * Sizes.MB;
     /**
      * The least time between two of the import's questions for the room while it writes, as StorageManager asks of a write
      * that goes on: Android counts the caches it may clear for each answer (getAllocatableBytes, seconds at worst), and an

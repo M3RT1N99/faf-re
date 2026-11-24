@@ -26,7 +26,7 @@ import org.junit.rules.TemporaryFolder;
 
 /** The Game card's job on each of its paths, with GitHub, FAF's updater, the network and the phone as each test sets them up. */
 public class NewestGameFilesJobTest {
-    /** 3840's packages on FAF's updater, as it had them (mods not published), 682 MB. */
+    /** 3840's packages on FAF's updater, as it had them (mods not published), 716 MB. */
     private static final Map<String, Long> LENGTHS = new HashMap<>();
     private static final long BYTES = 715_047_073L;
 
@@ -338,8 +338,8 @@ public class NewestGameFilesJobTest {
         run(-1);
 
         assertState(NewestGameFiles.Phase.FAILED, 3840);
-        assertEquals("it needs 782 MB: free 496 MB more on the phone", NewestGameFiles.now().note);
-        assertEquals("FAF game version 3840 needs 782 MB: free 496 MB more on the phone", lastLog());
+        assertEquals("it needs 816 MB: free 516 MB more on the phone", NewestGameFiles.now().note);
+        assertEquals("FAF game version 3840 needs 816 MB: free 516 MB more on the phone", lastLog());
         assertNull("no question", NewestGameFiles.question());
 
         run(3840);
@@ -376,7 +376,7 @@ public class NewestGameFilesJobTest {
 
         mConnectivity.metered = false;
         mRoom.allocatableFails = null;
-        mRoom.allocateFails = new IOException("Android cannot clear 782 MB on the phone's storage for the write: not freed");
+        mRoom.allocateFails = new IOException("Android cannot clear 816 MB on the phone's storage for the write: not freed");
         assertSame(mRoom.allocateFails, assertThrows(IOException.class, () -> run(-1)));
         assertState(NewestGameFiles.Phase.FAILED, 3840);
         assertEquals(mRoom.allocateFails.getMessage(), NewestGameFiles.now().note);

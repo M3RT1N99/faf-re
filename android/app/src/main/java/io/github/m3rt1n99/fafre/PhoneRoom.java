@@ -38,7 +38,7 @@ final class PhoneRoom extends Room {
         try {
             mManager.allocateBytes(volume(), bytes);
         } catch (IOException | RuntimeException e) {
-            throw failed("clear " + NewestGameFiles.size(bytes) + " on the phone's storage for the write", e);
+            throw failed("clear " + Sizes.of(bytes) + " on the phone's storage for the write", e);
         }
     }
 

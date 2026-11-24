@@ -282,9 +282,10 @@ the game data they imported. Everything lives in the app's external files folder
   of FAForever/fa (`api.github.com/repos/FAForever/fa/releases/latest`, no key: 60 requests an hour from one address,
   which phones on mobile data may share), taken when FAF's updater has its `init_faf_<v>.lua`; a release that is tagged
   but not deployed yet gives way to the next lower numeric tag that is (`/tags`, at most five tried). The size is the
-  updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 682 MB). It must fit
-  in the phone's room with 100 MB to spare (750 MB counted when the updater does not say), or the card says how much
-  more to free and nothing is downloaded (`Room`). The room is what Android lets the app allocate
+  updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 716 MB; every size
+  the app shows is in MB of 1,000,000 bytes, from 1,000 MB on in GB, as Android's storage settings count them, and
+  rounded up, `Sizes`). It must fit in the phone's room with 100 MB to spare (750 MB counted when the updater does not
+  say), or the card says how much more to free and nothing is downloaded (`Room`). The room is what Android lets the app allocate
   (`StorageManager.getAllocatableBytes`), which keeps Android's own low reserve free (496 MB on the emulator's 10 GB,
   near which Android empties the apps' caches and installs fail) and counts the caches Android may clear for the app;
   right before the download the app claims it (`allocateBytes`), and Android clears those caches then. A call of
@@ -479,7 +480,7 @@ which ends its process, or any other end of the process there, which takes the a
 | `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name |
 | `NO_MOD` | A mod of `MODS` is not on the phone, and `MOD_FILES` names none of it, FAF has no such file, or it holds another uid |
 | `DOWNLOAD` | A download of `GAME_VERSION`'s game files, the map or a mod failed: the network, after its tries, or the phone's storage, Android's calls for the room among it, and a disk that became full under the download (`No space left on device`), which not every write can tell apart: the next start measures first and gives `NO_ROOM` |
-| `NO_ROOM` | `GAME_VERSION`'s game files do not fit in the phone's room (what Android lets the app allocate: its own low reserve kept free, the caches it may clear counted) with 100 MB to spare, before any byte: `message` says what they need and how much more to free (`FAF game version 3839 needs 782 MB: free 620 MB more on the phone`), `bytes_to_free` the bytes |
+| `NO_ROOM` | `GAME_VERSION`'s game files do not fit in the phone's room (what Android lets the app allocate: its own low reserve kept free, the caches it may clear counted) with 100 MB to spare, before any byte: `message` says what they need and how much more to free, in MB as the phone's storage settings count them, rounded up (`FAF game version 3839 needs 816 MB: free 651 MB more on the phone`), `bytes_to_free` the exact bytes |
 | `REPLAY` | The data is no `content://` URI of another app's, the start does not grant reading it (`FLAG_GRANT_READ_URI_PERMISSION`), or it could not be copied (empty, more than 256 MB) |
 | `CANCELLED` | Back ended the start while it fetched, unpacked or copied what the game needs, or the player said no to the game files' download on a metered network |
 

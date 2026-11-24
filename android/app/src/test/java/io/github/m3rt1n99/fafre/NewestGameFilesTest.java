@@ -11,7 +11,7 @@ import org.junit.Test;
 
 /** The Game card's line on FAF's newest version, and what its job does next. */
 public class NewestGameFilesTest {
-    /** 3840's packages on FAF's updater, 682 MB. */
+    /** 3840's packages on FAF's updater, 716 MB. */
     private static final long BYTES = 715_047_073L;
 
     private static String line(NewestGameFiles.Phase phase, int newest, long bytes, String note, int phone) {
@@ -45,9 +45,9 @@ public class NewestGameFilesTest {
 
     @Test
     public void theSizeComesFirst() {
-        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\n3840 is 682 MB from FAF; on a metered network the app asks first, "
+        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\n3840 is 716 MB from FAF; on a metered network the app asks first, "
             + "and the button asks again", line(NewestGameFiles.Phase.ASKING, 3840, BYTES, "", 3835));
-        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nDownloading 3840 (682 MB): see Progress",
+        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nDownloading 3840 (716 MB): see Progress",
             line(NewestGameFiles.Phase.DOWNLOADING, 3840, BYTES, "", 3835));
         assertEquals("about 700 MB", NewestGameFiles.size(-1));
     }
@@ -73,7 +73,7 @@ public class NewestGameFilesTest {
     @Test
     public void tooLittleRoomPromisesNoDownloadThatBegan() {
         Room.NoRoom noRoom = new Room.NoRoom("FAF game version 3840", BYTES + Room.SPARE_BYTES, 300_000_000L);
-        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 failed: it needs 782 MB: free 496 MB more on the "
+        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 failed: it needs 816 MB: free 516 MB more on the "
             + "phone; the button tries again, keeping anything downloaded so far",
             line(NewestGameFiles.Phase.FAILED, 3840, BYTES, noRoom.line("it"), 3835));
     }
@@ -126,7 +126,7 @@ public class NewestGameFilesTest {
         NewestGameFiles.downloading(3840, BYTES);
         assertNull("a download asks nothing", NewestGameFiles.pending());
         NewestGameFiles.asking(3840, BYTES);
-        NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, "it needs 782 MB: free 496 MB more on the phone");
+        NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, "it needs 816 MB: free 516 MB more on the phone");
         assertNull("a job that ended asks nothing", NewestGameFiles.pending());
     }
 
@@ -138,7 +138,7 @@ public class NewestGameFilesTest {
         assertEquals(0, NewestGameFiles.counted(0));
         Room.NoRoom noRoom = assertThrows(Room.NoRoom.class,
             () -> new RoomTest.Fake(800_000_000L).check("FAF game version 3841", NewestGameFiles.counted(-1)));
-        assertEquals("FAF game version 3841 needs 850 MB: free 88 MB more on the phone", noRoom.getMessage());
+        assertEquals("FAF game version 3841 needs 850 MB: free 50 MB more on the phone", noRoom.getMessage());
         RoomTest.Fake fits = new RoomTest.Fake(NewestGameFiles.UNSAID_BYTES + Room.SPARE_BYTES);
         fits.check("FAF game version 3841", NewestGameFiles.counted(-1));
     }

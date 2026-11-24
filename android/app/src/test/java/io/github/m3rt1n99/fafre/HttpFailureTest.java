@@ -149,7 +149,7 @@ public class HttpFailureTest {
 
     /**
      * The measurement's last HEAD, during which the user cancels (in its second of pacing or while it runs), gets its
-     * answer: the job would go on to ask "Download 682 MB on a metered network?" after the Cancel. A request the user
+     * answer: the job would go on to ask "Download 716 MB on a metered network?" after the Cancel. A request the user
      * cancelled while it ran is a Cancelled, answered or not.
      */
     @Test(timeout = 60_000)

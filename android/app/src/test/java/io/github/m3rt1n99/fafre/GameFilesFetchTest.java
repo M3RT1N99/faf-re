@@ -31,7 +31,7 @@ import org.junit.rules.Timeout;
  * room and the player's answers as each test sets them up, and the start's code and line where it fails.
  */
 public class GameFilesFetchTest {
-    /** 3840's packages on FAF's updater, as it had them (mods not published), 682 MB. */
+    /** 3840's packages on FAF's updater, as it had them (mods not published), 716 MB. */
     private static final Map<String, Long> LENGTHS = new HashMap<>();
     private static final long BYTES = 715_047_073L;
 
@@ -235,8 +235,8 @@ public class GameFilesFetchTest {
     }
 
     private static final long REST = BYTES - LENGTHS.get("env") - LENGTHS.get("textures");
-    /** 3840's room with the spare: 782 MB, which 300,000,000 bytes leave 496 MB short of. */
-    private static final String NO_ROOM_LINE = "FAF game version 3840 needs 782 MB: free 496 MB more on the phone";
+    /** 3840's room with the spare: 816 MB, which 300,000,000 bytes leave 516 MB short of. */
+    private static final String NO_ROOM_LINE = "FAF game version 3840 needs 816 MB: free 516 MB more on the phone";
 
     @Test
     public void onANetworkThatIsNotMeteredTheVersionIsMeasuredAndDownloadedWithoutAQuestion() throws Exception {
@@ -249,7 +249,7 @@ public class GameFilesFetchTest {
         assertEquals(1, mDownload.downloads);
         assertEquals("watched until it ended", 1, mConnectivity.watches);
         assertEquals(1, mConnectivity.closed);
-        assertEquals(Arrays.asList("FAF game version 3840 is not on the phone: 682 MB to download", "FAF game version 3840 is ready"),
+        assertEquals(Arrays.asList("FAF game version 3840 is not on the phone: 716 MB to download", "FAF game version 3840 is ready"),
             mLines);
     }
 
@@ -265,7 +265,7 @@ public class GameFilesFetchTest {
         assertEquals("asked before the question, and again at the claim after it", 2, mRoom.asked);
         assertEquals(Collections.singletonList(BYTES + Room.SPARE_BYTES), mRoom.claims);
         assertEquals(0, mConnectivity.watches);
-        assertEquals("FAF game version 3840 is not on the phone: 682 MB to download, which the player said yes to on a metered "
+        assertEquals("FAF game version 3840 is not on the phone: 716 MB to download, which the player said yes to on a metered "
             + "network", mLines.get(0));
     }
 
@@ -274,7 +274,7 @@ public class GameFilesFetchTest {
         mConnectivity.metered = true;
         mPlayer.answers.add(false);
 
-        assertFailure(GameStart.Code.CANCELLED, "the player did not download FAF game version 3840 (682 MB) on a metered network",
+        assertFailure(GameStart.Code.CANCELLED, "the player did not download FAF game version 3840 (716 MB) on a metered network",
             failure(3840));
 
         assertEquals(0, mDownload.downloads);
@@ -372,7 +372,7 @@ public class GameFilesFetchTest {
         });
         mPlayer.answers.add(false);
 
-        assertFailure(GameStart.Code.CANCELLED, "the player did not download FAF game version 3840 (116 MB) on a metered network",
+        assertFailure(GameStart.Code.CANCELLED, "the player did not download FAF game version 3840 (123 MB) on a metered network",
             failure(3840));
 
         assertTrue("kept for the next start", new File(mStorage.game(3840), "gamedata/env.nx2").isFile());
@@ -484,8 +484,8 @@ public class GameFilesFetchTest {
 
         mConnectivity.metered = false;
         mRoom.allocatableFails = null;
-        mRoom.allocateFails = new IOException("Android cannot clear 782 MB on the phone's storage for the write: not freed");
-        assertFailure(GameStart.Code.DOWNLOAD, "FAF game version 3840: Android cannot clear 782 MB on the phone's storage for "
+        mRoom.allocateFails = new IOException("Android cannot clear 816 MB on the phone's storage for the write: not freed");
+        assertFailure(GameStart.Code.DOWNLOAD, "FAF game version 3840: Android cannot clear 816 MB on the phone's storage for "
             + "the write: not freed", failure(3840));
 
         assertEquals(0, mConnectivity.watches);

@@ -32,7 +32,7 @@ public class GameStartTest {
     private static final File INIT = new File("parity/game/3841/bin/init_game.lua");
     private static final File LOG = new File("game/engine.sclog");
     private static final String PROGRAM = new File(GAME, GameStart.PROGRAM).getPath();
-    /** 3839's game files with the spare, 782 MB, of which 620 MB more are to free. */
+    /** 3839's game files with the spare, 816 MB, of which 620 MB of 1,048,576 bytes are to free: 651 MB, as the line says. */
     private static final long NEEDS = 715_047_073L + Room.SPARE_BYTES;
     private static final long TO_FREE = 620L << 20;
 
@@ -207,10 +207,10 @@ public class GameStartTest {
             {"NO_MAP", "the map x: HTTP 404 for https://content.faforever.com/maps/x.zip"},
             {"NO_MOD", "the mod 5678abcd: y.zip holds the mod 1234abcd, not 5678abcd"},
             {"DOWNLOAD", "the map x: Connection reset"},
-            {"NO_ROOM", "FAF game version 3839 needs 782 MB: free 620 MB more on the phone"},
+            {"NO_ROOM", "FAF game version 3839 needs 816 MB: free 651 MB more on the phone"},
             {"REPLAY", "the replay: it is empty"},
             {"CANCELLED", "Back ended the start while it fetched what the game needs"},
-            {"CANCELLED", "the player did not download FAF game version 3840 (682 MB) on a metered network"},
+            {"CANCELLED", "the player did not download FAF game version 3840 (716 MB) on a metered network"},
         };
         EnumSet<GameStart.Code> codes = EnumSet.noneOf(GameStart.Code.class);
         for (int i = 0; i < expected.length; ++i) {
@@ -232,8 +232,8 @@ public class GameStartTest {
 
         assertEquals(GameStart.Code.NO_ROOM, failure.code);
         assertEquals(TO_FREE, failure.bytesToFree);
-        assertEquals(Arrays.asList("game: the start failed, NO_ROOM: FAF game version 3839 needs 782 MB: free 620 MB more on the "
-            + "phone", "END: FAIL: FAF game version 3839 needs 782 MB: free 620 MB more on the phone"), failure.reportLines());
+        assertEquals(Arrays.asList("game: the start failed, NO_ROOM: FAF game version 3839 needs 816 MB: free 651 MB more on the "
+            + "phone", "END: FAIL: FAF game version 3839 needs 816 MB: free 651 MB more on the phone"), failure.reportLines());
     }
 
     @Test

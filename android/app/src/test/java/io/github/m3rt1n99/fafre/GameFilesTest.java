@@ -221,6 +221,10 @@ public class GameFilesTest {
             if (name.equals(failing)) {
                 throw new IOException("Connection reset");
             }
+            if (name.equals("env")) {
+                // As far as a download of env's 501,595,718 bytes has come.
+                progress.bytes(4_999_999L, 501_595_718L);
+            }
             downloaded.add(name);
             try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(dest))) {
                 zip.putNextEntry(new ZipEntry(name + "/a.bp"));
@@ -265,6 +269,29 @@ public class GameFilesTest {
         assertEquals("what was missing", Arrays.asList("textures", "units"), updater.downloaded);
         assertEquals(GameFiles.ciInit(INIT), new String(Files.readAllBytes(new File(storage.game(3840), "bin/init_ci.lua").toPath()),
             StandardCharsets.UTF_8));
+    }
+
+    /** The steps and lines say sizes as the player reads them (Sizes): what has come rounded down, the whole up. */
+    @Test
+    public void aDownloadsStepsAndLinesSaySizesAsThePlayerReadsThem() throws IOException {
+        List<String> steps = new ArrayList<>();
+        List<String> lines = new ArrayList<>();
+        GameFiles.Log log = new GameFiles.Log() {
+            @Override
+            public void line(String text) {
+                lines.add(text);
+            }
+
+            @Override
+            public void step(String text) {
+                steps.add(text);
+            }
+        };
+
+        GameFiles.ensure(new Storage(folder.getRoot()), 3840, log, new Updater());
+
+        assertTrue(steps.toString(), steps.contains("Downloading FAF env.3840.nx2: 4 of 502 MB"));
+        assertTrue("the small archive's line, " + lines, lines.contains("env.3840.nx2: 1 MB"));
     }
 
     /** What a download of 3840 left (a part, a whole package, the manifest) goes; another version's partial download stays. */

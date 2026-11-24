@@ -7,14 +7,14 @@ import java.io.IOException;
  * (GameFilesFetch), the Game card's download of FAF's newest (NewestGameFilesJob) and the SCFA import's ZIP (ScfaZip).
  * It is what Android lets the app allocate there, which keeps Android's own low reserve free and counts the caches
  * Android may clear for the app, and a write must fit in it with SPARE_BYTES on top. By the free space alone, a start's
- * 682 MB on the emulator's 10 GB left 512 MB, near that reserve (496 MB there): installd emptied the apps' caches, and
- * installs failed. Right before the write the app claims the room, and Android clears those caches then, rather than
- * the write meeting a full disk. A call that Android fails throws, and the write does not start. No Android in here,
- * for the tests: PhoneRoom is the phone's.
+ * download of 3840 (716 MB) on the emulator's 10 GB left the phone near that reserve: installd emptied the apps' caches,
+ * and installs failed. Right before the write the app claims the room, and Android clears those caches then, rather than
+ * the write meeting a full disk. A call that Android fails throws, and the write does not start. The lines say sizes as
+ * Android's storage settings count them (Sizes). No Android in here, for the tests: PhoneRoom is the phone's.
  */
 abstract class Room {
     /** What a write leaves on top of Android's reserve, for the game's and the replay runs' own files. */
-    static final long SPARE_BYTES = 100L << 20;
+    static final long SPARE_BYTES = 100 * Sizes.MB;
 
     /** A write that does not fit: its line says what it needs and how much more the player must free. */
     static final class NoRoom extends IOException {
@@ -35,7 +35,7 @@ abstract class Room {
         }
 
         private static String line(String what, long needs, long toFree) {
-            return what + " needs " + NewestGameFiles.size(needs) + ": " + free(toFree);
+            return what + " needs " + Sizes.of(needs) + ": " + free(toFree);
         }
     }
 
@@ -60,8 +60,8 @@ abstract class Room {
         allocate(bytes + SPARE_BYTES);
     }
 
-    /** "free 621 MB more on the phone": the MB rounded up, so that freeing as much makes the write fit. */
+    /** "free 651 MB more on the phone": rounded up, so that freeing as much makes the write fit. */
     static String free(long bytes) {
-        return "free " + ((bytes + (1L << 20) - 1) >> 20) + " MB more on the phone";
+        return "free " + Sizes.of(bytes) + " more on the phone";
     }
 }

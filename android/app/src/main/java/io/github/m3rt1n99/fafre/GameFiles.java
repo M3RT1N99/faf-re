@@ -21,7 +21,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -194,8 +193,7 @@ final class GameFiles {
                 try {
                     log.step("Downloading FAF " + remote);
                     downloads.download(Http.GAME_URL + remote, download, (done, total) ->
-                        log.step(String.format(Locale.ROOT, "Downloading FAF %s: %.0f / %s MB", remote, done / 1048576.0,
-                            total < 0 ? "?" : String.format(Locale.ROOT, "%.0f", total / 1048576.0))));
+                        log.step("Downloading FAF " + remote + ": " + Sizes.progress(done, total)));
                 } catch (Http.StatusException e) {
                     if (e.status == 404 && !REQUIRED.contains(name)) {
                         log.line(remote + ": not published for " + version);
@@ -206,7 +204,7 @@ final class GameFiles {
                 }
                 checkArchive(download);
                 Files.move(download.toPath(), packed.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                log.line(String.format(Locale.ROOT, "%s: %.1f MB", remote, packed.length() / 1048576.0));
+                log.line(remote + ": " + Sizes.of(packed.length()));
                 manifest.put(remote, "whole");
             }
             write(new File(dir, "fa_path.lua"),

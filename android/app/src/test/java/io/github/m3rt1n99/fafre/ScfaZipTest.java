@@ -383,7 +383,7 @@ public class ScfaZipTest {
     @Test
     public void tooLittleRoomIsSaidBeforeAnythingIsWritten() throws IOException {
         Storage storage = storage();
-        long bytes = (300L << 20) + 1;
+        long bytes = 300 * Sizes.MB + 1;
         byte[] zip = new Zip().deflated("gamedata/lua.scd", "lua archive").bytes();
         // The list's size is what counts: a big file, small in the ZIP.
         File big = folder.newFile("big.zip");
@@ -393,9 +393,9 @@ public class ScfaZipTest {
             out.closeEntry();
         }
         assertTrue(big.length() < (1 << 20));
-        RoomTest.Fake tooLittle = new RoomTest.Fake(350L << 20);
+        RoomTest.Fake tooLittle = new RoomTest.Fake(350 * Sizes.MB);
         Room.NoRoom noRoom = assertThrows(Room.NoRoom.class, () -> ScfaZip.run(storage, source(big), tooLittle));
-        assertEquals("the import needs 400 MB: free 51 MB more on the phone", noRoom.getMessage());
+        assertEquals("the import needs 401 MB: free 51 MB more on the phone", noRoom.getMessage());
         assertEquals(Arrays.asList(), tooLittle.claims);
         assertFalse(storage.scfa.exists());
         // What fits, with the spare the downloads leave too, claimed before the import writes.
