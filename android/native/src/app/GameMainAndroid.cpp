@@ -66,7 +66,9 @@ namespace
   /// and whose Direct3D choices would leave the game with no renderer at all.
   char gVulkanSwitch[] = "/vulkan";
 
-  std::int64_t gStartMilliseconds = 0;
+  /// When the program began (FafGameMain), the report's clock; -1 before it, when the activity's lines (Game.report) have
+  /// no time on it, as the start's preparation's have none (GameReport.append). Set on SDL's thread, read on any.
+  std::atomic<std::int64_t> gStartMilliseconds{-1};
   std::atomic<bool> gFirstFrameReported{false};
 
   std::int64_t NowMilliseconds()
@@ -210,7 +212,8 @@ namespace
 
 namespace platform::android
 {
-  /// A line of the report, as the app reads it: "<ms since the start> ms: <text>". Also to the system log.
+  /// A line of the report, as the app reads it: "<ms since the start> ms: <text>", or "<text>" alone for one of the
+  /// activity's from before the program's start. Also to the system log.
   void Report(const std::string& line)
   {
     __android_log_print(ANDROID_LOG_INFO, kLogTag, "game: %s", line.c_str());
@@ -219,7 +222,12 @@ namespace platform::android
       return;
     }
     if (std::FILE* const file = std::fopen(path, "a")) {
-      std::fprintf(file, "%lld ms: %s\n", static_cast<long long>(NowMilliseconds() - gStartMilliseconds), line.c_str());
+      const std::int64_t start = gStartMilliseconds.load();
+      if (start < 0) {
+        std::fprintf(file, "%s\n", line.c_str());
+      } else {
+        std::fprintf(file, "%lld ms: %s\n", static_cast<long long>(NowMilliseconds() - start), line.c_str());
+      }
       std::fclose(file);
     }
   }

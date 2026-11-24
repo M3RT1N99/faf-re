@@ -532,7 +532,7 @@ public final class GameActivity extends SDLActivity {
     protected void onStop() {
         // The last of a finished activity in front that is sure to come: Android may end the process before onDestroy.
         if (isFinishing() && !mBesideProgram && mFailure == null && runningProgram() != null) {
-            reportFinished("stops", sPreparing);
+            Game.report(ProgramEnd.finished("stops", sPreparing));
         }
         super.onStop();
     }
@@ -573,7 +573,7 @@ public final class GameActivity extends SDLActivity {
             // ends. SDL's onDestroy would wait a second for the program here and then take down the lifecycle's mutexes
             // under a program that is still ending; its end ends the process, or the app does.
             boolean preparing = sPreparing;
-            reportFinished("is destroyed", preparing);
+            Game.report(ProgramEnd.finished("is destroyed", preparing));
             nativeSendQuit();
             getSystemService(ClipboardManager.class).removePrimaryClipChangedListener(mClipboardHandler);
             destroyWithoutQuit();
@@ -592,17 +592,6 @@ public final class GameActivity extends SDLActivity {
         // process for one made anew around a program, and would end it.
         if (mFailure != null || sPreparing) {
             System.exit(0);
-        }
-    }
-
-    /** The report's line when the activity, finished, {@code step}s while the program runs, or its preparation (ProgramEnd). */
-    private void reportFinished(String step, boolean preparing) {
-        String line = ProgramEnd.finished(step, preparing);
-        if (preparing) {
-            // As the preparation's own lines: the report's lines with the program's clock begin with the program.
-            GameReport.append(this, line);
-        } else {
-            Game.report(line);
         }
     }
 
