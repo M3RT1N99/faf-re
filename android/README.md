@@ -537,7 +537,8 @@ launcher's `finishActivity`; the task's end in Recents. A player who goes back t
 finish while the start's preparation runs ends it too, with `RESULT_CANCELED` and no program, as Android itself sends
 the result of an activity it finishes. The program is asked to quit, as SDL's own end of the activity does, and the
 process ends with it, or by the app when the program has not ended 5 s later: the report says so, and `last_game`'s
-`end` begins `the app ended the process` then.
+`end` begins `the app ended the process` then. The result comes before that end: until the process has ended,
+`game_running` is 1 and `last_game` has no end yet.
 
 The game connects to the `/gpgnet` port; when nothing listens there, or the launcher closes the connection before its
 `CreateLobby`, the game says so in a box and ends after its OK (`RESULT_CANCELED`), unless it was started with `/rejoin`
