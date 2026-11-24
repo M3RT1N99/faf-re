@@ -530,6 +530,15 @@ which ends its process, or any other end of the process there, which takes the a
 | `REPLAY` | The data is no `content://` URI of another app's, the start does not grant reading it (`FLAG_GRANT_READ_URI_PERMISSION`), or it could not be copied (empty, more than 256 MB) |
 | `CANCELLED` | Back ended the start while it fetched, unpacked or copied what the game needs, or the player said no to the game files' download on a metered network |
 
+**The launcher's task.** The game's activity is in the launcher's task, above the activity that started it, and
+whatever finishes it there ends the game, with `RESULT_CANCELED` at once: the launcher's own activity brought back to
+the front by its icon, which clears what is above it when its `launchMode` is `singleTask`, as the FAF client's is; the
+launcher's `finishActivity`; the task's end in Recents. A player who goes back to the client that way ends the game. A
+finish while the start's preparation runs ends it too, with `RESULT_CANCELED` and no program, as Android itself sends
+the result of an activity it finishes. The program is asked to quit, as SDL's own end of the activity does, and the
+process ends with it, or by the app when the program has not ended 5 s later: the report says so, and `last_game`'s
+`end` begins `the app ended the process` then.
+
 The game connects to the `/gpgnet` port; when nothing listens there, or the launcher closes the connection before its
 `CreateLobby`, the game says so in a box and ends after its OK (`RESULT_CANCELED`), unless it was started with `/rejoin`
 or has joined a game server (`/connectserver`, the launcher's `JoinServer`): those go on without the launcher, with no

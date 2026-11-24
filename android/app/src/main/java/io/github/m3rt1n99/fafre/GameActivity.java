@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.os.SystemClock;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -528,6 +529,15 @@ public final class GameActivity extends SDLActivity {
     // --- The activity ---------------------------------------------------------------------------
 
     @Override
+    protected void onStop() {
+        // The last of a finished activity in front that is sure to come: Android may end the process before onDestroy.
+        if (isFinishing() && !mBesideProgram && mFailure == null && runningProgram() != null) {
+            reportFinished("stops", sPreparing);
+        }
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         mHandler.removeCallbacks(mPoll);
         if (mQuestion != null) {
@@ -546,7 +556,8 @@ public final class GameActivity extends SDLActivity {
             }
             return;
         }
-        if (runningProgram() != null && !isFinishing()) {
+        Thread program = runningProgram();
+        if (program != null && !isFinishing()) {
             // Android destroys a stopped activity when it wants the memory, and at once under the developer option "Don't
             // keep activities": the program goes on, as a Windows program does without its window, and the next activity
             // shows it (onCreate).
@@ -557,18 +568,48 @@ public final class GameActivity extends SDLActivity {
             destroyWithoutQuit();
             return;
         }
+        if (program != null && mFailure == null) {
+            // Finished while the program or its preparation runs (ProgramEnd): no activity can show it again, and the game
+            // ends. SDL's onDestroy would wait a second for the program here and then take down the lifecycle's mutexes
+            // under a program that is still ending; its end ends the process, or the app does.
+            boolean preparing = sPreparing;
+            reportFinished("is destroyed", preparing);
+            nativeSendQuit();
+            getSystemService(ClipboardManager.class).removePrimaryClipChangedListener(mClipboardHandler);
+            destroyWithoutQuit();
+            if (preparing) {
+                // Its program would start after the quit, with no activity.
+                GameReport.append(this, ProgramEnd.PREPARATION_ENDED);
+                System.exit(0);
+            }
+            Context app = getApplicationContext();
+            ProgramEnd.watch(program, ProgramEnd.QUIT_GRACE_MS, line -> GameReport.append(app, line),
+                () -> Process.killProcess(Process.myPid()));
+            return;
+        }
         super.onDestroy();
         // A game that could not start leaves no process behind: SDL's activity takes the next start in this
-        // process for one made anew around a program, and would end it. So does one whose launcher finished it while its
-        // preparation ran (Activity.finishActivity), which would start the program after SDL's quit.
+        // process for one made anew around a program, and would end it.
         if (mFailure != null || sPreparing) {
             System.exit(0);
         }
     }
 
+    /** The report's line when the activity, finished, {@code step}s while the program runs, or its preparation (ProgramEnd). */
+    private void reportFinished(String step, boolean preparing) {
+        String line = ProgramEnd.finished(step, preparing);
+        if (preparing) {
+            // As the preparation's own lines: the report's lines with the program's clock begin with the program.
+            GameReport.append(this, line);
+        } else {
+            Game.report(line);
+        }
+    }
+
     /**
-     * SDL's onDestroy for an activity while the program goes on: SDL's would end the program (nativeSendQuit) and take down
-     * the lifecycle's mutexes under it (nativeQuit); for an activity whose libraries did not load it does only the rest.
+     * SDL's onDestroy without its end of the program, for an activity while the program goes on or ends by itself: SDL's
+     * would ask the program to quit (nativeSendQuit), wait a second for it and take down the lifecycle's mutexes under it
+     * (nativeQuit); for an activity whose libraries did not load it does only the rest.
      */
     private void destroyWithoutQuit() {
         mBrokenLibraries = true;
