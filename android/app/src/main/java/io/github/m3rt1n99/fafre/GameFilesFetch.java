@@ -10,10 +10,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * starts: from FAF's updater by the rules of the Game card's download of FAF's newest (NewestGameFilesJob). Their size
  * first, which must fit in the phone's room with room to spare (Room); then on a metered network the player's yes to it,
  * and without a yes the download runs only on a network that is not metered: one that becomes metered under it stops it,
- * and the player is asked about the rest. A yes covers no more than its question named: a rest that grew past it while
- * the player was asked, as the Game card's job dropped the version's unfinished files (GameFiles.dropUnfinished), is
- * asked about again. Right before each download the room is claimed for what is left then, measured again after a
- * question, as the app's own download of the version (GameFiles.ensure's lock) may have gone on meanwhile.
+ * and the player is asked about the rest. A yes covers no more than its question named: a rest that grew past it, as the
+ * Game card's job dropped the version's unfinished files (GameFiles.dropUnfinished) while the player was asked or before
+ * the download held the version's lock, is asked about again. Right before each download the room is claimed for what is
+ * left then, measured again after a question, as the app's own download of the version (GameFiles.ensure's lock) may
+ * have gone on meanwhile; under that lock, right before the first byte, what is left is counted once more, and a rest
+ * that grew past the claim is measured again: claimed again, and past a yes asked about again.
  * GameFiles.ensure keeps what the phone has, the other versions and what an earlier try got of this one, and goes on from
  * there. Its end is the start's: the files are ready, or NO_GAME_FILES when FAF has none of the version, NO_ROOM when they
  * do not fit, DOWNLOAD for the network or the phone's storage, Android's calls for the room among it, CANCELLED for Back
@@ -32,15 +34,27 @@ final class GameFilesFetch {
         boolean yes(int version, long bytes) throws IOException;
     }
 
+    /** The download onto the phone, GameFiles.ensure: {@code before} runs under the version's lock, right before the first byte. */
+    interface Download {
+        void files(int version, GameFiles.BeforeDownload before) throws IOException;
+    }
+
     /** Before a question: the bytes one was about are -1 or more. */
     private static final long NOT_ASKED = Long.MIN_VALUE;
+
+    /** What is left under the version's lock, more than the claim before the download counted: measured again. */
+    private static final class Grown extends IOException {
+        Grown(String message) {
+            super(message);
+        }
+    }
 
     private GameFilesFetch() {
     }
 
     /** {@code version}'s files ready on the phone, or the start's failure. */
     static void run(Storage storage, int version, GameFiles.Log log, Http.Requests requests,
-        NewestGameFilesJob.Connectivity connectivity, Room room, NewestGameFilesJob.Download download, Question question)
+        NewestGameFilesJob.Connectivity connectivity, Room room, Download download, Question question)
         throws GameStart.Failure {
         String what = "FAF game version " + version;
         Http.Requests lengths = lengthsOnce(requests);
@@ -74,11 +88,29 @@ final class GameFilesFetch {
                     + (yes ? ", which the player said yes to on a metered network" : ""));
                 // Checked right before the download, as a question waited for the player, and claimed: Android clears the
                 // caches it counted now, rather than the download meeting a full disk.
-                room.claim(what, NewestGameFiles.counted(bytes));
-                if (yes) {
-                    download.files(version);
-                } else if (!downloadedUnmetered(version, connectivity, download, log)) {
-                    // Measured again: the player is asked about the rest, unless a yes covers it.
+                long claimed = NewestGameFiles.counted(bytes);
+                room.claim(what, claimed);
+                // What is left, counted once more under the version's lock, where no other download can change it any more:
+                // the Game card's job may have dropped the version's unfinished files since the measure, as Android cleared
+                // caches for the claim or the download waited for the lock. The download gets no more than the claim
+                // counted, and so no more than a yes covers.
+                GameFiles.BeforeDownload withinClaim = () -> {
+                    long left = GameFiles.toDownload(storage.game(version), storage.downloads(), version, lengths);
+                    if (NewestGameFiles.counted(left) > claimed) {
+                        throw new Grown(what + ": " + NewestGameFiles.size(left) + " are to download now, more than the "
+                            + "claim before the download counted: measured again");
+                    }
+                };
+                try {
+                    if (yes) {
+                        download.files(version, withinClaim);
+                    } else if (!downloadedUnmetered(version, connectivity, download, withinClaim, log)) {
+                        // Measured again: the player is asked about the rest, unless a yes covers it.
+                        continue;
+                    }
+                } catch (Grown e) {
+                    // Measured again: claimed again, and asked about where it grew past a yes on a metered network.
+                    log.line(e.getMessage());
                     continue;
                 }
                 break;
@@ -136,8 +168,8 @@ final class GameFilesFetch {
      * The files on a network that is not metered: false when it became metered under the download, which stopped it as Cancel
      * does, though it is no Cancel (Cancellation.stop). A Back meanwhile, even in the same moment, is the start's Cancelled.
      */
-    private static boolean downloadedUnmetered(int version, NewestGameFilesJob.Connectivity connectivity,
-        NewestGameFilesJob.Download download, GameFiles.Log log) throws IOException {
+    private static boolean downloadedUnmetered(int version, NewestGameFilesJob.Connectivity connectivity, Download download,
+        GameFiles.BeforeDownload before, GameFiles.Log log) throws IOException {
         AtomicBoolean becameMetered = new AtomicBoolean();
         NewestGameFilesJob.Watch watch = connectivity.watch(() -> {
             if (!becameMetered.getAndSet(true)) {
@@ -146,7 +178,7 @@ final class GameFilesFetch {
         });
         boolean ready;
         try {
-            download.files(version);
+            download.files(version, before);
             ready = true;
         } catch (Cancellation.Cancelled e) {
             if (Cancellation.requested() || !becameMetered.get()) {
@@ -155,13 +187,14 @@ final class GameFilesFetch {
             ready = false;
         } finally {
             watch.close();
-        }
-        if (becameMetered.get()) {
-            // Its stop, or its word after the last file, which nothing has to stop any more. A Back stays.
-            Cancellation.clearStop();
-            if (!ready) {
-                log.line("The network has become metered: the download stops, and the player is asked about the rest");
+            if (becameMetered.get()) {
+                // Its stop, or its word after the last file or as the download found more to get than claimed, which
+                // nothing has to stop any more: the measure that follows would end at it. A Back stays.
+                Cancellation.clearStop();
             }
+        }
+        if (!ready) {
+            log.line("The network has become metered: the download stops, and the player is asked about the rest");
         }
         return ready;
     }

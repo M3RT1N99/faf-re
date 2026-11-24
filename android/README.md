@@ -433,8 +433,10 @@ before a question and again right before the download, which claims the room for
 much more to free): after a question, or a metered stop, the phone's files are counted again against the lengths the
 updater said, as the app's own download of the version may have gone on meanwhile, and a version it finished needs
 nothing more; on a metered network the activity asks before it with that size, and a no ends the start (`CANCELLED`);
-a yes covers no more than the size it was to (716 MB: 716,000,000 bytes), and a rest that grew past it while the
-player was asked, as the Game card's job dropped the version's unfinished files, is asked about again;
+a yes covers no more than the size it was to (716 MB: 716,000,000 bytes), and a rest that grew past it, as the Game
+card's job dropped the version's unfinished files while the player was asked or before the download held the version's
+lock, is asked about again: under that lock, right before the first byte, what is left is counted once more, and more
+than the claim counted is measured, claimed and, past a yes, asked about again;
 without a yes it runs only on a network that is not metered, and one that becomes metered under it stops it and asks
 about the rest. `GameFiles.ensure` gets the files as the replay test does,
 with the activity showing each package's progress, and keeps what is there: the other versions, side by side, and what an

@@ -123,11 +123,16 @@ final class GameFiles {
     }
 
     /** What a download of a version does under its lock right before its first byte. */
-    private interface BeforeDownload {
+    interface BeforeDownload {
         void run() throws IOException;
     }
 
-    private static File ensure(Storage storage, int version, Log log, Http.Downloads downloads, BeforeDownload before)
+    /**
+     * The pack folder for {@code version} as {@link #ensure} gets it, with {@code before} run once it holds the version's
+     * lock and finds the version not ready, right before the first byte: what is left to download then is what this
+     * download gets, as no other download can change it (dropUnfinished, too, needs the lock).
+     */
+    static File ensure(Storage storage, int version, Log log, Http.Downloads downloads, BeforeDownload before)
         throws IOException {
         File dir = storage.game(version);
         if (ready(storage, version)) {

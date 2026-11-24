@@ -155,8 +155,8 @@ final class Preparation {
             }
         };
         GameFilesFetch.run(mStorage, mFetchVersion, files, Http.ONE_TRY, new PhoneNetwork(mContext),
-            new PhoneRoom(mContext, mStorage), version -> GameFiles.ensure(mStorage, version, files, Http.WITH_RETRIES),
-            this::askToDownload);
+            new PhoneRoom(mContext, mStorage),
+            (version, before) -> GameFiles.ensure(mStorage, version, files, Http.WITH_RETRIES, before), this::askToDownload);
         try {
             GameFiles.gameInit(mContext.getAssets(), mStorage.game(mFetchVersion), mVault);
         } catch (IOException e) {

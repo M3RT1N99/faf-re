@@ -150,20 +150,45 @@ public class GameFilesFetchTest {
         void run() throws IOException;
     }
 
-    /** The download, which checks the Cancel at its start as ensure does. */
-    private final class Download implements NewestGameFilesJob.Download {
+    /**
+     * The download as GameFiles.ensure runs it: the Cancel checked at its start, and unless the version is ready once it holds
+     * the version's lock, the fetch's look under the lock before the first byte.
+     */
+    private final class Download implements GameFilesFetch.Download {
+        /** What each download meets before it holds the lock, in turn: what the Game card's job did since the measure. */
+        final Deque<Step> beforeLock = new ArrayDeque<>();
+        /** What comes as a download whose look under the lock failed lets go of it: the network's word in that moment. */
+        Step lettingGo;
         /** What each download meets once it has started, in turn; none for the rest. */
         final Deque<Step> during = new ArrayDeque<>();
         /** What the download does after its last file, before it returns. */
         Step after;
         int downloads;
+        /** The downloads that the look under the lock let through to their first byte. */
+        int started;
 
         @Override
-        public void files(int version) throws IOException {
+        public void files(int version, GameFiles.BeforeDownload before) throws IOException {
             assertEquals(3840, version);
             ++downloads;
             assertEquals("the room is claimed right before each download", downloads, mRoom.claims.size());
             Cancellation.check();
+            Step meanwhile = beforeLock.poll();
+            if (meanwhile != null) {
+                meanwhile.run();
+            }
+            if (GameFiles.ready(mStorage, version)) {
+                return;
+            }
+            try {
+                before.run();
+            } catch (IOException e) {
+                if (lettingGo != null) {
+                    lettingGo.run();
+                }
+                throw e;
+            }
+            ++started;
             Step step = during.poll();
             if (step != null) {
                 step.run();
@@ -553,6 +578,64 @@ public class GameFilesFetchTest {
         assertEquals("the yes covers it, on any network", 0, mConnectivity.watches);
     }
 
+    /** The Game card's job drops the version's unfinished files after the last measure, before the download holds the lock. */
+    private void droppedBeforeTheLock() {
+        mDownload.beforeLock.add(() -> assertTrue(GameFiles.dropUnfinished(mStorage, 3840)));
+    }
+
+    /**
+     * The drop came after the measure that the yes covered, as Android cleared caches for the claim: the look under the lock
+     * finds 716 MB where the yes was to 123 MB, and the player is asked again before a byte.
+     */
+    @Test
+    public void aRestThatGrewPastTheYesBeforeTheDownloadHeldTheLockIsAskedAboutAgain() throws Exception {
+        envAndTexturesWhole();
+        mConnectivity.metered = true;
+        droppedBeforeTheLock();
+        mPlayer.answers.add(true);
+        mPlayer.answers.add(true);
+
+        fetch(3840);
+
+        assertTrue(GameFiles.ready(mStorage, 3840));
+        assertEquals(Arrays.asList(REST, BYTES), mPlayer.askedAbout);
+        assertEquals(Arrays.asList(REST + Room.SPARE_BYTES, BYTES + Room.SPARE_BYTES), mRoom.claims);
+        assertEquals("the first got no byte", 1, mDownload.started);
+        assertTrue(mLines.toString(), mLines.contains("FAF game version 3840: 716 MB are to download now, more than the claim "
+            + "before the download counted: measured again"));
+    }
+
+    /** Without a question too: what the claim counted is all that comes, and the rest that grew is claimed before a byte. */
+    @Test
+    public void aRestThatGrewPastTheClaimBeforeTheDownloadHeldTheLockIsClaimedAgain() throws Exception {
+        envAndTexturesWhole();
+        droppedBeforeTheLock();
+
+        fetch(3840);
+
+        assertTrue(GameFiles.ready(mStorage, 3840));
+        assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+        assertEquals(Arrays.asList(REST + Room.SPARE_BYTES, BYTES + Room.SPARE_BYTES), mRoom.claims);
+        assertEquals(1, mDownload.started);
+        assertEquals("each watched", 2, mConnectivity.watches);
+        assertEquals(2, mConnectivity.closed);
+    }
+
+    /** The network's word that it is metered as the download let go of the lock over the rest that grew: no stop is left. */
+    @Test
+    public void aMeteredWordAsTheDownloadFoundMoreThanItsClaimLeavesNoStopBehind() throws Exception {
+        envAndTexturesWhole();
+        droppedBeforeTheLock();
+        mDownload.lettingGo = mConnectivity::becomeMetered;
+        mPlayer.answers.add(true);
+
+        fetch(3840);
+
+        assertTrue(GameFiles.ready(mStorage, 3840));
+        assertEquals("asked about the rest, not CANCELLED", Collections.singletonList(BYTES), mPlayer.askedAbout);
+        assertNothingStops();
+    }
+
     /** Never another measure in its place: a room call that Android fails is the start's DOWNLOAD, before any byte. */
     @Test
     public void aRoomCallThatAndroidFailsEndsTheStartWithDownloadBeforeAQuestionAndAnyByte() {
@@ -646,7 +729,7 @@ public class GameFilesFetchTest {
         File kept = new File(mStorage.game(3841), "gamedata/units.nx2");
         GameFilesTest.touch(kept);
         GameFilesTest.Updater updater = new GameFilesTest.Updater();
-        NewestGameFilesJob.Download phone = version -> GameFiles.ensure(mStorage, version, mLog, updater);
+        GameFilesFetch.Download phone = (version, before) -> GameFiles.ensure(mStorage, version, mLog, updater, before);
 
         GameFilesFetch.run(mStorage, 3840, mLog, mUpdater, mConnectivity, mRoom, phone, mPlayer);
 
