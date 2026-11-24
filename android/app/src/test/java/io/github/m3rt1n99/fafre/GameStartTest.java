@@ -32,6 +32,9 @@ public class GameStartTest {
     private static final File INIT = new File("parity/game/3841/bin/init_game.lua");
     private static final File LOG = new File("game/engine.sclog");
     private static final String PROGRAM = new File(GAME, GameStart.PROGRAM).getPath();
+    /** 3839's game files with the spare, 782 MB, of which 620 MB more are to free. */
+    private static final long NEEDS = 715_047_073L + Room.SPARE_BYTES;
+    private static final long TO_FREE = 620L << 20;
 
     @Rule
     public final TemporaryFolder folder = new TemporaryFolder();
@@ -181,6 +184,7 @@ public class GameStartTest {
             GameStart.fetchFailure(new Vault.Missing("y.zip holds the mod 1234abcd, not 5678abcd"), GameStart.Code.NO_MOD,
                 "the mod 5678abcd"),
             GameStart.fetchFailure(new IOException("Connection reset"), GameStart.Code.NO_MAP, "the map x"),
+            GameStart.Failure.noRoom(new Room.NoRoom("FAF game version 3839", NEEDS, NEEDS - TO_FREE)),
             GameStart.Failure.replay("it is empty"), GameStart.Failure.cancelled(), GameStart.Failure.notDownloaded(3840, 715_047_073L));
         String[][] expected = {
             {"NO_SCFA", "no Supreme Commander: Forged Alliance imported yet"},
@@ -203,6 +207,7 @@ public class GameStartTest {
             {"NO_MAP", "the map x: HTTP 404 for https://content.faforever.com/maps/x.zip"},
             {"NO_MOD", "the mod 5678abcd: y.zip holds the mod 1234abcd, not 5678abcd"},
             {"DOWNLOAD", "the map x: Connection reset"},
+            {"NO_ROOM", "FAF game version 3839 needs 782 MB: free 620 MB more on the phone"},
             {"REPLAY", "the replay: it is empty"},
             {"CANCELLED", "Back ended the start while it fetched what the game needs"},
             {"CANCELLED", "the player did not download FAF game version 3840 (682 MB) on a metered network"},
@@ -213,9 +218,22 @@ public class GameStartTest {
             assertEquals(expected[i][0], failure.code.name());
             assertEquals(expected[i][1], failure.getMessage());
             assertFalse(failure.getMessage(), failure.getMessage().toLowerCase(Locale.ROOT).contains("card"));
+            // The result's bytes to free, NO_ROOM's alone.
+            assertEquals(failure.getMessage(), failure.code == GameStart.Code.NO_ROOM ? TO_FREE : 0, failure.bytesToFree);
             codes.add(failure.code);
         }
         assertEquals("each code is here", EnumSet.allOf(GameStart.Code.class), codes);
+    }
+
+    /** NO_ROOM stays apart from DOWNLOAD, as the player's remedy differs: its line and the result say how much more to free. */
+    @Test
+    public void aStartWhoseGameFilesDoNotFitSaysHowMuchMoreToFree() {
+        GameStart.Failure failure = GameStart.Failure.noRoom(new Room.NoRoom("FAF game version 3839", NEEDS, NEEDS - TO_FREE));
+
+        assertEquals(GameStart.Code.NO_ROOM, failure.code);
+        assertEquals(TO_FREE, failure.bytesToFree);
+        assertEquals(Arrays.asList("game: the start failed, NO_ROOM: FAF game version 3839 needs 782 MB: free 620 MB more on the "
+            + "phone", "END: FAIL: FAF game version 3839 needs 782 MB: free 620 MB more on the phone"), failure.reportLines());
     }
 
     @Test
@@ -224,12 +242,13 @@ public class GameStartTest {
         assertEquals("io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS", GameStart.EXTRA_LAUNCHER_ARGUMENTS);
         assertEquals("failure", GameStart.RESULT_FAILURE);
         assertEquals("message", GameStart.RESULT_MESSAGE);
+        assertEquals("bytes_to_free", GameStart.RESULT_BYTES_TO_FREE);
         List<String> names = new ArrayList<>();
         for (GameStart.Code code : GameStart.Code.values()) {
             names.add(code.name());
         }
         assertEquals(Arrays.asList("NO_SCFA", "NO_FONTS", "NO_GAME_FILES", "INIT_FILE", "ENVIRONMENT", "STORAGE", "ARGUMENTS",
-            "RUNNING", "PROCESS_ENDED", "CALLER", "NO_MAP", "NO_MOD", "DOWNLOAD", "REPLAY", "CANCELLED"), names);
+            "RUNNING", "PROCESS_ENDED", "CALLER", "NO_MAP", "NO_MOD", "DOWNLOAD", "NO_ROOM", "REPLAY", "CANCELLED"), names);
     }
 
     @Test

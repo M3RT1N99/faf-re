@@ -200,7 +200,7 @@ final class ScfaImport {
                     throw new IOException("the ZIP cannot be opened");
                 }
                 return in;
-            }, storage.root::getUsableSpace);
+            }, new PhoneRoom(context, storage));
         } catch (Cancellation.Cancelled e) {
             throw e;
         } catch (IOException e) {

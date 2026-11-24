@@ -26,6 +26,8 @@ final class GameStart {
     /** A failed start's result: the code, a {@link Code}'s name, and the failure's line. */
     static final String RESULT_FAILURE = "failure";
     static final String RESULT_MESSAGE = "message";
+    /** NO_ROOM's too, a long: how much more the player must free on the phone, in bytes. */
+    static final String RESULT_BYTES_TO_FREE = "bytes_to_free";
 
     /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
     static final String PROGRAM = "bin/ForgedAlliance.exe";
@@ -70,11 +72,13 @@ final class GameStart {
         NO_MAP,
         /** A mod of the start's MODS is not on the phone, and FAF has no file of it that MOD_FILES names. */
         NO_MOD,
-        /**
-         * A download of the start's game files, map or mods failed, or the game files do not fit: the network, or the phone's
-         * storage.
-         */
+        /** A download of the start's game files, map or mods failed: the network, or the phone's storage. */
         DOWNLOAD,
+        /**
+         * The game files of the start's version do not fit in the phone's room, Android's reserve and the spare kept (Room):
+         * apart from DOWNLOAD, as the player's remedy is to free RESULT_BYTES_TO_FREE more.
+         */
+        NO_ROOM,
         /** The start's replay (the intent's data) could not be read or copied. */
         REPLAY,
         /**
@@ -87,16 +91,19 @@ final class GameStart {
     /** A start that runs no program of its own: its code, and its line as the message, which names none of the test app's cards. */
     static final class Failure extends Exception {
         final Code code;
+        /** NO_ROOM's RESULT_BYTES_TO_FREE; 0 for the other codes. */
+        final long bytesToFree;
         /** The phone has no FAF game files at all, which the test app's cards get: FAF's newest, not a version FAF has not. */
         private final boolean mCardsGetThem;
 
         private Failure(Code code, String message) {
-            this(code, message, false);
+            this(code, message, false, 0);
         }
 
-        private Failure(Code code, String message, boolean cardsGetThem) {
+        private Failure(Code code, String message, boolean cardsGetThem, long bytesToFree) {
             super(message);
             this.code = code;
+            this.bytesToFree = bytesToFree;
             mCardsGetThem = cardsGetThem;
         }
 
@@ -152,6 +159,11 @@ final class GameStart {
 
         static Failure download(String why) {
             return new Failure(Code.DOWNLOAD, why);
+        }
+
+        /** The start's game files that do not fit (GameFilesFetch): Room's line, and the bytes the player must free. */
+        static Failure noRoom(Room.NoRoom e) {
+            return new Failure(Code.NO_ROOM, e.getMessage(), false, e.toFree);
         }
 
         static Failure replay(String why) {
@@ -247,7 +259,7 @@ final class GameStart {
         if (asked == null) {
             List<Integer> ready = GameFiles.readyVersions(storage);
             if (ready.isEmpty()) {
-                throw new Failure(Code.NO_GAME_FILES, "no whole FAF game files yet", true);
+                throw new Failure(Code.NO_GAME_FILES, "no whole FAF game files yet", true, 0);
             }
             return ready.get(ready.size() - 1);
         }

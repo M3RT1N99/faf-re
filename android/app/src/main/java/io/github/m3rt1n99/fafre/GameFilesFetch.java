@@ -6,13 +6,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * The game files of the version a start asks for (GameStart.version) when the phone has not got them, before the program
  * starts: from FAF's updater by the rules of the Game card's download of FAF's newest (NewestGameFilesJob). Their size
- * first, which must fit in the phone's free space with room to spare; then on a metered network the player's yes to it,
+ * first, which must fit in the phone's room with room to spare (Room); then on a metered network the player's yes to it,
  * and without a yes the download runs only on a network that is not metered: one that becomes metered under it stops it,
- * and the player is asked about the rest. GameFiles.ensure keeps what the phone has, the other versions and what an earlier
- * try got of this one, and goes on from there. Its end is the start's: the files are ready, or NO_GAME_FILES when FAF has
- * none of the version, DOWNLOAD for the network or the phone's storage, too little room among it, CANCELLED for Back and
- * for the player's no. No Android in here, for the tests: the Preparation gives it the phone's network, the download and
- * the question.
+ * and the player is asked about the rest. Right before each download the room is claimed. GameFiles.ensure keeps what the
+ * phone has, the other versions and what an earlier try got of this one, and goes on from there. Its end is the start's:
+ * the files are ready, or NO_GAME_FILES when FAF has none of the version, NO_ROOM when they do not fit, DOWNLOAD for the
+ * network or the phone's storage, Android's calls for the room among it, CANCELLED for Back and for the player's no.
+ *
+ * <p>A disk that becomes full under the download (ENOSPC) stays DOWNLOAD. Only the writes through java.io carry its errno
+ * (an ErrnoException as the cause), not ensure's moves and lock through java.nio nor File.renameTo, so it cannot be told
+ * apart for all of them; and NO_ROOM says how much to free, which a write that met a full disk does not know. The next
+ * start measures before any byte, and its NO_ROOM says it. No Android in here, for the tests: the Preparation gives it
+ * the phone's network, its room, the download and the question.
  */
 final class GameFilesFetch {
     /** The player, whom the start asks before a download on a metered network. */
@@ -26,7 +31,7 @@ final class GameFilesFetch {
 
     /** {@code version}'s files ready on the phone, or the start's failure. */
     static void run(Storage storage, int version, GameFiles.Log log, Http.Requests requests,
-        NewestGameFilesJob.Connectivity connectivity, NewestGameFilesJob.Download download, Question question)
+        NewestGameFilesJob.Connectivity connectivity, Room room, NewestGameFilesJob.Download download, Question question)
         throws GameStart.Failure {
         String what = "FAF game version " + version;
         try {
@@ -35,11 +40,9 @@ final class GameFilesFetch {
             for (boolean yes = false; !GameFiles.ready(storage, version);) {
                 log.step("Measuring the download of " + what);
                 long bytes = GameFiles.toDownload(storage.game(version), storage.downloads(), version, requests);
-                String noRoom = NewestGameFiles.noRoom(bytes, download.room());
-                if (noRoom != null) {
-                    throw GameStart.Failure.download(what + ": " + noRoom);
-                }
                 if (!yes && connectivity.metered()) {
+                    // A yes to a download that cannot fit would only fill the phone.
+                    room.check(what, NewestGameFiles.counted(bytes));
                     log.step(what + ": " + NewestGameFiles.size(bytes) + " to download on a metered network");
                     if (!question.yes(version, bytes)) {
                         throw GameStart.Failure.notDownloaded(version, bytes);
@@ -48,6 +51,9 @@ final class GameFilesFetch {
                 }
                 log.line(what + " is not on the phone: " + NewestGameFiles.size(bytes) + " to download"
                     + (yes ? ", which the player said yes to on a metered network" : ""));
+                // Checked right before the download, as a question waited for the player, and claimed: Android clears the
+                // caches it counted now, rather than the download meeting a full disk.
+                room.claim(what, NewestGameFiles.counted(bytes));
                 if (yes) {
                     download.files(version);
                 } else if (!downloadedUnmetered(version, connectivity, download, log)) {
@@ -57,6 +63,8 @@ final class GameFilesFetch {
                 break;
             }
             log.line(what + " is ready");
+        } catch (Room.NoRoom e) {
+            throw GameStart.Failure.noRoom(e);
         } catch (Cancellation.Cancelled e) {
             throw GameStart.Failure.cancelled();
         } catch (IOException e) {

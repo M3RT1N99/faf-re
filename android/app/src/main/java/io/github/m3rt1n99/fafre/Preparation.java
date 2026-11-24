@@ -156,17 +156,8 @@ final class Preparation {
             }
         };
         GameFilesFetch.run(mStorage, mFetchVersion, files, Http.ONE_TRY, new PhoneNetwork(mContext),
-            new NewestGameFilesJob.Download() {
-                @Override
-                public long room() {
-                    return mStorage.root.getUsableSpace();
-                }
-
-                @Override
-                public void files(int version) throws IOException {
-                    GameFiles.ensure(mStorage, version, files, Http.WITH_RETRIES);
-                }
-            }, this::askToDownload);
+            new PhoneRoom(mContext, mStorage), version -> GameFiles.ensure(mStorage, version, files, Http.WITH_RETRIES),
+            this::askToDownload);
         try {
             GameFiles.gameInit(mContext.getAssets(), mStorage.game(mFetchVersion), mVault);
         } catch (IOException e) {

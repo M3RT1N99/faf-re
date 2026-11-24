@@ -3,7 +3,6 @@ package io.github.m3rt1n99.fafre;
 import android.app.AlertDialog;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
@@ -239,8 +238,7 @@ public final class GameActivity extends SDLActivity {
      */
     private void result() {
         // For a starter that waits for the result, a launcher's activity (GameStart).
-        setResult(RESULT_FIRST_USER, new Intent().putExtra(GameStart.RESULT_FAILURE, mFailure.code.name())
-            .putExtra(GameStart.RESULT_MESSAGE, mFailure.getMessage()));
+        setResult(RESULT_FIRST_USER, LaunchGameActivity.result(mFailure));
         if (getCallingActivity() == null) {
             // The Game card's start or a test's: a starter that waits for the result says it in its own words.
             String line = mFailure.cardLine();

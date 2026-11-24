@@ -9,10 +9,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The Game card's job (TestService's ACTION_GAME_FILES): FAF's newest game version onto the phone, for the game. The
- * check, the size and the room for it, then on a metered network a question, else the files by GameFiles.ensure, as a
- * replay's run gets its version's. Without the user's yes to the size the download runs only on a network that is not
- * metered, and stops when the network becomes metered; the next one goes on from where it stopped. No Android in here,
- * for the tests: TestService gives it the phone's network and the download.
+ * check, the size and the room for it (Room), then on a metered network a question, else the room claimed and the files
+ * by GameFiles.ensure, as a replay's run gets its version's. Without the user's yes to the size the download runs only on
+ * a network that is not metered, and stops when the network becomes metered; the next one goes on from where it stopped.
+ * No Android in here, for the tests: TestService gives it the phone's network, its room and the download.
  */
 final class NewestGameFilesJob {
     /** The phone's network, as far as the job asks it. */
@@ -31,11 +31,8 @@ final class NewestGameFilesJob {
         void close();
     }
 
-    /** The download onto the phone: the room for it, and the files. */
+    /** The download onto the phone. */
     interface Download {
-        /** The bytes free on the phone's storage, where the files go. */
-        long room();
-
         /** The version's files onto the phone, as a replay's run gets its version's (GameFiles.ensure). */
         void files(int version) throws IOException;
     }
@@ -49,11 +46,11 @@ final class NewestGameFilesJob {
     /**
      * FAF's newest version checked and downloaded, or {@code yesTo}, the version whose size the user has said yes to
      * (-1: none), downloaded without a check. The card's state says how it ended. A Cancel goes on as a Cancelled and a
-     * failure of the download as itself, for the Progress card's log; a failed check, too little room and the network
-     * becoming metered say so on the card and end the job.
+     * failure of the download as itself, for the Progress card's log, as does one of Android's calls for the room; a failed
+     * check, too little room and the network becoming metered say so on the card and end the job.
      */
-    static void run(Storage storage, int yesTo, Http.Requests requests, Connectivity connectivity, Download download)
-        throws IOException {
+    static void run(Storage storage, int yesTo, Http.Requests requests, Connectivity connectivity, Room room,
+        Download download) throws IOException {
         int version = yesTo;
         AtomicBoolean becameMetered = new AtomicBoolean();
         Watch watch = null;
@@ -85,18 +82,16 @@ final class NewestGameFilesJob {
             TestState.step("Measuring the download of FAF game version " + version);
             long bytes = GameFiles.toDownload(storage.game(version), storage.downloads(), version, requests);
             TestState.line("FAF game version " + version + ": " + NewestGameFiles.size(bytes) + " to download");
-            // Before the question too: a yes to a download that cannot fit would only fill the phone.
-            String noRoom = NewestGameFiles.noRoom(bytes, download.room());
-            if (noRoom != null) {
-                NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, noRoom);
-                TestState.line("FAF game version " + version + " is not downloaded: " + noRoom);
-                return;
-            }
+            String what = "FAF game version " + version;
             if (next == NewestGameFiles.Next.ASK) {
+                // A yes to a download that cannot fit would only fill the phone.
+                room.check(what, NewestGameFiles.counted(bytes));
                 NewestGameFiles.asking(version, bytes);
                 TestState.line("The network is metered: the app asks before it downloads");
                 return;
             }
+            // Claimed right before the download: Android clears the caches it counted now, not under the download.
+            room.claim(what, NewestGameFiles.counted(bytes));
             if (yesTo < 0) {
                 // From the network as it is: one that has become metered since the check stops the download at its start.
                 watch = connectivity.watch(() -> {
@@ -111,6 +106,10 @@ final class NewestGameFilesJob {
             download.files(version);
             NewestGameFiles.known(version);
             TestState.line("FAF game version " + version + " is ready for the game");
+        } catch (Room.NoRoom e) {
+            // The card names the version already.
+            NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, e.line("it"));
+            TestState.line(e.getMessage());
         } catch (Cancellation.Cancelled e) {
             if (!becameMetered.get()) {
                 NewestGameFiles.stopped(NewestGameFiles.Phase.CANCELLED, "");

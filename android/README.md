@@ -283,10 +283,15 @@ the game data they imported. Everything lives in the app's external files folder
   which phones on mobile data may share), taken when FAF's updater has its `init_faf_<v>.lua`; a release that is tagged
   but not deployed yet gives way to the next lower numeric tag that is (`/tags`, at most five tried). The size is the
   updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 682 MB). It must fit
-  in the phone's free space with 100 MB to spare (750 MB counted when the updater does not say), or the card says how
-  much is free and nothing is downloaded. The init file is fetched and checked first, so one the app cannot use fails
-  before the packages. Then `GameFiles.ensure` downloads them as a replay's run does, with the Progress card's steps,
-  cancel and log. On a metered network (mobile data, a hotspot, a Wi-Fi set so) the card asks first, and while it asks
+  in the phone's room with 100 MB to spare (750 MB counted when the updater does not say), or the card says how much
+  more to free and nothing is downloaded (`Room`). The room is what Android lets the app allocate
+  (`StorageManager.getAllocatableBytes`), which keeps Android's own low reserve free (496 MB on the emulator's 10 GB,
+  near which Android empties the apps' caches and installs fail) and counts the caches Android may clear for the app;
+  right before the download the app claims it (`allocateBytes`), and Android clears those caches then. A call of
+  Android's that fails ends the job before any byte, with its reason. The init file is fetched and checked first, so
+  one the app cannot use fails before the packages. Then `GameFiles.ensure` downloads them as a replay's run does,
+  with the Progress card's steps, cancel and log. On a metered network (mobile data, a hotspot, a Wi-Fi set so) the
+  card asks first, and while it asks
   the button asks again with the size it knows, without a new check; without that yes the download runs only on a
   network that is not metered and stops when it becomes metered, and the next run goes on from where it stopped. When a
   later check settles on another version, what the button's unfinished download of the old one left goes, unless a
@@ -420,9 +425,10 @@ FAF's content server has no file by uid, nor its API without a login: so the cli
 
 A `GAME_VERSION` the phone has not got comes after the map, the mods and the replay, as the largest by far (`GameFilesFetch`),
 from FAF's updater (`content.faforever.com/faf/updaterNew/updates_faf_files/`, no login) by the rules of the Game card's
-*Get FAF's newest version*: its size first, by HEAD requests, which must fit in the free space with 100 MB to spare
-(`DOWNLOAD` says how much is free and how much it needs); on a metered network the activity asks before it with that
-size, and a no ends the start (`CANCELLED`); without a yes it runs only on a network that is not metered, and one that
+*Get FAF's newest version*: its size first, by HEAD requests, which must fit in the phone's room with 100 MB to spare,
+before a question and again right before the download, which claims the room (`NO_ROOM` says how much more to free);
+on a metered network the activity asks before it with that size, and a no ends the start (`CANCELLED`); without a yes
+it runs only on a network that is not metered, and one that
 becomes metered under it stops it and asks about the rest. `GameFiles.ensure` gets the files as the replay test does,
 with the activity showing each package's progress, and keeps what is there: the other versions, side by side, and what an
 earlier start got of this one, which the next goes on from. One download of a version runs at a time: a start that asks
@@ -455,7 +461,8 @@ own (`/init`, `/log`, `/notelemetry`, the HUD's two, `/nomovie` for an import wi
 launcher's, and `/fullscreen <the picture's size>` last.
 
 **The result.** `RESULT_FIRST_USER` when the start ran no program, with `failure`, its code, and `message`, the reason
-in English that names none of the test app's cards. `RESULT_CANCELED` when the program ran and ended: its end in front,
+in English that names none of the test app's cards; with `NO_ROOM` also `bytes_to_free`, a long, the bytes the player
+must free on the phone for the start to fit. `RESULT_CANCELED` when the program ran and ended: its end in front,
 which ends its process, or any other end of the process there, which takes the activity with it; `last_game` says how.
 
 | `failure` | Why |
@@ -469,7 +476,8 @@ which ends its process, or any other end of the process there, which takes the a
 | `PROCESS_ENDED` | Android brought back (Recents) the activity of a launcher's game whose process ended in the back (ended by Android, by a crash or by the program's end): it would start the game anew on a GPGNet session the launcher saw end; the gone game's report, `game-previous.txt`, says how |
 | `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name |
 | `NO_MOD` | A mod of `MODS` is not on the phone, and `MOD_FILES` names none of it, FAF has no such file, or it holds another uid |
-| `DOWNLOAD` | A download of `GAME_VERSION`'s game files, the map or a mod failed: the network, after its tries, or the phone's storage; or the game files do not fit in the free space |
+| `DOWNLOAD` | A download of `GAME_VERSION`'s game files, the map or a mod failed: the network, after its tries, or the phone's storage, Android's calls for the room among it, and a disk that became full under the download (`No space left on device`), which not every write can tell apart: the next start measures first and gives `NO_ROOM` |
+| `NO_ROOM` | `GAME_VERSION`'s game files do not fit in the phone's room (what Android lets the app allocate: its own low reserve kept free, the caches it may clear counted) with 100 MB to spare, before any byte: `message` says what they need and how much more to free (`FAF game version 3839 needs 782 MB: free 620 MB more on the phone`), `bytes_to_free` the bytes |
 | `REPLAY` | The data is no `content://` URI of another app's, the start does not grant reading it (`FLAG_GRANT_READ_URI_PERMISSION`), or it could not be copied (empty, more than 256 MB) |
 | `CANCELLED` | Back ended the start while it fetched, unpacked or copied what the game needs, or the player said no to the game files' download on a metered network |
 
@@ -612,9 +620,10 @@ client), takes what the folder import takes, by its rules (`ScfaImport`):
   entries, and a damaged or cut-off ZIP are refused, each before anything is written.
 - **Zip Slip**: an entry whose name is absolute or has a `..`, with `/` or `\`, refuses the whole ZIP, as Android 14's
   `ZipInputStream` does with `/` alone (`ZipPathValidator`), and every file the import writes is resolved under `scfa/`.
-- **Room**: before it writes anything, the files it writes must fit in the free space with 100 MB to spare, as FAF's game
-  files' must, or the log says how much is free and how much it needs; as it writes it checks again at each file and
-  every 64 MB, and stops when what it still has to write no longer fits.
+- **Room**: before it writes anything, the files it writes must fit in the phone's room with 100 MB to spare, as FAF's
+  game files' must, and the import claims it (`Room`), or the log says how much they need and how much more to free; as
+  it writes it checks again at each file and every 64 MB, and stops when what it still has to write no longer fits,
+  with how much more to free for the next import.
 - **All or nothing**: the files go to `scfa/.zip-import/`, and from there to their places once the whole ZIP has been
   read. A refusal, a Cancel or a failure leaves `scfa/` as it was, and what an import whose process ended left there goes
   as the next import begins, a ZIP's or the folder's, before its room is checked. The progress shows as the folder

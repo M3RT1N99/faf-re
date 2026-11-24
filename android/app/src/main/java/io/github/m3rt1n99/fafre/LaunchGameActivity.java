@@ -40,10 +40,17 @@ public final class LaunchGameActivity extends Activity {
         finish();
     }
 
-    /** A refused start's result, with RESULT_FIRST_USER: its code and its line. */
+    /**
+     * A failure's result, with RESULT_FIRST_USER: its code and its line, and NO_ROOM's bytes to free. This activity's
+     * refusals end with it, and so do the game's failed starts and SetupActivity's.
+     */
     static Intent result(GameStart.Failure failure) {
-        return new Intent().putExtra(GameStart.RESULT_FAILURE, failure.code.name())
+        Intent result = new Intent().putExtra(GameStart.RESULT_FAILURE, failure.code.name())
             .putExtra(GameStart.RESULT_MESSAGE, failure.getMessage());
+        if (failure.code == GameStart.Code.NO_ROOM) {
+            result.putExtra(GameStart.RESULT_BYTES_TO_FREE, failure.bytesToFree);
+        }
+        return result;
     }
 
     /** The game's start for this one, which the checks let through. */

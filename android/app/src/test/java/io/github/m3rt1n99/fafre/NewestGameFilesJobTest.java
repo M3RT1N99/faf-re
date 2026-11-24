@@ -48,6 +48,8 @@ public class NewestGameFilesJobTest {
     private Storage mStorage;
     private final Network mNetwork = new Network();
     private final Connectivity mConnectivity = new Connectivity();
+    /** The phone's room, which a test may set up anew before the job. */
+    private RoomTest.Fake mRoom = new RoomTest.Fake(4_000_000_000L);
     private final Download mDownload = new Download();
 
     @Before
@@ -146,21 +148,16 @@ public class NewestGameFilesJobTest {
         void run() throws IOException;
     }
 
-    /** The phone's side: its free bytes, and the download, which checks the Cancel at its start as ensure does. */
+    /** The download, which checks the Cancel at its start as ensure does. */
     private final class Download implements NewestGameFilesJob.Download {
-        long room = 4_000_000_000L;
         /** What the download meets once it has started. */
         Step during;
         final List<Integer> versions = new ArrayList<>();
 
         @Override
-        public long room() {
-            return room;
-        }
-
-        @Override
         public void files(int version) throws IOException {
             versions.add(version);
+            assertEquals("the room is claimed right before each download", versions.size(), mRoom.claims.size());
             Cancellation.check();
             if (during != null) {
                 during.run();
@@ -170,7 +167,7 @@ public class NewestGameFilesJobTest {
     }
 
     private void run(int yesTo) throws IOException {
-        NewestGameFilesJob.run(mStorage, yesTo, mNetwork, mConnectivity, mDownload);
+        NewestGameFilesJob.run(mStorage, yesTo, mNetwork, mConnectivity, mRoom, mDownload);
     }
 
     private List<String> heads() {
@@ -239,6 +236,8 @@ public class NewestGameFilesJobTest {
         assertEquals(BYTES, NewestGameFiles.now().bytes);
         assertSame(NewestGameFiles.now(), NewestGameFiles.question());
         assertEquals(0, mConnectivity.watches);
+        assertEquals("measured, not claimed, for a question", 1, mRoom.asked);
+        assertEquals(Collections.emptyList(), mRoom.claims);
         assertEquals(Collections.emptyList(), mDownload.versions);
     }
 
@@ -259,6 +258,7 @@ public class NewestGameFilesJobTest {
 
         assertFalse("no check", mNetwork.asked.contains(FafRelease.LATEST_URL));
         assertEquals(Collections.singletonList(3840), mDownload.versions);
+        assertEquals("the download and the spare", Collections.singletonList(BYTES + Room.SPARE_BYTES), mRoom.claims);
         assertEquals(0, mConnectivity.watches);
         assertState(NewestGameFiles.Phase.KNOWN, 3840);
     }
@@ -329,23 +329,64 @@ public class NewestGameFilesJobTest {
         assertEquals(1, mConnectivity.closed);
     }
 
-    /** Neither asked about nor started, also after a yes: the room is measured before both. */
+    /** Neither asked about nor started, also after a yes: the room is measured before both, and the lines say what to free. */
     @Test
     public void aDownloadThatDoesNotFitIsNotStarted() throws IOException {
-        mDownload.room = 300_000_000L;
+        mRoom = new RoomTest.Fake(300_000_000L);
         mConnectivity.metered = true;
 
         run(-1);
 
         assertState(NewestGameFiles.Phase.FAILED, 3840);
-        assertEquals("the phone has 286 MB free, and it needs 782 MB", NewestGameFiles.now().note);
+        assertEquals("it needs 782 MB: free 496 MB more on the phone", NewestGameFiles.now().note);
+        assertEquals("FAF game version 3840 needs 782 MB: free 496 MB more on the phone", lastLog());
         assertNull("no question", NewestGameFiles.question());
 
         run(3840);
 
         assertState(NewestGameFiles.Phase.FAILED, 3840);
+        assertEquals(Collections.emptyList(), mRoom.claims);
         assertEquals(Collections.emptyList(), mDownload.versions);
         assertEquals(0, mConnectivity.watches);
+    }
+
+    /** Without a question the claim is the measure, before the network is watched and the job's target is written. */
+    @Test
+    public void onANetworkThatIsNotMeteredADownloadThatDoesNotFitIsNotStarted() throws IOException {
+        mRoom = new RoomTest.Fake(300_000_000L);
+
+        run(-1);
+
+        assertState(NewestGameFiles.Phase.FAILED, 3840);
+        assertEquals(0, mConnectivity.watches);
+        assertFalse(new File(mStorage.downloads(), "newest-target").exists());
+        assertEquals(Collections.emptyList(), mDownload.versions);
+    }
+
+    /** Never another measure in its place: Android's failure is the job's, on the card and in the log, before any byte. */
+    @Test
+    public void aRoomCallThatAndroidFailsEndsTheJobBeforeTheQuestionAndTheDownload() {
+        mConnectivity.metered = true;
+        mRoom.allocatableFails = new IOException("Android cannot say how much the app may write to the phone's storage: "
+            + "no such volume");
+        assertSame(mRoom.allocatableFails, assertThrows(IOException.class, () -> run(-1)));
+        assertState(NewestGameFiles.Phase.FAILED, 3840);
+        assertEquals(mRoom.allocatableFails.getMessage(), NewestGameFiles.now().note);
+        assertNull("no question", NewestGameFiles.question());
+
+        mConnectivity.metered = false;
+        mRoom.allocatableFails = null;
+        mRoom.allocateFails = new IOException("Android cannot clear 782 MB on the phone's storage for the write: not freed");
+        assertSame(mRoom.allocateFails, assertThrows(IOException.class, () -> run(-1)));
+        assertState(NewestGameFiles.Phase.FAILED, 3840);
+        assertEquals(mRoom.allocateFails.getMessage(), NewestGameFiles.now().note);
+
+        assertEquals(Collections.emptyList(), mDownload.versions);
+    }
+
+    private static String lastLog() {
+        List<String> log = TestState.log();
+        return log.get(log.size() - 1);
     }
 
     /** The user's Cancel during the measurement's last HEAD, which Http.ONE_TRY makes a Cancelled: no question after it. */

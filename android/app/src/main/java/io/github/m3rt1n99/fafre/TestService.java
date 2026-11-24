@@ -15,7 +15,6 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -129,17 +128,7 @@ public final class TestService extends Service {
                     intent.getBooleanExtra(EXTRA_HINT, true));
             } else if (ACTION_GAME_FILES.equals(action)) {
                 NewestGameFilesJob.run(storage, intent.getIntExtra(EXTRA_VERSION, -1), Http.ONE_TRY, new PhoneNetwork(this),
-                    new NewestGameFilesJob.Download() {
-                        @Override
-                        public long room() {
-                            return storage.root.getUsableSpace();
-                        }
-
-                        @Override
-                        public void files(int version) throws IOException {
-                            GameFiles.ensure(storage, version, LOG, Http.WITH_RETRIES);
-                        }
-                    });
+                    new PhoneRoom(this, storage), version -> GameFiles.ensure(storage, version, LOG, Http.WITH_RETRIES));
             }
         } catch (Cancellation.Cancelled e) {
             TestState.line("Cancelled.");

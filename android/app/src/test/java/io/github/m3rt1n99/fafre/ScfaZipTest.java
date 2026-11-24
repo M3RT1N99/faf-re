@@ -4,6 +4,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
@@ -25,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.LongSupplier;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
@@ -46,7 +46,8 @@ import org.junit.rules.TemporaryFolder;
 public class ScfaZipTest {
     /** More than ZIP's 32 bits hold: 4 GiB and 1 MiB. */
     private static final long OVER_4_GB = (4L << 30) + (1 << 20);
-    private static final LongSupplier ROOMY = () -> 1L << 40;
+    /** The phone's room: far more than any import here needs. */
+    private final Room roomy = new RoomTest.Fake(1L << 40);
 
     @Rule
     public final TemporaryFolder folder = new TemporaryFolder();
@@ -188,12 +189,12 @@ public class ScfaZipTest {
         // A text file a provider calls application/zip: the import never asks the type.
         File text = folder.newFile("scfa.zip");
         Files.write(text.toPath(), "Supreme Commander".getBytes(StandardCharsets.UTF_8));
-        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(text), ROOMY));
+        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(text), roomy));
         assertEquals("the file does not begin as a ZIP does, whatever its name or type say", refused.getMessage());
         // A ZIP of any name.
         File zip = folder.newFile("scfa.bin");
         Files.write(zip.toPath(), scfaInAFolder());
-        ScfaZip.run(storage, source(zip), ROOMY);
+        ScfaZip.run(storage, source(zip), roomy);
         assertEquals("lua archive", read(new File(storage.scfa, "gamedata/lua.scd")));
     }
 
@@ -240,7 +241,7 @@ public class ScfaZipTest {
             Storage storage = new Storage(folder.newFolder());
             byte[] zip = new Zip().deflated("gamedata/lua.scd", "lua archive").deflated(evil, "evil")
                 .deflated("fonts/a.ttf", "font").bytes();
-            ScfaZip.Refused refused = assertThrows(evil, ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(zip), ROOMY));
+            ScfaZip.Refused refused = assertThrows(evil, ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(zip), roomy));
             assertTrue(refused.getMessage(), refused.getMessage().contains("(Zip Slip)"));
             assertEquals(evil, Arrays.asList(), files(storage.root.getParentFile()).stream()
                 .filter(name -> name.contains("evil")).collect(java.util.stream.Collectors.toList()));
@@ -316,7 +317,7 @@ public class ScfaZipTest {
         ScfaZip.Plan plan = ScfaZip.plan(ScfaZip.list(source(zip)), storage.scfa);
         assertArrayEquals(new String[] {null, "fonts/a.ttf", "gamedata/Lua.SCD"}, plan.writes);
         assertEquals(1, plan.others);
-        ScfaZip.run(storage, source(zip), ROOMY);
+        ScfaZip.run(storage, source(zip), roomy);
         assertEquals(Arrays.asList("fonts/a.ttf", "gamedata/Lua.SCD"), files(storage.scfa));
         assertEquals("second", read(new File(storage.scfa, "gamedata/Lua.SCD")));
     }
@@ -326,7 +327,7 @@ public class ScfaZipTest {
     @Test
     public void theScfaFolderInAFolderOfTheZipComesIntoScfa() throws IOException {
         Storage storage = storage();
-        ScfaZip.run(storage, source(scfaInAFolder()), ROOMY);
+        ScfaZip.run(storage, source(scfaInAFolder()), roomy);
         assertEquals(Arrays.asList("fonts/ARIAL.TTF", "fonts/zeroes_3.ttf", "gamedata/Advanced strategic icons.scd",
             "gamedata/lua.scd", "maps/SCMP_012/SCMP_012_scenario.lua", "movies/X01_Dostya_M02_03667.sfd",
             "sounds/Voice/us/Tutorial.xwb"), files(storage.scfa));
@@ -350,7 +351,7 @@ public class ScfaZipTest {
         Storage storage = storage();
         byte[] zip = new Zip().stored("bin/x.exe", "program").deflated("gamedata/lua.scd", "lua archive")
             .deflated("Movies/a.sfd", "movie").bytes();
-        ScfaZip.run(storage, source(zip), ROOMY);
+        ScfaZip.run(storage, source(zip), roomy);
         assertEquals(Arrays.asList("gamedata/lua.scd", "movies/a.sfd"), files(storage.scfa));
         assertEquals("No fonts: the ZIP has no fonts folder with .ttf files, and the game cannot start without them",
             lastLog(0));
@@ -359,17 +360,19 @@ public class ScfaZipTest {
     @Test
     public void whatIsThereAlreadyIsNotWrittenAgain() throws IOException {
         Storage storage = storage();
-        ScfaZip.run(storage, source(scfaInAFolder()), ROOMY);
+        ScfaZip.run(storage, source(scfaInAFolder()), roomy);
         File lua = new File(storage.scfa, "gamedata/lua.scd");
         long written = lua.lastModified();
         // A second read would find what changed: the ZIP is read once when it has nothing to write, which needs no room.
         AtomicInteger opens = new AtomicInteger();
         byte[] zip = scfaInAFolder();
+        RoomTest.Fake none = new RoomTest.Fake(0);
         ScfaZip.run(storage, () -> {
             opens.incrementAndGet();
             return new ByteArrayInputStream(zip);
-        }, () -> 0);
+        }, none);
         assertEquals(1, opens.get());
+        assertEquals("not even asked", 0, none.asked);
         assertEquals(written, lua.lastModified());
         assertTrue(lastLog(5), lastLog(5).endsWith("the import takes 7 of its files (7 there already) and leaves 3"));
     }
@@ -387,25 +390,43 @@ public class ScfaZipTest {
             out.closeEntry();
         }
         assertTrue(big.length() < (1 << 20));
-        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class,
-            () -> ScfaZip.run(storage, source(big), () -> 350L << 20));
-        assertEquals("its files need more room than the phone has: the phone has 350 MB free, and it needs 400 MB",
-            refused.getMessage());
+        RoomTest.Fake tooLittle = new RoomTest.Fake(350L << 20);
+        Room.NoRoom noRoom = assertThrows(Room.NoRoom.class, () -> ScfaZip.run(storage, source(big), tooLittle));
+        assertEquals("the import needs 400 MB: free 51 MB more on the phone", noRoom.getMessage());
+        assertEquals(Arrays.asList(), tooLittle.claims);
         assertFalse(storage.scfa.exists());
-        // What fits, with the spare the downloads leave too.
-        ScfaZip.run(storage, source(zip), () -> NewestGameFiles.SPARE_BYTES + 11);
+        // What fits, with the spare the downloads leave too, claimed before the import writes.
+        RoomTest.Fake fits = new RoomTest.Fake(Room.SPARE_BYTES + 11);
+        ScfaZip.run(storage, source(zip), fits);
+        assertEquals(Arrays.asList(Room.SPARE_BYTES + 11), fits.claims);
         assertEquals("lua archive", read(new File(storage.scfa, "gamedata/lua.scd")));
+    }
+
+    /** Never another measure in its place: Android's failure is the import's, before it writes anything. */
+    @Test
+    public void aRoomCallThatAndroidFailsStopsTheImportBeforeItWrites() throws IOException {
+        Storage storage = storage();
+        RoomTest.Fake failing = new RoomTest.Fake(1L << 40);
+        failing.allocatableFails = new IOException("Android cannot say how much the app may write to the phone's storage: "
+            + "no such volume");
+        assertSame(failing.allocatableFails,
+            assertThrows(IOException.class, () -> ScfaZip.run(storage, source(scfaInAFolder()), failing)));
+        failing.allocatableFails = null;
+        failing.allocateFails = new IOException("Android cannot clear 100 MB on the phone's storage for the write: not freed");
+        assertSame(failing.allocateFails,
+            assertThrows(IOException.class, () -> ScfaZip.run(storage, source(scfaInAFolder()), failing)));
+        assertEquals(Arrays.asList(), files(storage.scfa));
     }
 
     @Test
     public void roomThatRunsShortAsTheImportWritesStopsItCleanly() throws IOException {
         Storage storage = storage();
         AtomicInteger asked = new AtomicInteger();
-        // Room at first, then none, as another app fills the phone while the import writes.
+        // Room at the claim, then 10 bytes, as another app fills the phone while the import writes: the next import needs
+        // the 53 bytes of the files and the spare, and finds these 10 bytes.
         ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(scfaInAFolder()),
-            () -> asked.incrementAndGet() == 1 ? 1L << 40 : 10));
-        assertEquals("the phone's storage ran short while the import wrote: less than 1 MB free, and less than 1 MB still to "
-            + "write", refused.getMessage());
+            new RoomTest.Fake(() -> asked.incrementAndGet() == 1 ? 1L << 40 : 10)));
+        assertEquals("the phone's storage ran short while the import wrote: free 101 MB more on the phone", refused.getMessage());
         assertEquals(Arrays.asList(), files(storage.scfa));
     }
 
@@ -419,12 +440,12 @@ public class ScfaZipTest {
             out.closeEntry();
         }
         AtomicInteger asked = new AtomicInteger();
-        // Up front and at the file's start there is room; after 64 MB of it there is none.
+        // At the claim and at the file's start there is room; after 64 MB of it there is none, and the next import needs the
+        // 128 MB still to write and the spare.
         ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(big),
-            () -> asked.incrementAndGet() <= 2 ? 1L << 40 : 0));
+            new RoomTest.Fake(() -> asked.incrementAndGet() <= 2 ? 1L << 40 : 0)));
         assertEquals(3, asked.get());
-        assertEquals("the phone's storage ran short while the import wrote: less than 1 MB free, and 128 MB still to write",
-            refused.getMessage());
+        assertEquals("the phone's storage ran short while the import wrote: free 228 MB more on the phone", refused.getMessage());
         assertEquals(Arrays.asList(), files(storage.scfa));
     }
 
@@ -432,7 +453,7 @@ public class ScfaZipTest {
     public void aCancelLeavesScfaAsItWas() throws IOException {
         Storage storage = storage();
         byte[] earlier = new Zip().deflated("gamedata/lua.scd", "old lua").bytes();
-        ScfaZip.run(storage, source(earlier), ROOMY);
+        ScfaZip.run(storage, source(earlier), roomy);
         byte[] zip = scfaInAFolder();
         AtomicInteger opens = new AtomicInteger();
         // The user's Cancel while the second read writes the files.
@@ -451,7 +472,7 @@ public class ScfaZipTest {
                 }
             };
         };
-        assertThrows(Cancellation.Cancelled.class, () -> ScfaZip.run(storage, cancelling, ROOMY));
+        assertThrows(Cancellation.Cancelled.class, () -> ScfaZip.run(storage, cancelling, roomy));
         assertEquals(2, opens.get());
         assertEquals(Arrays.asList("gamedata/lua.scd"), files(storage.scfa));
         assertEquals("old lua", read(new File(storage.scfa, "gamedata/lua.scd")));
@@ -461,13 +482,13 @@ public class ScfaZipTest {
     public void whatAnImportWhoseProcessEndedLeftGoesAtTheNext() throws IOException {
         Storage storage = storage();
         leftover(storage, 3);
-        ScfaZip.run(storage, source(scfaInAFolder()), ROOMY);
+        ScfaZip.run(storage, source(scfaInAFolder()), roomy);
         assertFalse(new File(storage.scfa, ScfaZip.STAGING).exists());
         assertEquals(7, files(storage.scfa).size());
         // Also at a ZIP the import refuses, which writes nothing.
         leftover(storage, 3);
         assertThrows(ScfaZip.Refused.class,
-            () -> ScfaZip.run(storage, source("not a zip".getBytes(StandardCharsets.UTF_8)), ROOMY));
+            () -> ScfaZip.run(storage, source("not a zip".getBytes(StandardCharsets.UTF_8)), roomy));
         assertFalse(new File(storage.scfa, ScfaZip.STAGING).exists());
     }
 
@@ -476,10 +497,10 @@ public class ScfaZipTest {
         Storage storage = storage();
         leftover(storage, 1 << 20);
         byte[] zip = new Zip().deflated("gamedata/lua.scd", "lua archive").bytes();
-        // The phone's free space as its storage has it, less what the app's files hold: room for the ZIP's file and the
-        // spare, and half of what the leftover holds.
-        long room = NewestGameFiles.SPARE_BYTES + "lua archive".length() + (512 << 10);
-        ScfaZip.run(storage, source(zip), () -> room - held(storage.root));
+        // The phone's room as Android has it, less what the app's files hold: room for the ZIP's file and the spare, and
+        // half of what the leftover holds.
+        long room = Room.SPARE_BYTES + "lua archive".length() + (512 << 10);
+        ScfaZip.run(storage, source(zip), new RoomTest.Fake(() -> room - held(storage.root)));
         assertEquals("lua archive", read(new File(storage.scfa, "gamedata/lua.scd")));
         assertFalse(new File(storage.scfa, ScfaZip.STAGING).exists());
     }
@@ -511,7 +532,7 @@ public class ScfaZipTest {
             .deflated("Supreme Commander Forged Alliance/gamedata/evil.scd", "another archive").bytes();
         AtomicInteger opens = new AtomicInteger();
         ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage,
-            () -> new ByteArrayInputStream(opens.incrementAndGet() == 1 ? first : second), ROOMY));
+            () -> new ByteArrayInputStream(opens.incrementAndGet() == 1 ? first : second), roomy));
         assertEquals("the ZIP changed while the import read it: pick it again once nothing writes it", refused.getMessage());
         assertEquals(Arrays.asList(), files(storage.scfa));
     }
@@ -523,12 +544,12 @@ public class ScfaZipTest {
         // A byte of the stored archive's data: its CRC no longer holds.
         int at = indexOf(zip, "lua archive".getBytes(StandardCharsets.UTF_8));
         zip[at] ^= 1;
-        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(zip), ROOMY));
+        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(zip), roomy));
         assertTrue(refused.getMessage(), refused.getMessage().startsWith("the ZIP cannot be read: invalid entry CRC"));
         assertFalse(storage.scfa.exists());
         // Cut off in the middle.
         byte[] cut = Arrays.copyOf(scfaInAFolder(), at);
-        refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(cut), ROOMY));
+        refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(cut), roomy));
         assertTrue(refused.getMessage(), refused.getMessage().startsWith("the ZIP cannot be read: "));
         assertFalse(storage.scfa.exists());
     }
@@ -539,7 +560,7 @@ public class ScfaZipTest {
         // As an older tool on Windows writes names, in its code page without ZIP's UTF-8 flag.
         byte[] zip = new Zip(Charset.forName("IBM437")).deflated("Spiele/gamedata/lua.scd", "lua archive")
             .deflated("Spiele/maps/Kühler Fluss/x_scenario.lua", "scenario").bytes();
-        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(zip), ROOMY));
+        ScfaZip.Refused refused = assertThrows(ScfaZip.Refused.class, () -> ScfaZip.run(storage, source(zip), roomy));
         assertEquals("the ZIP has an entry whose name is not UTF-8, as older tools on Windows write them: zip the folder "
             + "again with 7-Zip", refused.getMessage());
         assertFalse(storage.scfa.exists());
@@ -635,7 +656,7 @@ public class ScfaZipTest {
         assertEquals(3, entries.size());
         assertEquals(OVER_4_GB, entries.get(0).size);
         Storage storage = storage();
-        ScfaZip.run(storage, source(zip), ROOMY);
+        ScfaZip.run(storage, source(zip), roomy);
         assertEquals(Arrays.asList("fonts/ARIAL.TTF", "gamedata/lua.scd"), files(storage.scfa));
         assertEquals("lua archive", read(new File(storage.scfa, "gamedata/lua.scd")));
         assertEquals("arial", read(new File(storage.scfa, "fonts/ARIAL.TTF")));

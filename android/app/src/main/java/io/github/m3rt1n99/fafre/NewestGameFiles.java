@@ -35,8 +35,6 @@ final class NewestGameFiles {
 
     /** A download's size when the updater does not say it: more than any version's so far (3840: 682 MB). */
     static final long UNSAID_BYTES = 750L << 20;
-    /** What a download leaves free on the phone, for the game's and the replay runs' own files. */
-    static final long SPARE_BYTES = 100L << 20;
 
     final Phase phase;
     /** FAF's newest version, -1 until a check has found it. */
@@ -120,13 +118,9 @@ final class NewestGameFiles {
         return metered && !yes ? Next.ASK : Next.DOWNLOAD;
     }
 
-    /**
-     * Why a download of {@code bytes} (-1: the updater did not say) does not fit in the {@code free} bytes of the
-     * phone's storage with room to spare, or null when it does.
-     */
-    static String noRoom(long bytes, long free) {
-        long needs = (bytes < 0 ? UNSAID_BYTES : bytes) + SPARE_BYTES;
-        return free >= needs ? null : "the phone has " + size(free) + " free, and it needs " + size(needs);
+    /** What a download of {@code bytes} (-1: the updater did not say) counts for in the phone's room (Room). */
+    static long counted(long bytes) {
+        return bytes < 0 ? UNSAID_BYTES : bytes;
     }
 
     /** The card's line, {@code phone} being the newest version whose files are ready on the phone, -1 for none. */

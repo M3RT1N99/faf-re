@@ -56,6 +56,8 @@ public class GameFilesFetchTest {
     private Storage mStorage;
     private final Updater mUpdater = new Updater();
     private final Connectivity mConnectivity = new Connectivity();
+    /** The phone's room, which a test may set up anew before the fetch. */
+    private RoomTest.Fake mRoom = new RoomTest.Fake(4_000_000_000L);
     private final Download mDownload = new Download();
     private final Player mPlayer = new Player();
     private final List<String> mLines = new ArrayList<>();
@@ -143,9 +145,8 @@ public class GameFilesFetchTest {
         void run() throws IOException;
     }
 
-    /** The phone's side: its free bytes, and the download, which checks the Cancel at its start as ensure does. */
+    /** The download, which checks the Cancel at its start as ensure does. */
     private final class Download implements NewestGameFilesJob.Download {
-        long room = 4_000_000_000L;
         /** What each download meets once it has started, in turn; none for the rest. */
         final Deque<Step> during = new ArrayDeque<>();
         /** What the download does after its last file, before it returns. */
@@ -153,14 +154,10 @@ public class GameFilesFetchTest {
         int downloads;
 
         @Override
-        public long room() {
-            return room;
-        }
-
-        @Override
         public void files(int version) throws IOException {
             assertEquals(3840, version);
             ++downloads;
+            assertEquals("the room is claimed right before each download", downloads, mRoom.claims.size());
             Cancellation.check();
             Step step = during.poll();
             if (step != null) {
@@ -174,7 +171,7 @@ public class GameFilesFetchTest {
     }
 
     /** The player, who answers the question with each of {@code answers} in turn. */
-    private static final class Player implements GameFilesFetch.Question {
+    private final class Player implements GameFilesFetch.Question {
         final Deque<Boolean> answers = new ArrayDeque<>();
         /** Back while the question shows. */
         boolean back;
@@ -183,6 +180,7 @@ public class GameFilesFetchTest {
         @Override
         public boolean yes(int version, long bytes) throws IOException {
             assertEquals(3840, version);
+            assertEquals("the room is claimed after the yes", mDownload.downloads, mRoom.claims.size());
             askedAbout.add(bytes);
             if (back) {
                 Cancellation.request();
@@ -197,7 +195,7 @@ public class GameFilesFetchTest {
     }
 
     private void fetch(int version) throws GameStart.Failure {
-        GameFilesFetch.run(mStorage, version, mLog, mUpdater, mConnectivity, mDownload, mPlayer);
+        GameFilesFetch.run(mStorage, version, mLog, mUpdater, mConnectivity, mRoom, mDownload, mPlayer);
     }
 
     private GameStart.Failure failure(int version) {
@@ -227,6 +225,8 @@ public class GameFilesFetchTest {
     }
 
     private static final long REST = BYTES - LENGTHS.get("env") - LENGTHS.get("textures");
+    /** 3840's room with the spare: 782 MB, which 300,000,000 bytes leave 496 MB short of. */
+    private static final String NO_ROOM_LINE = "FAF game version 3840 needs 782 MB: free 496 MB more on the phone";
 
     @Test
     public void onANetworkThatIsNotMeteredTheVersionIsMeasuredAndDownloadedWithoutAQuestion() throws Exception {
@@ -235,6 +235,7 @@ public class GameFilesFetchTest {
         assertTrue(GameFiles.ready(mStorage, 3840));
         assertEquals("every package measured", 10, mUpdater.heads.size());
         assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+        assertEquals("the download and the spare", Collections.singletonList(BYTES + Room.SPARE_BYTES), mRoom.claims);
         assertEquals(1, mDownload.downloads);
         assertEquals("watched until it ended", 1, mConnectivity.watches);
         assertEquals(1, mConnectivity.closed);
@@ -251,6 +252,8 @@ public class GameFilesFetchTest {
 
         assertTrue(GameFiles.ready(mStorage, 3840));
         assertEquals(Collections.singletonList(BYTES), mPlayer.askedAbout);
+        assertEquals("asked before the question, and again at the claim after it", 2, mRoom.asked);
+        assertEquals(Collections.singletonList(BYTES + Room.SPARE_BYTES), mRoom.claims);
         assertEquals(0, mConnectivity.watches);
         assertEquals("FAF game version 3840 is not on the phone: 682 MB to download, which the player said yes to on a metered "
             + "network", mLines.get(0));
@@ -292,6 +295,8 @@ public class GameFilesFetchTest {
 
         assertTrue(GameFiles.ready(mStorage, 3840));
         assertEquals("asked about what the first download left", Collections.singletonList(REST), mPlayer.askedAbout);
+        assertEquals("each download's room, the rest's after the yes",
+            Arrays.asList(BYTES + Room.SPARE_BYTES, REST + Room.SPARE_BYTES), mRoom.claims);
         assertEquals(2, mDownload.downloads);
         assertEquals("the second, with the yes, unwatched", 1, mConnectivity.watches);
         assertEquals(1, mConnectivity.closed);
@@ -377,16 +382,64 @@ public class GameFilesFetchTest {
         assertEquals(Collections.emptyList(), mPlayer.askedAbout);
     }
 
-    /** Neither asked about nor started: the room is measured before both. */
+    /** Neither asked about nor started: the room is measured before both, and the result says how much to free. */
     @Test
-    public void aDownloadThatDoesNotFitFailsBeforeAQuestionAndAnyByte() {
-        mDownload.room = 300_000_000L;
+    public void aDownloadThatDoesNotFitEndsTheStartWithNoRoomBeforeAQuestionAndAnyByte() {
+        mRoom = new RoomTest.Fake(300_000_000L);
         mConnectivity.metered = true;
 
-        assertFailure(GameStart.Code.DOWNLOAD, "FAF game version 3840: the phone has 286 MB free, and it needs 782 MB",
-            failure(3840));
+        GameStart.Failure failure = failure(3840);
 
+        assertFailure(GameStart.Code.NO_ROOM, NO_ROOM_LINE, failure);
+        assertEquals(BYTES + Room.SPARE_BYTES - 300_000_000L, failure.bytesToFree);
         assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+        assertEquals(Collections.emptyList(), mRoom.claims);
+        assertEquals(0, mDownload.downloads);
+    }
+
+    /** Without a question the claim is the measure, before the network is watched. */
+    @Test
+    public void onANetworkThatIsNotMeteredADownloadThatDoesNotFitEndsTheStartBeforeAnyByte() {
+        mRoom = new RoomTest.Fake(300_000_000L);
+
+        assertFailure(GameStart.Code.NO_ROOM, NO_ROOM_LINE, failure(3840));
+
+        assertEquals(1, mRoom.asked);
+        assertEquals(0, mConnectivity.watches);
+        assertEquals(0, mDownload.downloads);
+    }
+
+    /** The question waited for the player, and another app took the room meanwhile: the claim after the yes finds it gone. */
+    @Test
+    public void roomThatWentWhileThePlayerWasAskedEndsTheStartWithNoRoom() {
+        mConnectivity.metered = true;
+        mPlayer.answers.add(true);
+        mRoom = new RoomTest.Fake(() -> mPlayer.askedAbout.isEmpty() ? 4_000_000_000L : 300_000_000L);
+
+        assertFailure(GameStart.Code.NO_ROOM, NO_ROOM_LINE, failure(3840));
+
+        assertEquals(Collections.singletonList(BYTES), mPlayer.askedAbout);
+        assertEquals(Collections.emptyList(), mRoom.claims);
+        assertEquals(0, mDownload.downloads);
+    }
+
+    /** Never another measure in its place: a room call that Android fails is the start's DOWNLOAD, before any byte. */
+    @Test
+    public void aRoomCallThatAndroidFailsEndsTheStartWithDownloadBeforeAQuestionAndAnyByte() {
+        mConnectivity.metered = true;
+        mRoom.allocatableFails = new IOException("Android cannot say how much the app may write to the phone's storage: "
+            + "no such volume");
+        assertFailure(GameStart.Code.DOWNLOAD, "FAF game version 3840: Android cannot say how much the app may write to the "
+            + "phone's storage: no such volume", failure(3840));
+        assertEquals(Collections.emptyList(), mPlayer.askedAbout);
+
+        mConnectivity.metered = false;
+        mRoom.allocatableFails = null;
+        mRoom.allocateFails = new IOException("Android cannot clear 782 MB on the phone's storage for the write: not freed");
+        assertFailure(GameStart.Code.DOWNLOAD, "FAF game version 3840: Android cannot clear 782 MB on the phone's storage for "
+            + "the write: not freed", failure(3840));
+
+        assertEquals(0, mConnectivity.watches);
         assertEquals(0, mDownload.downloads);
     }
 
@@ -409,6 +462,8 @@ public class GameFilesFetchTest {
         });
         assertFailure(GameStart.Code.DOWNLOAD, "FAF game version 3840: Connection reset", failure(3840));
 
+        // A disk that became full under the download stays DOWNLOAD (GameFilesFetch says why): the next start's NO_ROOM
+        // says how much to free.
         mDownload.during.add(() -> {
             throw new Http.StorageException("the phone cannot write env.3840.nx2.part (write failed: ENOSPC (No space left on device))");
         });
@@ -447,7 +502,7 @@ public class GameFilesFetchTest {
         };
 
         GameStart.Failure failure = assertThrows(GameStart.Failure.class,
-            () -> GameFilesFetch.run(mStorage, 3840, mLog, cancelled, mConnectivity, mDownload, mPlayer));
+            () -> GameFilesFetch.run(mStorage, 3840, mLog, cancelled, mConnectivity, mRoom, mDownload, mPlayer));
 
         assertEquals(GameStart.Code.CANCELLED, failure.code);
         assertEquals(0, mDownload.downloads);
@@ -461,19 +516,9 @@ public class GameFilesFetchTest {
         File kept = new File(mStorage.game(3841), "gamedata/units.nx2");
         GameFilesTest.touch(kept);
         GameFilesTest.Updater updater = new GameFilesTest.Updater();
-        NewestGameFilesJob.Download phone = new NewestGameFilesJob.Download() {
-            @Override
-            public long room() {
-                return 4_000_000_000L;
-            }
+        NewestGameFilesJob.Download phone = version -> GameFiles.ensure(mStorage, version, mLog, updater);
 
-            @Override
-            public void files(int version) throws IOException {
-                GameFiles.ensure(mStorage, version, mLog, updater);
-            }
-        };
-
-        GameFilesFetch.run(mStorage, 3840, mLog, mUpdater, mConnectivity, phone, mPlayer);
+        GameFilesFetch.run(mStorage, 3840, mLog, mUpdater, mConnectivity, mRoom, phone, mPlayer);
 
         assertEquals(Arrays.asList(3835, 3840, 3841), GameFiles.readyVersions(mStorage));
         assertEquals("partial", new String(Files.readAllBytes(kept.toPath()), StandardCharsets.UTF_8));

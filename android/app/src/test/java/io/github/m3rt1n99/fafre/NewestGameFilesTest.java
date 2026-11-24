@@ -1,9 +1,11 @@
 package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
+
+import java.io.IOException;
 
 import org.junit.Test;
 
@@ -70,9 +72,10 @@ public class NewestGameFilesTest {
     /** Too little room stops the job before a download begins, on the same line as a download that failed: it promises none. */
     @Test
     public void tooLittleRoomPromisesNoDownloadThatBegan() {
-        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 failed: the phone has 286 MB free, and it needs 782 MB; "
-            + "the button tries again, keeping anything downloaded so far",
-            line(NewestGameFiles.Phase.FAILED, 3840, BYTES, NewestGameFiles.noRoom(BYTES, 300_000_000L), 3835));
+        Room.NoRoom noRoom = new Room.NoRoom("FAF game version 3840", BYTES + Room.SPARE_BYTES, 300_000_000L);
+        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 failed: it needs 782 MB: free 496 MB more on the "
+            + "phone; the button tries again, keeping anything downloaded so far",
+            line(NewestGameFiles.Phase.FAILED, 3840, BYTES, noRoom.line("it"), 3835));
     }
 
     @Test
@@ -123,25 +126,21 @@ public class NewestGameFilesTest {
         NewestGameFiles.downloading(3840, BYTES);
         assertNull("a download asks nothing", NewestGameFiles.pending());
         NewestGameFiles.asking(3840, BYTES);
-        NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, "the phone has 286 MB free, and it needs 782 MB");
+        NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, "it needs 782 MB: free 496 MB more on the phone");
         assertNull("a job that ended asks nothing", NewestGameFiles.pending());
     }
 
-    /** The room on the phone: the download and 100 MB to spare for the game's and the runs' files. */
+    /** A size the updater did not say counts as 750 MB in the room, more than any version's so far. */
     @Test
-    public void aDownloadThatDoesNotFitSaysWhatItNeedsAndWhatIsFree() {
-        assertEquals("the phone has 286 MB free, and it needs 782 MB", NewestGameFiles.noRoom(BYTES, 300_000_000L));
-        assertNull(NewestGameFiles.noRoom(BYTES, 2_000_000_000L));
-        assertNull("just fits", NewestGameFiles.noRoom(BYTES, BYTES + NewestGameFiles.SPARE_BYTES));
-        assertNotNull("a byte short", NewestGameFiles.noRoom(BYTES, BYTES + NewestGameFiles.SPARE_BYTES - 1));
-        assertEquals("the phone has less than 1 MB free, and it needs 100 MB", NewestGameFiles.noRoom(0, 1000));
-    }
-
-    /** A size the updater did not say counts as 750 MB, more than any version's so far. */
-    @Test
-    public void aSizeNotSaidIsTakenAsMoreThanAnyVersions() {
-        assertEquals("the phone has 763 MB free, and it needs 850 MB", NewestGameFiles.noRoom(-1, 800_000_000L));
-        assertNull(NewestGameFiles.noRoom(-1, 900_000_000L));
+    public void aSizeNotSaidIsTakenAsMoreThanAnyVersions() throws IOException {
+        assertEquals(NewestGameFiles.UNSAID_BYTES, NewestGameFiles.counted(-1));
+        assertEquals(BYTES, NewestGameFiles.counted(BYTES));
+        assertEquals(0, NewestGameFiles.counted(0));
+        Room.NoRoom noRoom = assertThrows(Room.NoRoom.class,
+            () -> new RoomTest.Fake(800_000_000L).check("FAF game version 3841", NewestGameFiles.counted(-1)));
+        assertEquals("FAF game version 3841 needs 850 MB: free 88 MB more on the phone", noRoom.getMessage());
+        RoomTest.Fake fits = new RoomTest.Fake(NewestGameFiles.UNSAID_BYTES + Room.SPARE_BYTES);
+        fits.check("FAF game version 3841", NewestGameFiles.counted(-1));
     }
 
     @Test
