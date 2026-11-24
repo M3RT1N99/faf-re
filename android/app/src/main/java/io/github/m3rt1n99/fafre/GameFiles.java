@@ -14,6 +14,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
@@ -40,6 +41,8 @@ final class GameFiles {
     static final Set<String> REQUIRED = new HashSet<>(Arrays.asList("lua", "units"));
     /** The UI package (android/TOUCH_UI.md): in the APK's assets, beside the game's files, and mounted under this name. */
     static final String UI_PACKAGE = "fafre_ui";
+    /** fa_path.lua's ClientVersion, which FAF's init file logs as the client's: the app that starts the engine. */
+    static final String CLIENT_VERSION = "faf-re-android-" + BuildConfig.VERSION_NAME;
 
     static final String VAULT_ANCHOR = "if custom_vault_path then";
     private static final Pattern VAULT_LINE = Pattern.compile("^custom_vault_path = .*$", Pattern.MULTILINE);
@@ -240,9 +243,7 @@ final class GameFiles {
                 log.line(remote + ": " + Sizes.of(packed.length()));
                 manifest.put(remote, "whole");
             }
-            write(new File(dir, "fa_path.lua"),
-                "fa_path = '" + storage.scfa.getAbsolutePath() + "'\nGameType = \"faf\"\nGameVersion = \"" + version
-                    + "\"\nClientVersion = \"faf-re-android-" + BuildConfig.VERSION_NAME + "\"\n");
+            writeFaPath(storage, version);
             write(manifestFile, manifest.toString(2));
             // Last: with it the pack is ready, so it comes whole or not at all.
             File part = new File(init.getPath() + ".part");
@@ -340,8 +341,10 @@ final class GameFiles {
         return PARITY_UI.matcher(text).replaceAll("");
     }
 
-    /** The init file of one run: init_ci.lua with the run's own vault. */
-    static File runInit(File gameDir, String label, File vault) throws IOException {
+    /** The init file of one run of {@code version}: init_ci.lua with the run's own vault; and fa_path.lua (writeFaPath). */
+    static File runInit(Storage storage, int version, String label, File vault) throws IOException {
+        writeFaPath(storage, version);
+        File gameDir = storage.game(version);
         File init = new File(gameDir, "bin/init_" + label + ".lua");
         write(init, runInitText(gameDir, vault));
         return init;
@@ -351,13 +354,40 @@ final class GameFiles {
      * The init file of a game: a run's, and the UI package (android/TOUCH_UI.md) comes along, from the
      * APK, so that an update reaches it. A replay's run stays without it, as it pins the simulation.
      */
-    static File gameInit(AssetManager assets, File gameDir, File vault) throws IOException {
-        File folder = new File(gameDir, UI_PACKAGE);
+    static File gameInit(AssetManager assets, Storage storage, int version, File vault) throws IOException {
+        File folder = new File(storage.game(version), UI_PACKAGE);
         Storage.deleteTree(folder);
         copyAssets(assets, UI_PACKAGE, folder);
+        return gameInitFiles(storage, version, vault);
+    }
+
+    /** gameInit's files once the UI package is there: fa_path.lua (writeFaPath) and the init file that mounts the package. */
+    static File gameInitFiles(Storage storage, int version, File vault) throws IOException {
+        writeFaPath(storage, version);
+        File gameDir = storage.game(version);
         File init = gameInitFile(gameDir);
         write(init, withUiPackage(runInitText(gameDir, vault)));
         return init;
+    }
+
+    /**
+     * fa_path.lua of {@code version}, which FAF's init file reads first: the user's SCFA, which it mounts, the version, and
+     * the app that starts the engine (CLIENT_VERSION), which it logs. Each start writes it anew, as a version's files
+     * outlive the app that fetched them; in one move, as the game and the replay test may start the engine on one version
+     * at the same time.
+     */
+    static void writeFaPath(Storage storage, int version) throws IOException {
+        File dir = Storage.mkdirs(storage.game(version));
+        String text = "fa_path = '" + storage.scfa.getAbsolutePath() + "'\nGameType = \"faf\"\nGameVersion = \"" + version
+            + "\"\nClientVersion = \"" + CLIENT_VERSION + "\"\n";
+        Path part = Files.createTempFile(dir.toPath(), "fa_path", ".part");
+        try {
+            Files.write(part, text.getBytes(StandardCharsets.UTF_8));
+            Files.move(part, new File(dir, "fa_path.lua").toPath(), StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            Files.deleteIfExists(part);
+        }
     }
 
     /** Where {@link #gameInit} writes, which the command line names before a start's preparation has fetched the version. */

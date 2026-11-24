@@ -364,7 +364,7 @@ public final class GameActivity extends SDLActivity {
         if (!fetch) {
             try {
                 // With the UI package for fingers (android/TOUCH_UI.md), from the APK.
-                GameFiles.gameInit(getAssets(), game, vault);
+                GameFiles.gameInit(getAssets(), storage, version, vault);
             } catch (IOException e) {
                 throw GameStart.Failure.initFile(e.getMessage());
             }

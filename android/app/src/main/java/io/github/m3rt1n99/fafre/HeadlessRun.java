@@ -121,7 +121,7 @@ final class HeadlessRun {
         }
 
         // Its game files, map and M28AI (fetch put them in the caches).
-        File gameDir = GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
+        GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
         File map = Vault.map(storage, info.map, log);
         File mod = info.m28 != null ? Vault.m28(storage, info.m28, log, Http.WITH_RETRIES) : null;
 
@@ -142,7 +142,7 @@ final class HeadlessRun {
             out.write(file.body);
         }
         String label = "r" + replay.id;
-        File init = GameFiles.runInit(gameDir, label, vault);
+        File init = GameFiles.runInit(storage, info.gameVersion, label, vault);
         Map<Integer, Map<String, List<String>>> recorded = file.checksums();
         Cancellation.check();
 

@@ -158,7 +158,7 @@ final class Preparation {
             new PhoneRoom(mContext, mStorage),
             (version, before) -> GameFiles.ensure(mStorage, version, files, Http.WITH_RETRIES, before), this::askToDownload);
         try {
-            GameFiles.gameInit(mContext.getAssets(), mStorage.game(mFetchVersion), mVault);
+            GameFiles.gameInit(mContext.getAssets(), mStorage, mFetchVersion, mVault);
         } catch (IOException e) {
             throw GameStart.Failure.initFile(e.getMessage());
         }

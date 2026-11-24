@@ -85,18 +85,46 @@ public class GameFilesTest {
 
     @Test
     public void aReplaysRunStaysWithoutTheUiPackage() throws IOException {
-        File game = folder.newFolder("3835");
-        File bin = new File(game, "bin");
-        bin.mkdirs();
-        Files.write(new File(bin, "init_ci.lua").toPath(), INIT.getBytes(StandardCharsets.UTF_8));
+        Storage storage = new Storage(folder.getRoot());
+        makeReady(storage, 3835);
         File vault = folder.newFolder("vault");
 
-        File init = GameFiles.runInit(game, "r1234", vault);
+        File init = GameFiles.runInit(storage, 3835, "r1234", vault);
 
         String text = new String(Files.readAllBytes(init.toPath()), StandardCharsets.UTF_8);
-        assertEquals("init_r1234.lua", init.getName());
+        assertEquals(new File(storage.game(3835), "bin/init_r1234.lua"), init);
         assertFalse(text.contains("fafre_ui"));
         assertEquals(INIT.replace("custom_vault_path = InitFileDir .. '/../vault'", "custom_vault_path = '" + vault.getAbsolutePath() + "'"), text);
+    }
+
+    @Test
+    public void eachStartOfTheEngineNamesTheAppThatStartsItInFaPath() throws IOException {
+        Storage storage = new Storage(folder.getRoot());
+        makeReady(storage, 3840);
+        File vault = folder.newFolder("vault");
+        File faPath = new File(storage.game(3840), "fa_path.lua");
+        // As 0.14.0 wrote it when it fetched the version, which FAF's init file then logged as the client of 0.16.0's game.
+        String fetched = "fa_path = '" + storage.scfa.getAbsolutePath() + "'\nGameType = \"faf\"\nGameVersion = \"3840\"\n"
+            + "ClientVersion = \"faf-re-android-0.14.0\"\n";
+        String now = fetched.replace("0.14.0", BuildConfig.VERSION_NAME);
+
+        GameFiles.write(faPath, fetched);
+        File game = GameFiles.gameInitFiles(storage, 3840, vault);
+        assertEquals("the game's start", now, new String(Files.readAllBytes(faPath.toPath()), StandardCharsets.UTF_8));
+        assertEquals(GameFiles.gameInitFile(storage.game(3840)), game);
+        assertTrue(new String(Files.readAllBytes(game.toPath()), StandardCharsets.UTF_8).contains("'/fafre_ui'"));
+
+        GameFiles.write(faPath, fetched);
+        GameFiles.runInit(storage, 3840, "r1", vault);
+        assertEquals("the replay test's run", now, new String(Files.readAllBytes(faPath.toPath()), StandardCharsets.UTF_8));
+        assertEquals("no part left beside it", Arrays.asList("bin", "fa_path.lua", "manifest.json"),
+            sorted(storage.game(3840).list()));
+    }
+
+    private static List<String> sorted(String[] names) {
+        List<String> list = new ArrayList<>(Arrays.asList(names));
+        Collections.sort(list);
+        return list;
     }
 
     /** FAF's updater by HEAD requests: 3840's packages as it had them (mods not published), or one length unsaid. */
