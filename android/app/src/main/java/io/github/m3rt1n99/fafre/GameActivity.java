@@ -103,8 +103,8 @@ public final class GameActivity extends SDLActivity {
      * no AAudio stream.
      */
     private AudioFocusRequest mAudioFocus;
-    /** Gone for good: nothing gives it back, as the end of a call does. */
-    private boolean mAudioFocusLost;
+    /** What the program holds of the audio focus, which an activity Android makes anew around the program goes on from. */
+    private static final AudioFocus sAudioFocus = new AudioFocus();
     /** While the activity is there: a network lobby or game that has begun since the last look has its service too. */
     private final Runnable mPoll = new Runnable() {
         @Override
@@ -639,26 +639,24 @@ public final class GameActivity extends SDLActivity {
 
     /** While a call has the focus this is delayed, and onAudioFocusChange hears when it comes. */
     private void requestAudioFocus() {
-        int focus = getSystemService(AudioManager.class).requestAudioFocus(mAudioFocus);
-        mAudioFocusLost = focus == AudioManager.AUDIOFOCUS_REQUEST_FAILED;
-        Game.audioFocus(focus == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+        tellAudioFocus(sAudioFocus.requested(getSystemService(AudioManager.class).requestAudioFocus(mAudioFocus)));
     }
 
     private void onAudioFocusChange(int change) {
-        if (change == AudioManager.AUDIOFOCUS_GAIN) {
-            mAudioFocusLost = false;
-            Game.audioFocus(true);
-        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
-            mAudioFocusLost = true;
-            Game.audioFocus(false);
-        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-            Game.audioFocus(false);
+        tellAudioFocus(sAudioFocus.changed(change));
+    }
+
+    /** The program's sound follows the hold; the report gets the line of its change, the sound's return among them. */
+    private void tellAudioFocus(String line) {
+        if (line != null) {
+            Game.report(line);
         }
+        Game.audioFocus(sAudioFocus.held());
     }
 
     /** The player is back at the game: its sound returns if the app that took the focus for good has stopped. */
     private void takeAudioFocusBack() {
-        if (mShowsProgram && mAudioFocusLost && !getSystemService(AudioManager.class).isMusicActive()) {
+        if (mShowsProgram && sAudioFocus.lostForGood() && !getSystemService(AudioManager.class).isMusicActive()) {
             requestAudioFocus();
         }
     }
