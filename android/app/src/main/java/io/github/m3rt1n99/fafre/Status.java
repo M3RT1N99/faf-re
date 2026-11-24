@@ -19,6 +19,13 @@ final class Status {
     /** The last game's start and end, from its report: one row, none before the first game. */
     static final List<String> LAST_GAME_COLUMNS = Collections.unmodifiableList(Arrays.asList(
         "started_at", "ended", "exit_code", "crashed", "end"));
+    /**
+     * The device check's verdict on this phone (the README's contract 2, The device check): one row, also before the first
+     * check. No table of the provider's until the app checks the device: an app without the check has none (columns answers
+     * null for it), so that the client keeps its own prediction.
+     */
+    static final List<String> DEVICE_CHECK_COLUMNS = Collections.unmodifiableList(Arrays.asList(
+        "verdict", "impact", "codes", "reasons", "gpu", "details", "checked_at", "checked_version_code", "stale", "running"));
 
     private Status() {
     }

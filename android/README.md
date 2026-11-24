@@ -385,6 +385,30 @@ S22 Ultra the little cores.
 The FAF client is an app of its own (`com.faforever.rustclient`, signed by another key), which starts the game across
 apps and reads its status and logs. This app stays the game: the engine, the SCFA import, FAF's game files and the test cards.
 
+**Contract 2.** The FAF client is to manage this app: start it for replays and for offline games against the AI, and
+get FAF's game files, maps and mods itself, which it hands over with no second copy (*The files*, below). Contract 2 is
+contract 1, the text without a mark, with what is marked (contract 2): written before its code, so that the client can
+be built against it, for 0.17.0. This build keeps contract 1. `game_data`'s `contract` says which one an app keeps, and
+an app without that column keeps 1. Where `engine` differs from contract 1, a marked paragraph says so.
+
+**The flavors (contract 2).** One app in two flavors, of one application id and one key, and both flavors of a build
+have its version code: either installs over the other, and over 0.16.0, and keeps the game data.
+
+- **`engine`**, `faf-re-game-<version>-<abis>.apk`, for players: the game, the SCFA import, the status, the inbox and
+  the start of replays and offline games, which fetches nothing (`engine`'s start, below); no test cards. It declares
+  no launcher activity, so it has no icon on the home screen or in the app drawer (Android 10 and later make one only
+  for an app that declares a launcher activity and turns it off), and Settings > Apps lists it as any app. Its front
+  door is `SetupActivity`, with an intent filter of `MAIN` and `INFO`, which no launcher lists: the installer's *Open*
+  and App info's *Open* lead there (*The setup*, below). It shows SCFA's logo, read at run time from the player's own
+  SCFA import, wherever Android lets an app choose its picture then: its entry in Recents (`setTaskDescription`), a
+  notification's large icon, and the setup screen. The APK's own icon stays this project's neutral one, and nothing of
+  the game's art goes into the APK ([LEGAL.md](../LEGAL.md)). Open: whether `engine` keeps FAF's LAN screen, and with it
+  `NetworkGameService`, which keeps a LAN game going in the back, and the permissions they need; nothing of this
+  contract depends on it.
+- **`cards`**, `faf-re-android-<version>-<abis>.apk` as now, for testers: the status, the inbox and the SCFA import as
+  `engine` has them, the test cards with their icon, and contract 1's start, which takes lobby games too and fetches
+  what the phone lacks.
+
 **Who may.** Apps of one signer, whose certificate's SHA-256 is on the allowlist, in one place (`Callers.ALLOWED`): this
 PC's debug key, which also signs this app; the client's release certificate comes there once it has one. Android 9 and
 later answer with `PackageManager.hasSigningCertificate(package, sha256, CERT_INPUT_SHA256)`, which also knows a rotated
@@ -470,6 +494,21 @@ A start plays one replay, `REPLAY` or `/replay`, and a rejoin none (`ARGUMENTS`)
 own (`/init`, `/log`, `/notelemetry`, the HUD's two, `/nomovie` for an import without movies), this side's after the
 launcher's, and `/fullscreen <the picture's size>` last.
 
+**`engine`'s start (contract 2).** `cards` takes the start above. `engine` takes replays and offline games alone, and
+fetches nothing:
+
+- `LAUNCHER_ARGUMENTS` holds `/replay` with its value, a live replay through the client on the loopback, or nothing.
+  Every other switch of the whitelist gives `ARGUMENTS`, with a message that names `engine`'s scope, and so do
+  `REJOIN_OFFER`, `REJOIN_PEERS` and `REJOIN_SOURCE`.
+- A replay's file comes as `REPLAY`'s data, as above. An offline start has neither a replay nor a switch: the game opens
+  FAF's menu, where the player sets up a skirmish against the AI.
+- `GAME_VERSION`, `FEATURED_MOD`, `MAP`, `MODS` and `MOD_FILES` are taken as above, and only checked: a version whose
+  files the phone has not got ready gives `NO_GAME_FILES`, a `MAP` that neither the SCFA import nor the vault has
+  `NO_MAP`, and a mod of `MODS` that is not on the phone `NO_MOD`, each before the program starts and with a message
+  that the FAF client brings it (*The files*, below). So no start of `engine`'s gives `DOWNLOAD` or `NO_ROOM`, and its
+  `CANCELLED` is Back while the replay is copied; a client handles every code all the same, as `cards` and earlier
+  builds give them all.
+
 **The result.** `RESULT_FIRST_USER` when the start ran no program, with `failure`, its code, and `message`, the reason
 in English that names none of the test app's cards; with `NO_ROOM` also `bytes_to_free`, a long, the bytes the player
 must free on the phone for the start to fit. `RESULT_CANCELED` when the program ran and ended: its end in front,
@@ -530,6 +569,12 @@ name or a path.
 | `job_running`, `job_step` | 1 or 0, and the step's text or null: the app's job (an import, a download, the tests) |
 | `game_running` | 1 or 0: the game's process runs (`ProcessExit.running(":game")`) |
 | `version_code`, `version_name`, `engine_commit` | The app's version and the commit it was built from |
+| `contract` | int, 2 (contract 2): the contract the app keeps; an app without the column keeps 1 |
+| `start_kinds` | text (contract 2): the starts PLAY takes, of `replay` (`REPLAY` or `/replay`), `offline` (neither a replay nor a switch) and `online` (a lobby's, `/gpgnet`): `replay,offline` in `engine`, `replay,offline,online` in `cards` |
+| `fetches` | int (contract 2): 1 when a start fetches what the phone lacks, 0 when it refuses the start then (`NO_GAME_FILES`, `NO_MAP`, `NO_MOD`): 0 in `engine`, 1 in `cards` |
+
+In `engine` (contract 2) `newest_known` stays null, as it looks for no FAF version of its own, and `job_running` and
+`job_step` are the SCFA import's alone.
 
 | `last_game` (one row, none before the first game) | |
 |---|---|
@@ -538,6 +583,186 @@ name or a path.
 | `exit_code` | int, or null: the program's own, when it returned or the engine ended its process |
 | `crashed` | 1 when the game crashed or stopped on a fatal error |
 | `end` | How it ended, in the app's words alone (`the program returned 0 after 61.2 s`, `CRASHED: native crash, status 11`, `the start failed: NO_MAP`), null until it has: the report's END line without the engine's log, a fatal error's message, Android's description or a failed start's message |
+
+`/game_versions` (contract 2), by the same rules: a row for each version with a folder on the phone or parts in the
+inbox, the lowest first.
+
+| `game_versions` (contract 2) | |
+|---|---|
+| `version` | int |
+| `ready` | 1 or 0: the version's files are ready for a start (its init file there, its packing the app's) |
+| `pack_format` | int, or null without a manifest: how the folder's packages are packed, 3 now; a folder of another is downloaded anew |
+| `bytes` | long: the version's folder on the phone, in bytes |
+| `inbox_bytes` | long: the client's parts of the version in the inbox, in bytes |
+| `locked` | 1 or 0: the version's lock is held, by a download of `cards`' own or for a moment by a move of the inbox's: `files_commit`, `files_finish` and `files_drop` wait 2 s for it at most, then answer `BUSY` |
+
+**What a start needs (contract 2).** Two more calls of the status provider,
+`getContentResolver().call(Uri.parse("content://io.github.m3rt1n99.fafre.status"), <method>, null, <extras>)`, off the
+main thread. They answer allowed callers only, as `play_token`: a refused one gets a null answer, and so does every
+caller of an app of contract 1, which has neither call.
+
+- `start_needs`, with the start's `GAME_VERSION` (not to be left out here), `MAP` and `MODS` as PLAY takes them, and
+  no other extra of the prefix: what of it the phone has, by the checks a start makes, fetching nothing. The answer:
+  `scfa` (boolean), the SCFA import has its archives and fonts; `version_ready` (boolean); `version_missing` (String[]),
+  the version's entries the phone has not got (*The files*, below), packages and init file, empty for a version that is
+  ready or whose files are all there for `files_finish`; `map_ready` (boolean), true without `MAP`; `mods_missing`
+  (String[]), the uids of `MODS` that are not on the phone. Or `failure`, `ARGUMENTS` or `STORAGE`, with `message`. The
+  client asks before each start and brings what it names.
+- `room`, with no extras: `allocatable` (long), the bytes Android lets the app allocate on its volume now, its own low
+  reserve kept free and the caches it may clear counted (`StorageManager.getAllocatableBytes`), and `spare` (long),
+  100,000,000, what each of the app's writes leaves free on top of its own bytes; or `failure` `STORAGE`, with
+  `message`, when Android does not say. Android counts the caches for each answer, seconds at worst: so it is a call,
+  not a column, as the client queries the tables every 2 s or so while a job runs.
+
+**The files (contract 2).** The client gets FAF's game files, maps and mods, and writes each straight into this app's
+inbox (`parity/inbox/`, on the volume of the game's folders, so that a file moves into place by a rename), through a
+write grant for that file on a provider of this app's that is not exported (`io.github.m3rt1n99.fafre.inbox`): the
+client's process writes through the descriptor, and there is no second copy. Calls of the status provider begin, check
+and finish what lands there, made as `start_needs` is: off the main thread, as a commit reads its file whole, and for
+allowed callers only. A failure answers as a start's result does: `failure`, its code, and `message`, with `NO_ROOM`
+also `bytes_to_free`. Nothing is locked while the client downloads, as nothing else writes the inbox; a version's lock
+is held for the moves alone. Only in `cards` can the app drop a version's inbox itself, when the Game card's job
+settles on another version and drops what is unfinished of the last one. The calls are the same whatever the client's
+source: FAF's API, whose list of a version's files has their MD5s, for a player who signed in, or FAF's updater, whose
+names carry the version (`lua.3840.nx2`, `init_faf_3840.lua`, as this app's own downloads take them) and which has no
+MD5s.
+
+| Entry | The file |
+|---|---|
+| `game/<version>/<package>.nx2` | A package of FAF's game files, named as in FAF's API (`lua.nx2`): one that the game mounts, as `start_needs` names those the phone lacks |
+| `game/<version>/init_faf.lua` | The version's init file |
+| `maps/<folder>.zip` | A map's zip, `<folder>` by `MAP`'s rule |
+| `mods/<uid>/<file>` | A mod's zip, `<uid>` by `MODS`' rule and `<file>` by `MOD_FILES`' |
+
+- **`files_begin`**, with `version` (int, 0 when no entry is a version's), `entries` (String[]), `sizes` (long[]: for
+  each entry the length its server said, -1 for none) and, optional, `md5s` (String[]: for each entry FAF's MD5, 32 hex
+  digits, `""` for none; left out, none has one); a version's entries are of `version` alone. The app skips what the
+  phone has whole; keeps each entry's size and MD5 beside its part for the entry's commit, also after either app's
+  process ended (a later begin's replace them, and a part longer than its new size starts over); claims the room for
+  what is left with 100 MB to spare, before any grant (each size less its part's length, and the sizes that no server
+  said 750 MB in all, more than a version has needed so far); and grants the caller to write each part
+  (`grantUriPermission`, `FLAG_GRANT_WRITE_URI_PERMISSION`). The answer: `uris` (Parcelable[] of `Uri`) and `offsets`
+  (long[]), for each entry its part's URI and length, where the write goes on, or null and -1 for an entry that `skip`
+  (String[]: whole on the phone already) or `unwanted` (String[]: a package the game does not mount) names; `ready`
+  (boolean), true when `version` is ready, its entries all in `skip` and its inbox gone. Or `failure`: `NO_ROOM`;
+  `ARGUMENTS`, for an entry not of the four forms, twice or of another version, arrays of other lengths, a size below -1
+  or an MD5 of another form; `STORAGE`.
+- **The write.** The client opens a URI with `openFileDescriptor(uri, "wa")` to go on at its offset, for the 206 of a
+  `Range` request from there, or with `"wt"` to start the part over, for a 200; there is no other mode, and nothing
+  reads. A part as long as its size goes to its commit at once. A URI opens until its entry's commit passes, its part is
+  dropped or its version becomes ready, and Android may end its grant before (when the phone restarts, among others): a
+  URI that fails to open (`SecurityException`, `FileNotFoundException`) wants a new `files_begin`, which goes on from
+  the parts. A disk that becomes full fails a write (`ENOSPC`): the client stops and keeps its parts, and the next
+  `files_begin` measures again and answers `NO_ROOM`.
+- **`files_commit`**, with `entry` (String), once the client has written it. First the checks, before any lock, against
+  what the entry's last begin said: its length, where a size was said (`SHORT` for a shorter part, with `offset`, a
+  long, the part's length, which the write goes on from; `CORRUPT` for a longer one); its MD5, where one was given
+  (`CORRUPT`); a package, and a map's or a mod's zip, must open as a zip (`CORRUPT`), which finds a cut-off file or an
+  error page, and without an MD5 that is all: a changed byte within passes, as in this app's own downloads; the init
+  file is UTF-8, with the one place where this app sets the vault (`INIT_FILE`); a map's zip holds its folder's scenario
+  (`NO_MAP`), a mod's zip a mod of that uid (`NO_MOD`), and either one unpacked fits in the room (`NO_ROOM`). A part
+  that `CORRUPT`, `INIT_FILE`, `NO_MAP` or `NO_MOD` turns down is deleted, and its URI stays: a `CORRUPT` one may be
+  written once more, from 0. After `SHORT`, `NO_ROOM` or `BUSY` the part stays for the next commit. Then the move: a
+  package into its version's `gamedata`, under the version's lock (`BUSY` after 2 s), into a folder of an older packing
+  emptied first; the init file stays in the inbox for `files_finish`; a map's or mod's zip unpacks beside its part, and
+  its folder joins the vault whole. The answer: no `failure`, and `ready` (boolean) true when another download got there
+  first: the entry's version is ready, or its map or mod on the phone, and the entry's inbox is gone. Or `failure`:
+  `SHORT`, `CORRUPT`, `INIT_FILE`, `NO_MAP`, `NO_MOD`, `NO_ROOM`, `BUSY`, `ARGUMENTS`, `STORAGE`.
+- **`files_finish`**, with `version` (int) and `not_published` (String[]: the entries of `version_missing` of which the
+  client's source has none for the version), under the version's lock: `lua`, `units` and the init file must be there,
+  and every other package whole or not published, else `INCOMPLETE`, with `missing` (String[]), the entries still to
+  bring. Then the version's `fa_path.lua`, its manifest and, last, its init file by an atomic move, as this app's own
+  download of a version ends: the version is ready, and its inbox, this app's own unfinished downloads of it and their
+  grants go. The answer: no `failure`, with `ready` true when it was ready already; or `failure`: `INCOMPLETE`, `BUSY`,
+  `ARGUMENTS`, `STORAGE`.
+- **`files_drop`**: `entries` (String[]) drops those parts, `version` (int) all of its inbox, and `version` with
+  `ready_too` (boolean) its folder as well, ready or not, the init file first, so that it is no longer ready before
+  anything else of it goes. The answer: no `failure`; or `failure`: `RUNNING` (no version's folder goes while the game
+  runs), `BUSY`, `ARGUMENTS`, `STORAGE`.
+
+The parts outlive either app's end and update. A replay comes as before, as `REPLAY`'s data, which this app copies.
+
+**The device check (contract 2).** Whether the game runs on this phone, as far as the engine's own setup of its
+renderer tells with no window (`gpg::gal::Device::Create`, the Vulkan backend's whole setup but the surface): run in a
+process of its own (`:probe`), so that a driver that crashes takes nothing else down, and kept until it no longer fits:
+another version of this app, another system build (`Build.FINGERPRINT`) or another GPU driver makes it stale. What only
+a game shows, the surface, the effects' pipelines and the memory under load, comes from each game's end (source
+`game`). `/device_check` is a table of the status provider's, by its rules: one row for an allowed caller, also before
+the first check, and the columns and no row for a refused one. An app without the check has no such table (a null
+cursor) and no call `check_device`: the client keeps its own prediction then.
+
+| `device_check` (contract 2, one row) | |
+|---|---|
+| `verdict` | `runs`, `limited` or `no` |
+| `impact` | The strongest reason's, from the weakest: `none`, `info`, `slower`, `risk`, `blocks` |
+| `codes` | The reasons' codes (below), comma-separated, the strongest first: `"BC_ON_CPU"`, `""` for none |
+| `reasons` | This app's English words for them, a line for each code in that order: the client's words for a code it does not know, as `message` is for a `failure` |
+| `gpu` | `"<device name>, Vulkan <x.y.z>, <driver name> <driver info>"`, or null when the check found no device |
+| `details` | JSON for a details view: `{"facts": {...}, "reasons": [{"code": "...", "impact": "...", "source": "probe" or "game", "detail": "..."}]}`, the reasons in `codes`' order, each with the engine's line or the fact it comes from; `facts` holds the probe report's `fact:` and `runtime:` lines by their first word (`loader`, `device`, `features`, `limits`, `runtime`), each a list of the lines' text after it, for showing, not for rules |
+| `checked_at` | ms since 1970 |
+| `checked_version_code` | The version code of this app that checked |
+| `stale` | 1 when the check no longer fits: it keeps its verdict until a new one ends; 0 before the first check |
+| `running` | 1 or 0: a check runs |
+
+Before the first check every column but `stale` and `running` is null. The verdict is `no` when a reason blocks; else
+`limited` when one is a risk or slows the game, or when the phone unpacks the textures (`BC_ON_CPU`); else `runs`, with
+reasons of `info` alone or none. A warning of the engine's that no code names is `RENDERER_WARNING`, with its line, so
+that a new or renamed one cannot pass unseen. No column has a player's name or a path, as above.
+
+| Code | Impact | Why |
+|---|---|---|
+| `ANDROID_TOO_OLD` | blocks | The Vulkan loader is older than 1.3, which comes with Android 13 |
+| `NO_VULKAN` | blocks | No Vulkan driver, or no Vulkan device |
+| `VULKAN_TOO_OLD` | blocks | No device of Vulkan 1.3 with a graphics queue |
+| `VULKAN_FEATURES` | blocks | The device lacks dynamic rendering, synchronization2, timeline semaphores or scalar block layout; the detail names which |
+| `DEVICE_FAILED` | blocks | Any other error of the renderer's setup |
+| `DRIVER_CRASHED` | blocks | The probe's process died before its report's end; the detail has Android's reason |
+| `LOW_RAM_DEVICE` | blocks | Android runs the phone as a low-memory device (`ActivityManager.isLowRamDevice`) |
+| `GAME_RENDERER` | blocks | The game's last start failed in its renderer (source `game`), until a new check |
+| `DESCRIPTOR_LIMITS` | risk | The GPU allows fewer textures or samplers per shader stage than the game's layout has (64 each; the terrain's effect uses 34 and 36): the picture may be wrong, or the game may stop |
+| `MEMORY_LOW` | risk | Less memory than the game is comfortable with: large maps or long games may run out |
+| `RENDERER_WARNING` | risk | Any other `Vulkan:` warning of the setup, or a renderer failure in a game (a pipeline, skipped draws, the surface) |
+| `GPU_DRIVEN_OFF` | slower | Fewer storage buffers per stage than GPU-driven drawing needs (6), or `gpuDriven` without vertex pulling: the processor does that work |
+| `COMPUTE_OFF` | slower | Compute groups smaller than the unit icons' sort needs (1024 threads): the processor sorts them |
+| `BC_ON_CPU` | info | The GPU cannot read BC textures: the phone unpacks them as they load, which takes longer and holds them 4 to 8 times as large |
+| `NO_ANISOTROPY` | info | No anisotropic filtering: ground seen at a slant is blurrier |
+| `NO_TESSELLATION` | info | No tessellation: the engine's tessellated extras stay off |
+| `NO_DEPTH_BIAS_CLAMP` | info | No depth bias clamp: some shadow edges may differ |
+
+`check_device`, a call as `start_needs` is, with the optional boolean `force` to check again although the check fits:
+the answer has `running` (boolean), true while a check runs, whether this call started it or an earlier one, and false
+when the check fits; or, while the game runs, `busy` (String) with `game` in place of `running`, and no check starts.
+One check runs at a time. The client polls `device_check` every 2 s or so while its `running` is 1, as it does
+`game_data` while `job_running` is 1. This app's own screens start a check too when they come to the front and none
+fits.
+
+The probe writes its report a line at a time, unbuffered, so that a driver that takes its process down leaves what it
+got to; the logs' zip carries it as `probe.txt`:
+
+```
+probe 1
+fact: loader <x.y.z>
+fact: device '<name>' vulkan <x.y.z> driver '<driver name> <driver info>' 0x<driver version> vendor 0x<id> device 0x<id> type <n>
+fact: features dynamicRendering <0|1> synchronization2 <0|1> timelineSemaphore <0|1> scalarBlockLayout <0|1> bc <0|1> etc2 <0|1> astc <0|1> anisotropy <0|1> wireframe <0|1> tessellation <0|1> depthBiasClamp <0|1> d24s8 <0|1> d32s8 <0|1>
+fact: limits images <n> samplers <n> storage <n> group <x>x<y> invocations <n> fragmentInputs <n> image2d <n>
+log: <severity>: <the engine's line>
+runtime: gpuDriven 0x<bits> local <bytes> shared <bytes>
+end: PASS <ms>
+```
+
+- `probe 1` is the format; a new one raises the number.
+- A `fact: device` line for each device Vulkan lists (`type`: its `VkPhysicalDeviceType`), and after one of Vulkan 1.3
+  or later its `features` line (1 or 0 each; `d24s8` and `d32s8`: the format can be the depth-stencil target) and its
+  `limits` line: `images`, `samplers` and `storage` per shader stage (`maxPerStageDescriptorSampledImages`,
+  `maxPerStageDescriptorSamplers`, `maxPerStageDescriptorStorageBuffers`), `group` (`maxComputeWorkGroupSize`'s x and
+  y), `invocations` (`maxComputeWorkGroupInvocations`), `fragmentInputs` (`maxFragmentInputComponents`) and `image2d`
+  (`maxImageDimension2D`).
+- A `log:` line for each line the engine logs during its setup, in order, with its severity: `debug`, `info` or
+  `warning`.
+- `runtime:`, once the device is up: `GetRuntimeInfo`'s GPU-driven bits (`src/gpg/gal/GpuDriven.h`) and its memory, the
+  device's own and the shared, in bytes.
+- `end: PASS <ms>`: the setup took that long. `end: FAIL <file>(<line>) <message>`: the engine's error that the setup
+  threw, `end: FAIL <message>` for another exception. No `end:` line: the process died (`DRIVER_CRASHED`).
 
 **The logs.** For the client's problem report:
 `getContentResolver().call(Uri.parse("content://io.github.m3rt1n99.fafre.status"), "game_logs", null, null)`, off the main
@@ -557,6 +782,7 @@ next call, which deletes it and takes its grants back: the client reads or copie
 | `game-tombstone.txt`, `game-previous-tombstone.txt` | A native crash's tombstone of either game as text (`Tombstone`): the signal and its fault address, the cause, the abort message, each thread's stack (library and offset, function) and the libraries' build ids, for `tools/tombstone.py`'s way of symbolizing a build's frames; not the tombstone's memory, registers, open files, log and command line |
 | `game/engine.sclog` | The engine's log of the last game |
 | `game/faf_crash_latest.txt` | The engine's newest crash report, which can be an earlier game's (its `time` says when) |
+| `probe.txt` | The device check's last report (contract 2: *The device check*, above) |
 
 The zip goes into public issues, so its texts are scrubbed (`LogScrubber`) as one zip's: what names a player, their account
 or the network becomes a stand-in, the same one throughout the zip.
@@ -606,6 +832,11 @@ and no URI (the intent's data is not read), and no job starts without the player
 | `scfa` | The SCFA import: *Folder…*, the system's folder picker (`ACTION_OPEN_DOCUMENT_TREE`), as the Game data card's, or *ZIP file…*, the file picker (`ACTION_OPEN_DOCUMENT`, `application/zip` and `application/x-zip-compressed`) |
 | `game_files` | FAF's newest game files, *Get FAF's newest version* as on the Game card, with its question before a download on a metered network; no other version: a start fetches the one its `GAME_VERSION` names |
 | none | Both |
+
+In `engine` (contract 2) the screen is the app's front door too, which the installer's and App info's *Open* open with
+no extra. With no `STEP`, or `scfa`, it shows the SCFA step, with SCFA's logo once the import has it, says that the
+game is played from the FAF client and offers to open it (*Open the FAF client*); `game_files` ends it with `ARGUMENTS`
+and a message that the FAF client gets FAF's game files.
 
 Another value or type of `STEP`, or another extra of the prefix, ends the screen at once with `RESULT_FIRST_USER`,
 `failure` `ARGUMENTS` and its `message`. Else the result is `RESULT_CANCELED`, whatever the player did there: the caller

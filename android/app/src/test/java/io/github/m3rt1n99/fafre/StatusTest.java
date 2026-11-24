@@ -36,6 +36,13 @@ public class StatusTest {
     }
 
     @Test
+    public void theDeviceCheckHasTheContractsColumnsAndNoTableYet() {
+        assertEquals(Arrays.asList("verdict", "impact", "codes", "reasons", "gpu", "details", "checked_at", "checked_version_code",
+            "stale", "running"), Status.DEVICE_CHECK_COLUMNS);
+        assertNull("no table without the check, so that the client keeps its own prediction", Status.columns("device_check"));
+    }
+
+    @Test
     public void gameDataHasTheImportTheReadyVersionsTheJobAndTheApp() {
         assertArrayEquals(new Object[] {7, 3, 12, 9, "3841,3845", 3846, 1, "Downloading FAF lua: 3 / 100 MB", 0, 5544, "0.14.0",
             "2bf1611970"}, Status.gameData(7, 3, 12, 9, Arrays.asList(3841, 3845), 3846, true, "Downloading FAF lua: 3 / 100 MB",
