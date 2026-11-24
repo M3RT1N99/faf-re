@@ -68,7 +68,7 @@ final class GameStart {
          * token of the game's (PlayTokens).
          */
         CALLER,
-        /** FAF's map vault has no map of the start's MAP. */
+        /** FAF's map vault has no map of the start's MAP, as for a generated map, which no request asks it for (Vault). */
         NO_MAP,
         /** A mod of the start's MODS is not on the phone, and FAF has no file of it that MOD_FILES names. */
         NO_MOD,

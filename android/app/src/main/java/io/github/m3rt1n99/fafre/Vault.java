@@ -35,6 +35,8 @@ final class Vault {
 
     /** A mod's uid in its mod_info.lua: {@code uid = "..."}. */
     private static final Pattern MOD_UID = Pattern.compile("^\\s*uid\\s*=\\s*[\"']([^\"'\\r\\n]+)[\"']", Pattern.MULTILINE);
+    /** How the folder of a map that FAF's map generator made begins. */
+    private static final String GENERATED_MAP = "neroxis_map_generator_";
 
     private Vault() {
     }
@@ -53,12 +55,27 @@ final class Vault {
         return retail != null && hasScenario(retail);
     }
 
-    /** The map {@code folder} in {@code maps}, from FAF's map vault when it is not there yet. */
+    /**
+     * Whether {@code folder} is a map of FAF's map generator (neroxis_map_generator_...), which FAF's clients make on the
+     * computer that plays it, from the seed and the options its name holds: FAF's map vault has none.
+     */
+    static boolean generatedMap(String folder) {
+        return folder.regionMatches(true, 0, GENERATED_MAP, 0, GENERATED_MAP.length());
+    }
+
+    /**
+     * The map {@code folder} in {@code maps}, from FAF's map vault when it is not there yet; a generated map that is not
+     * there is Missing before any request.
+     */
     static File fetchMap(Storage storage, File maps, String folder, GameFiles.Log log, Http.Downloads downloads,
             Http.Progress progress) throws IOException {
         File have = Storage.findChild(maps, folder);
         if (have != null && hasScenario(have)) {
             return have;
+        }
+        if (generatedMap(folder)) {
+            throw new Missing("generated maps cannot be played on the phone yet: FAF's map generator makes each on the "
+                + "computer that plays it, and FAF's map vault has none");
         }
         File zip = new File(storage.downloads(), folder + ".zip");
         log.step("Downloading map " + folder);

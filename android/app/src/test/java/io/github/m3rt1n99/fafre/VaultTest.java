@@ -132,6 +132,38 @@ public class VaultTest {
     }
 
     @Test
+    public void aGeneratedMapThePhoneHasNotIsNoMapBeforeAnyRequest() throws IOException {
+        Storage storage = new Storage(folder.getRoot());
+        File maps = Storage.mkdirs(new File(folder.getRoot(), "game/vault/maps"));
+        String generated = "neroxis_map_generator_1.12.3_mzqw4ykjmfuwe_aiea";
+        Http.Downloads noRequest = new Http.Downloads() {
+            @Override
+            public byte[] bytes(String url) {
+                throw new AssertionError("a request for " + url);
+            }
+
+            @Override
+            public void download(String url, File dest, Http.Progress progress) {
+                throw new AssertionError("a request for " + url);
+            }
+        };
+
+        IOException missing = assertThrows(IOException.class, () -> Vault.fetchMap(storage, maps, generated, LOG, noRequest, null));
+
+        GameStart.Failure noMap = GameStart.fetchFailure(missing, GameStart.Code.NO_MAP, "the map " + generated);
+        assertEquals(GameStart.Code.NO_MAP, noMap.code);
+        assertEquals("the map " + generated + ": generated maps cannot be played on the phone yet: FAF's map generator makes "
+            + "each on the computer that plays it, and FAF's map vault has none", noMap.getMessage());
+        // One that the phone has, which someone put into the vault, plays.
+        File have = Storage.mkdirs(new File(maps, generated));
+        GameFiles.write(new File(have, generated + "_scenario.lua"), "version = 3");
+        assertEquals(have, Vault.fetchMap(storage, maps, generated, LOG, noRequest, null));
+        assertTrue(Vault.generatedMap("NEROXIS_MAP_GENERATOR_1.8.5_abc"));
+        assertFalse("the vault's", Vault.generatedMap("neroxis_valley.v0002"));
+        assertFalse(Vault.generatedMap("scmp_007"));
+    }
+
+    @Test
     public void aFetchsFailureHasTheStartsCode() {
         assertEquals(GameStart.Code.NO_MOD, GameStart.fetchFailure(new Http.StatusException("u", 404), GameStart.Code.NO_MOD, "m").code);
         assertEquals(GameStart.Code.NO_MAP, GameStart.fetchFailure(new Http.StatusException("u", 403), GameStart.Code.NO_MAP, "m").code);

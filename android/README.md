@@ -439,7 +439,7 @@ with the same result.
 | `REJOIN_OFFER` | boolean | The game offers its return after a crash: this side adds `/rejoinoffer /rejoinkeyfile <noBackupFilesDir>/faf_rejoin_seat.key /con net_PeerFeatures=1;net_RejoinAccept=1` |
 | `REJOIN_PEERS` | String `^\d{1,10}=\d{1,3}(,\d{1,10}=\d{1,3}){0,15}$` | With `REJOIN_SOURCE` the start takes the seat back: this side adds `/rejoin <peers> <source> 0`. Needs `REJOIN_OFFER` on the same start, and the other of the two |
 | `REJOIN_SOURCE` | int, 0 to 255 | The `RejoinOffer`'s first field |
-| `MAP` | String `^[a-z0-9_.-]{1,64}$`, not `.` or `..` | FAF's map folder name: unless the SCFA import or the game's vault has it, it comes from `content.faforever.com/maps/<MAP>.zip` into `game/vault/maps` before the program starts |
+| `MAP` | String `^[a-z0-9_.-]{1,64}$`, not `.` or `..` | FAF's map folder name: unless the SCFA import or the game's vault has it, it comes from `content.faforever.com/maps/<MAP>.zip` into `game/vault/maps` before the program starts. A generated map, whose folder name begins with `neroxis_map_generator_`, is made by FAF's map generator on the computer that plays it, and the vault has none: unless the game's vault has it, the start ends with `NO_MAP` before any request, as generated maps cannot be played on the phone yet |
 | `MODS` | String[] of uids, `^[0-9A-Za-z_.-]{8,64}$`, not first a `.`, each once | The mods the game needs in `game/vault/mods`: a folder there whose `mod_info.lua` has the uid, in any case, or else its file |
 | `MOD_FILES` | String[], one for each of `MODS` in its order | That mod version's file in `content.faforever.com/mods/`, the last segment of FAF's `downloadUrl`: `<name>.zip`, no folder. It must hold the uid; it takes the place of a folder of its name |
 | the intent's data (REPLAY) | `content://` URI, with `FLAG_GRANT_READ_URI_PERMISSION` on the start | A replay in SCFA's format, copied into the app's files before the program, which plays it (`/replay <copy>`): not its cache, which Android empties when the storage runs low, as a download of the game files can make it; `GAME_VERSION` names its version, `MAP` its map where the phone may not have it. Android lets a start with the grant through only when its app may read the URI itself, and the game reads nothing for a start without it, with access of its own |
@@ -523,7 +523,7 @@ which ends its process, or any other end of the process there, which takes the a
 | `INIT_FILE`, `ENVIRONMENT`, `STORAGE` | The game's init file, its environment or the app's shared storage failed |
 | `RUNNING` | A game runs already, which this start's version and arguments would not reach: the running game goes on, and its report gets the line but no end |
 | `PROCESS_ENDED` | Android brought back (Recents) the activity of a launcher's game whose process ended in the back (ended by Android, by a crash or by the program's end): it would start the game anew on a GPGNet session the launcher saw end; the gone game's report, `game-previous.txt`, says how |
-| `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name |
+| `NO_MAP` | FAF's map vault has no `MAP`, or its file holds no map of that name; or `MAP` is a generated map that the game's vault has not got, for which no request is made |
 | `NO_MOD` | A mod of `MODS` is not on the phone, and `MOD_FILES` names none of it, FAF has no such file, or it holds another uid |
 | `DOWNLOAD` | A download of `GAME_VERSION`'s game files, the map or a mod failed: the network, after its tries, or the phone's storage, Android's calls for the room among it, and a disk that became full under the download (`No space left on device`), which not every write can tell apart: the next start measures first and gives `NO_ROOM` |
 | `NO_ROOM` | `GAME_VERSION`'s game files do not fit in the phone's room (what Android lets the app allocate: its own low reserve kept free, the caches it may clear counted) with 100 MB to spare, before any byte: `message` says what they need and how much more to free, in MB as the phone's storage settings count them, rounded up (`FAF game version 3839 needs 816 MB: free 651 MB more on the phone`), `bytes_to_free` the exact bytes |
@@ -605,9 +605,12 @@ caller of an app of contract 1, which has neither call.
   no other extra of the prefix: what of it the phone has, by the checks a start makes, fetching nothing. The answer:
   `scfa` (boolean), the SCFA import has its archives and fonts; `version_ready` (boolean); `version_missing` (String[]),
   the version's entries the phone has not got (*The files*, below), packages and init file, empty for a version that is
-  ready or whose files are all there for `files_finish`; `map_ready` (boolean), true without `MAP`; `mods_missing`
-  (String[]), the uids of `MODS` that are not on the phone. Or `failure`, `ARGUMENTS` or `STORAGE`, with `message`. The
-  client asks before each start and brings what it names.
+  ready or whose files are all there for `files_finish`; `map_ready` (boolean), true without `MAP`; `map_generated`
+  (boolean), `MAP` is a generated map (`neroxis_map_generator_...`), which FAF's map vault has none of, so that the
+  client brings it only if it makes it itself and otherwise tells the player that generated maps cannot be played on
+  the phone yet, as a start without it ends with `NO_MAP`; `mods_missing` (String[]), the uids of `MODS` that are not on
+  the phone. Or `failure`, `ARGUMENTS` or `STORAGE`, with `message`. The client asks before each start and brings what
+  it names.
 - `room`, with no extras: `allocatable` (long), the bytes Android lets the app allocate on its volume now, its own low
   reserve kept free and the caches it may clear counted (`StorageManager.getAllocatableBytes`), and `spare` (long),
   100,000,000, what each of the app's writes leaves free on top of its own bytes; or `failure` `STORAGE`, with
