@@ -1,0 +1,24 @@
+diff --git a/src/moho/app/CScApp.cpp b/src/moho/app/CScApp.cpp
+index a7064ce..7f3a297 100644
+--- a/src/moho/app/CScApp.cpp
++++ b/src/moho/app/CScApp.cpp
+@@ -24,6 +24,7 @@
+ #include "gpg/gal/Device.hpp"
+ #include "gpg/gal/DeviceContext.hpp"
+ #include "gpg/gal/Error.hpp"
++#include "gpg/gal/PipelineDefer.h"
+ #if FAFRE_PLATFORM_WINDOWS // the Direct3D 12 backend: Windows only (issue #255)
+ #include "gpg/gal/backends/d3d12/DeviceD3D12.h"
+ #endif
+@@ -1620,6 +1621,11 @@ void CScApp::Main()
+       uiManager->SetMinimized(minimizedNow);
+     }
+     gpg::Logf("Minimized %s", minimizedNow ? "true" : "false");
++    // Android client build: in the back nothing draws, and Android may end the process without a word, before the
++    // device's end saves its pipeline cache.
++    if (minimizedNow && gpg::gal::gSavePipelineCache != nullptr) {
++      gpg::gal::gSavePipelineCache();
++    }
+   }
+ 
+   isMinimized = minimizedNow ? 1 : 0;

@@ -1,14 +1,15 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..13bd8d7 100644
+index e97176b..172a7ad 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
-@@ -8,19 +8,47 @@
+@@ -8,19 +8,48 @@
  // shader variant (ray-traced shadows turned on) first came into view, a visible freeze. Only the world's per-frame
  // draws open the scope (meshes, the terrain and its decals): a draw that happens once (a thumbnail, a map bake)
  // keeps building its pipeline in place, since skipping it would lose it.
 +//
-+// The builds run on one worker that lives as long as the process (PipelineWorker), and a pipeline the driver refused
-+// for want of memory is tried again later (PipelineRetries).
++// The builds run on one worker that lives as long as the process (PipelineWorker), a pipeline the driver refused for
++// want of memory is tried again later (PipelineRetries), and the pipeline cache's growth goes to disk as it comes
++// (PipelineCacheSaves).
  
  #include <chrono>
 +#include <condition_variable>
@@ -51,7 +52,7 @@ index e97176b..13bd8d7 100644
  
    /** How many PipelineDeferScope are open (render thread only). */
    inline int gPipelineDeferDepth = 0;
-@@ -45,29 +73,299 @@ namespace gpg::gal
+@@ -45,29 +74,299 @@ namespace gpg::gal
      return gAsyncPipelines && gPipelineDeferDepth > 0;
    }
  
@@ -363,7 +364,7 @@ index e97176b..13bd8d7 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +374,45 @@ namespace gpg::gal
+@@ -76,9 +375,87 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {
@@ -409,4 +410,46 @@ index e97176b..13bd8d7 100644
 +      throw;
 +    }
 +  }
++
++  /** The longest the pipeline cache's growth waits for its save while builds go on (PipelineCacheSaves). */
++  inline constexpr std::chrono::seconds kPipelineCacheSaveEvery{10};
++
++  /**
++   * When the pipeline cache's growth goes to disk (PipelineCacheFile), so that a run that is ended instead of left keeps
++   * its builds: as soon as a batch of builds is over, none pending, and while builds go on, once kPipelineCacheSaveEvery
++   * has passed since the last save. Its save on the program's way to the back is gSavePipelineCache. Render thread.
++   */
++  class PipelineCacheSaves
++  {
++  public:
++    using Clock = std::chrono::steady_clock;
++
++    /** `grown`: the cache holds more than its last save (or its file) had; `building`: builds are pending. */
++    [[nodiscard]] bool Due(
++      const Clock::time_point now,
++      const bool grown,
++      const bool building
++    ) const noexcept
++    {
++      return grown && (!building || now - mLastSave >= kPipelineCacheSaveEvery);
++    }
++
++    /** The cache was written at `now`, or read from its file. */
++    void Saved(
++      const Clock::time_point now
++    ) noexcept
++    {
++      mLastSave = now;
++    }
++
++  private:
++    Clock::time_point mLastSave{};
++  };
++
++  /**
++   * Writes the live device's pipeline cache to disk now, if it grew, and returns once it is there; null while no device
++   * keeps a cache. The program calls it on its way to the back, where nothing draws and Android may end the process
++   * without a word: the save at the device's end would not come. Main thread.
++   */
++  inline void (*gSavePipelineCache)() = nullptr;
  } // namespace gpg::gal

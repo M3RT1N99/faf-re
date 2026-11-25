@@ -1,0 +1,84 @@
+diff --git a/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.cpp b/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.cpp
+index ce920f4..8945069 100644
+--- a/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.cpp
++++ b/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.cpp
+@@ -122,7 +122,7 @@ namespace gpg::gal::vulkan
+   {
+     mPath.clear();
+     mSavedSize = 0U;
+-    mLastSize = 0U;
++    mSaves.Saved(std::chrono::steady_clock::now());
+     if (!gPipelineDiskCache || StartupFlagDisables()) {
+       gPipelineDiskCache = false;
+       gpg::Logf("Vulkan: pipeline cache off");
+@@ -155,14 +155,14 @@ namespace gpg::gal::vulkan
+       return bytes;
+     }
+     mSavedSize = bytes.size();
+-    mLastSize = bytes.size();
+     gpg::Logf("Vulkan: pipeline cache %s (%zu KB)", mPath.c_str(), bytes.size() / 1024U);
+     return bytes;
+   }
+ 
+   void PipelineCacheFile::OnFrame(
+     const VkDevice device,
+-    const VkPipelineCache cache
++    const VkPipelineCache cache,
++    const bool building
+   )
+   {
+     if (mPath.empty() || cache == VK_NULL_HANDLE || !gPipelineDiskCache) {
+@@ -177,13 +177,24 @@ namespace gpg::gal::vulkan
+     if (Vk().vkGetPipelineCacheData(device, cache, &size, nullptr) != VK_SUCCESS) {
+       return;
+     }
+-    if (size != mLastSize) {
+-      mLastSize = size;
+-      mLastGrowth = now;
++    // Android client build: as the cache grows, not once it stopped growing for 5 s, which a phone's run of builds of
++    // seconds each did not, and Android ended the run in the back before it did (PipelineCacheSaves).
++    if (mSaves.Due(now, size != mSavedSize, building)) {
++      Save(device, cache, true);
++    }
++  }
++
++  void PipelineCacheFile::Flush(
++    const VkDevice device,
++    const VkPipelineCache cache
++  ) noexcept
++  {
++    if (mPath.empty() || cache == VK_NULL_HANDLE || !gPipelineDiskCache) {
+       return;
+     }
+-    if (size != mSavedSize && now - mLastGrowth >= kQuietSeconds) {
+-      Save(device, cache, true);
++    std::size_t size = 0U;
++    if (Vk().vkGetPipelineCacheData(device, cache, &size, nullptr) == VK_SUCCESS && size != mSavedSize) {
++      Save(device, cache, false); // Android may end the process in the back at any time
+     }
+   }
+ 
+@@ -223,8 +234,6 @@ namespace gpg::gal::vulkan
+           return;
+         }
+         bytes->resize(size);
+-        mSavedSize = size;
+-        mLastSize = size;
+         const std::uint64_t snapshot = ++gNextSnapshot;
+         if (inBackground) {
+           std::thread([path = mPath, bytes, snapshot] {
+@@ -233,10 +242,13 @@ namespace gpg::gal::vulkan
+         } else {
+           WriteFileBytes(mPath, *bytes, snapshot);
+         }
++        // Android client build: saved once its write is under way; a thread that did not start left it unsaved.
++        mSavedSize = size;
++        mSaves.Saved(std::chrono::steady_clock::now());
+         return;
+       }
+     } catch (...) {
+-      // Out of memory or no thread for the write: skipped; the next quiet frame or the close saves again.
++      // Out of memory or no thread for the write: skipped, and tried again at the next check, the back or the close.
+     }
+   }
+ } // namespace gpg::gal::vulkan

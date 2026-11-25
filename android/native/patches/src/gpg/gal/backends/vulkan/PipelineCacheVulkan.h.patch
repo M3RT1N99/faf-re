@@ -1,0 +1,56 @@
+diff --git a/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.h b/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.h
+index 4103841..744839c 100644
+--- a/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.h
++++ b/src/gpg/gal/backends/vulkan/PipelineCacheVulkan.h
+@@ -8,6 +8,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include "gpg/gal/PipelineDefer.h"
+ #include "gpg/gal/backends/vulkan/VulkanLoader.h"
+ 
+ namespace gpg::gal::vulkan
+@@ -15,8 +16,9 @@ namespace gpg::gal::vulkan
+   /**
+    * The Vulkan side of `gPipelineDiskCache`: the device's VkPipelineCache starts from one file in the shader cache
+    * directory, so the next session's pipelines come from it instead of the driver building each one again. The file
+-   * is written once the cache stops growing for `kQuietSeconds` (from `OnFrame`, on a background thread) and when the
+-   * device closes. A file from another device or driver, or a damaged one, is left out before the driver sees it.
++   * is written as the cache grows (from `OnFrame`, on a background thread: PipelineCacheSaves), on the program's way to
++   * the back (`Flush`) and when the device closes. A file from another device or driver, or a damaged one, is left out
++   * before the driver sees it.
+    */
+   class PipelineCacheFile
+   {
+@@ -25,22 +27,26 @@ namespace gpg::gal::vulkan
+     [[nodiscard]] std::vector<std::uint8_t>
+     Open(const VkPhysicalDeviceProperties& properties, const std::string& directory);
+ 
+-    /** Once a frame: writes the cache when it grew and then stayed the same for `kQuietSeconds`. */
+-    void OnFrame(VkDevice device, VkPipelineCache cache);
++    /**
++     * Once a frame, `building` while builds are pending: writes the cache when it grew and its batch of builds is over,
++     * or kPipelineCacheSaveEvery after its last save while builds go on (PipelineCacheSaves).
++     */
++    void OnFrame(VkDevice device, VkPipelineCache cache, bool building);
++
++    /** Writes the cache if it changed, and returns once it is written: the program goes to the back. */
++    void Flush(VkDevice device, VkPipelineCache cache) noexcept;
+ 
+     /** Writes the cache if it changed, before the device destroys it. */
+     void Close(VkDevice device, VkPipelineCache cache) noexcept;
+ 
+   private:
+     static constexpr std::chrono::seconds kCheckEvery{2};
+-    static constexpr std::chrono::seconds kQuietSeconds{5};
+ 
+     void Save(VkDevice device, VkPipelineCache cache, bool inBackground) noexcept;
+ 
+     std::string mPath; // empty: the cache isn't kept on disk
+     std::size_t mSavedSize = 0U;
+-    std::size_t mLastSize = 0U;
+     std::chrono::steady_clock::time_point mLastCheck{};
+-    std::chrono::steady_clock::time_point mLastGrowth{};
++    PipelineCacheSaves mSaves;
+   };
+ } // namespace gpg::gal::vulkan

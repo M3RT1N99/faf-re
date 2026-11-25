@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index 215312f..ed4fe6b 100644
+index 215312f..a2ee624 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -3,14 +3,21 @@
@@ -109,7 +109,7 @@ index 215312f..ed4fe6b 100644
      /** See DeviceD3D12: plain counts, D3DSTREAMSOURCE_INDEXEDDATA | count, or an instance-data stream. */
      [[nodiscard]] std::uint32_t InstanceCount(
        const std::int32_t token
-@@ -316,6 +380,348 @@ namespace gpg::gal
+@@ -316,6 +380,351 @@ namespace gpg::gal
        }
        return VK_FALSE;
      }
@@ -455,10 +455,13 @@ index 215312f..ed4fe6b 100644
 +      std::chrono::steady_clock::time_point since{};
 +    };
 +    WaitingDraws gWaitingDraws;
++
++    /** The device whose pipeline cache gSavePipelineCache writes, from its cache's creation to its end. */
++    DeviceVulkan* gCacheDevice = nullptr;
    } // namespace
  
    namespace
-@@ -399,6 +805,7 @@ namespace gpg::gal
+@@ -399,6 +808,7 @@ namespace gpg::gal
        CollectCompleted();
        mPipelineMemo.Clear();
        CollectPendingPipelines(); // into mPipelines, destroyed below
@@ -466,7 +469,18 @@ index 215312f..ed4fe6b 100644
        for (auto& [key, pipeline] : mPipelines) {
          if (pipeline != VK_NULL_HANDLE) {
            Vk().vkDestroyPipeline(mDevice, pipeline, nullptr);
-@@ -477,7 +884,7 @@ namespace gpg::gal
+@@ -448,6 +858,10 @@ namespace gpg::gal
+         }
+         frame = Frame{};
+       }
++      if (gCacheDevice == this) {
++        gCacheDevice = nullptr;
++        gSavePipelineCache = nullptr;
++      }
+       if (mPipelineCache != VK_NULL_HANDLE) {
+         mPipelineCacheFile.Close(mDevice, mPipelineCache);
+         Vk().vkDestroyPipelineCache(mDevice, mPipelineCache, nullptr);
+@@ -477,7 +891,7 @@ namespace gpg::gal
      } else {
        for (SwapChain& swapChain : mSwapChains) {
          if (swapChain.surface != VK_NULL_HANDLE && mInstance != VK_NULL_HANDLE) {
@@ -475,7 +489,7 @@ index 215312f..ed4fe6b 100644
          }
        }
        mSwapChains.clear();
-@@ -673,11 +1080,25 @@ namespace gpg::gal
+@@ -673,11 +1087,25 @@ namespace gpg::gal
      features.features.fillModeNonSolid = available.features.fillModeNonSolid;
      features.features.textureCompressionBC = available.features.textureCompressionBC;
      features.features.tessellationShader = available.features.tessellationShader;
@@ -502,7 +516,7 @@ index 215312f..ed4fe6b 100644
      }
      // A software rasterizer (llvmpipe, as in a virtual machine without 3D, issue #256) gets no ray
      // queries below: ray-traced shadows would trace on the CPU that already rasterizes every pixel.
-@@ -799,6 +1220,20 @@ namespace gpg::gal
+@@ -799,6 +1227,20 @@ namespace gpg::gal
  
    void DeviceVulkan::CreateLayouts()
    {
@@ -523,7 +537,21 @@ index 215312f..ed4fe6b 100644
      // Tessellated passes (engine addition) read textures and constants in their hull and domain shaders too.
      const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
        (mTessellationSupported ? VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT
-@@ -959,16 +1394,24 @@ namespace gpg::gal
+@@ -891,6 +1333,13 @@ namespace gpg::gal
+       cache.pInitialData = nullptr;
+       CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreatePipelineCache(mDevice, &cache, nullptr, &mPipelineCache));
+     }
++    // Android client build: the program saves it on its way to the back too, where Android may end the process.
++    gCacheDevice = this;
++    gSavePipelineCache = [] {
++      if (gCacheDevice != nullptr) {
++        gCacheDevice->SavePipelineCache();
++      }
++    };
+ 
+     effects::SamplerDesc defaults;
+     mDefaultSampler = SamplerFor(defaults);
+@@ -959,16 +1408,24 @@ namespace gpg::gal
      Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkSurfaceFormatKHR> formats(count);
      Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, formats.data());
@@ -556,7 +584,7 @@ index 215312f..ed4fe6b 100644
      }
      Vk().vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkPresentModeKHR> modes(count);
-@@ -1009,11 +1452,25 @@ namespace gpg::gal
+@@ -1009,11 +1466,25 @@ namespace gpg::gal
      info.imageColorSpace = chosen.colorSpace;
      info.imageExtent = extent;
      info.imageArrayLayers = 1U;
@@ -586,7 +614,7 @@ index 215312f..ed4fe6b 100644
      info.clipped = VK_TRUE;
      info.oldSwapchain = swapChain.swapchain;
      VkSwapchainKHR created = VK_NULL_HANDLE;
-@@ -1039,6 +1496,11 @@ namespace gpg::gal
+@@ -1039,6 +1510,11 @@ namespace gpg::gal
      }
      swapChain.swapchain = created;
      swapChain.format = chosen.format;
@@ -598,7 +626,7 @@ index 215312f..ed4fe6b 100644
      swapChain.extent = extent;
      swapChain.presentMode = mode;
      Vk().vkGetSwapchainImagesKHR(mDevice, created, &count, nullptr);
-@@ -1055,7 +1517,14 @@ namespace gpg::gal
+@@ -1055,7 +1531,14 @@ namespace gpg::gal
      }
      swapChain.hasImage = false;
      swapChain.stale = false;
@@ -614,7 +642,7 @@ index 215312f..ed4fe6b 100644
    }
  
    void DeviceVulkan::DestroySwapChain(
-@@ -1074,11 +1543,25 @@ namespace gpg::gal
+@@ -1074,11 +1557,25 @@ namespace gpg::gal
      swapChain.images.clear();
      swapChain.hasImage = false;
      if (!keepSurface && swapChain.surface != VK_NULL_HANDLE) {
@@ -641,7 +669,7 @@ index 215312f..ed4fe6b 100644
    void DeviceVulkan::CreateSwapChains(
      const DeviceContext& context
    )
-@@ -1093,7 +1576,21 @@ namespace gpg::gal
+@@ -1093,7 +1590,21 @@ namespace gpg::gal
          width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
          height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
        }
@@ -664,7 +692,7 @@ index 215312f..ed4fe6b 100644
      }
      VkSemaphoreCreateInfo semaphore{};
      semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-@@ -1211,6 +1708,35 @@ namespace gpg::gal
+@@ -1211,6 +1722,35 @@ namespace gpg::gal
      return buffer;
    }
  
@@ -700,7 +728,7 @@ index 215312f..ed4fe6b 100644
    void DeviceVulkan::CreateRenderTargets()
    {
      mHeadOutputContexts.clear();
-@@ -1220,34 +1746,11 @@ namespace gpg::gal
+@@ -1220,34 +1760,11 @@ namespace gpg::gal
        // The head keeps the size the window had when the device made it; a resize only remakes the swap chain.
        swapChain.headWidth = swapChain.extent.width;
        swapChain.headHeight = swapChain.extent.height;
@@ -740,7 +768,7 @@ index 215312f..ed4fe6b 100644
        OutputContext& output = mHeadOutputContexts[headIndex];
        auto* const target =
          new RenderTargetVulkan(std::move(buffers), DXGI_FORMAT_B8G8R8A8_UNORM, static_cast<int>(headIndex));
-@@ -1361,9 +1864,7 @@ namespace gpg::gal
+@@ -1361,9 +1878,7 @@ namespace gpg::gal
      for (int headIndex = 0; headIndex < context->GetHeadCount(); ++headIndex) {
        SwapChain& swapChain = mSwapChains[static_cast<std::size_t>(headIndex)];
        swapChain.window = context->GetHead(static_cast<std::uint32_t>(headIndex)).mWindow;
@@ -751,7 +779,7 @@ index 215312f..ed4fe6b 100644
      }
      PickPhysicalDevice(context->mAdapter);
      CreateLogicalDevice();
-@@ -1373,13 +1874,15 @@ namespace gpg::gal
+@@ -1373,13 +1888,15 @@ namespace gpg::gal
      CreateNullImages();
      CreateGpuDrivenObjects();
      CreateRayTracingObjects();
@@ -768,7 +796,7 @@ index 215312f..ed4fe6b 100644
      CreateRenderTargets();
      gpg::Logf(
        "Vulkan: ready (%d head(s), effects through the FAF effect layer, %s SPIR-V, shader cache %s, vsync %s)",
-@@ -1421,20 +1924,13 @@ namespace gpg::gal
+@@ -1421,20 +1938,13 @@ namespace gpg::gal
  
      // Device-local heaps count as video memory, the rest as shared system
      // memory; the budget extension adds what the driver allows and uses now.
@@ -796,7 +824,7 @@ index 215312f..ed4fe6b 100644
  
      if (!mSwapChains.empty()) {
        const SwapChain& swapChain = mSwapChains.front();
-@@ -1479,14 +1975,14 @@ namespace gpg::gal
+@@ -1479,14 +1989,14 @@ namespace gpg::gal
        info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
        info.commandBufferCount = 1U;
        VkCommandBuffer buffer = VK_NULL_HANDLE;
@@ -813,7 +841,7 @@ index 215312f..ed4fe6b 100644
      mViewportDirty = true;
    }
  
-@@ -1496,7 +1992,7 @@ namespace gpg::gal
+@@ -1496,7 +2006,7 @@ namespace gpg::gal
    )
    {
      EndRendering();
@@ -822,7 +850,7 @@ index 215312f..ed4fe6b 100644
  
      std::vector<VkSemaphoreSubmitInfo> waits;
      std::vector<VkSemaphoreSubmitInfo> signals;
-@@ -1511,7 +2007,7 @@ namespace gpg::gal
+@@ -1511,7 +2021,7 @@ namespace gpg::gal
          semaphore.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
          waits.push_back(semaphore);
        }
@@ -831,7 +859,7 @@ index 215312f..ed4fe6b 100644
          VkSemaphoreSubmitInfo semaphore{};
          semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
          semaphore.semaphore = swapChain.renderFinished[swapChain.acquired];
-@@ -1538,7 +2034,7 @@ namespace gpg::gal
+@@ -1538,7 +2048,7 @@ namespace gpg::gal
      submit.pCommandBufferInfos = &commands;
      submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signals.size());
      submit.pSignalSemaphoreInfos = signals.data();
@@ -840,7 +868,7 @@ index 215312f..ed4fe6b 100644
      frame.serial = serial;
      // Waited once; later submissions of the frame need not wait again.
      for (SwapChain& swapChain : mSwapChains) {
-@@ -1572,7 +2068,7 @@ namespace gpg::gal
+@@ -1572,7 +2082,7 @@ namespace gpg::gal
      info.semaphoreCount = 1U;
      info.pSemaphores = &mTimeline;
      info.pValues = &serial;
@@ -849,7 +877,7 @@ index 215312f..ed4fe6b 100644
    }
  
    void DeviceVulkan::CollectCompleted()
-@@ -1609,8 +2105,8 @@ namespace gpg::gal
+@@ -1609,8 +2119,8 @@ namespace gpg::gal
      Frame& frame = mFrames[mFrameIndex];
      for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
        SwapChain& swapChain = mSwapChains[index];
@@ -860,7 +888,7 @@ index 215312f..ed4fe6b 100644
          continue;
        }
        // A scaled head's swap chain follows the window: made again once it's out of date (only the window's
-@@ -1642,10 +2138,14 @@ namespace gpg::gal
+@@ -1642,10 +2152,14 @@ namespace gpg::gal
          }
        } else if (result == VK_ERROR_OUT_OF_DATE_KHR && swapChain.scaled) {
          swapChain.stale = true;
@@ -875,7 +903,7 @@ index 215312f..ed4fe6b 100644
        }
      }
    }
-@@ -1657,6 +2157,13 @@ namespace gpg::gal
+@@ -1657,6 +2171,13 @@ namespace gpg::gal
      return (swapChain < mSwapChains.size()) ? mSwapChains[swapChain].acquired : 0U;
    }
  
@@ -889,7 +917,7 @@ index 215312f..ed4fe6b 100644
    vulkan::UploadAllocation DeviceVulkan::AllocateUpload(
      const VkDeviceSize bytes,
      const VkDeviceSize alignment
-@@ -1713,6 +2220,23 @@ namespace gpg::gal
+@@ -1713,6 +2234,23 @@ namespace gpg::gal
      Vk().vkCmdPipelineBarrier2(mCommands, &dependency);
    }
  
@@ -913,7 +941,7 @@ index 215312f..ed4fe6b 100644
    void DeviceVulkan::UploadBuffer(
      vulkan::TrackedBuffer& destination,
      const VkDeviceSize offset,
-@@ -1879,9 +2403,17 @@ namespace gpg::gal
+@@ -1879,9 +2417,17 @@ namespace gpg::gal
      const std::uint32_t height = std::max(1U, destination.height >> level);
      const std::uint32_t depth = std::max(1U, destination.depth >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -933,7 +961,7 @@ index 215312f..ed4fe6b 100644
      EndRendering();
      TransitionForTransferWrite(destination);
      VkBufferImageCopy region{};
-@@ -1905,10 +2437,13 @@ namespace gpg::gal
+@@ -1905,10 +2451,13 @@ namespace gpg::gal
      const std::uint32_t width = std::max(1U, source.width >> level);
      const std::uint32_t height = std::max(1U, source.height >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -948,7 +976,7 @@ index 215312f..ed4fe6b 100644
      info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
      CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreateBuffer(mDevice, &info, nullptr, &readback.buffer));
      VkMemoryRequirements requirements{};
-@@ -1929,8 +2464,20 @@ namespace gpg::gal
+@@ -1929,8 +2478,20 @@ namespace gpg::gal
      Vk().vkCmdCopyImageToBuffer(
        mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region
      );
@@ -970,7 +998,7 @@ index 215312f..ed4fe6b 100644
      Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
      mMemory.Free(readback.memory);
    }
-@@ -1942,6 +2489,10 @@ namespace gpg::gal
+@@ -1942,6 +2503,10 @@ namespace gpg::gal
    )
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
@@ -981,7 +1009,7 @@ index 215312f..ed4fe6b 100644
      image.Allocate(format, source.width, source.height, source.mipLevels, source.layers);
      for (std::uint32_t layer = 0U; layer < source.layers; ++layer) {
        for (std::uint32_t level = 0U; level < source.mipLevels; ++level) {
-@@ -2003,6 +2554,13 @@ namespace gpg::gal
+@@ -2003,6 +2568,13 @@ namespace gpg::gal
      }
      auto* const target = static_cast<RenderTargetVulkan*>(outputContext_.surface.get());
      RenderTargetVulkan::Buffer& buffer = target->Current();
@@ -995,7 +1023,7 @@ index 215312f..ed4fe6b 100644
      format = buffer.image.format;
      image = &buffer.image;
      width = buffer.image.width;
-@@ -2295,12 +2853,27 @@ namespace gpg::gal
+@@ -2295,12 +2867,27 @@ namespace gpg::gal
      } else {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid source specified for texture data");
      }
@@ -1024,7 +1052,7 @@ index 215312f..ed4fe6b 100644
  
      vulkan::TrackedImage tracked;
      VkImageCreateInfo info{};
-@@ -2486,10 +3059,26 @@ namespace gpg::gal
+@@ -2486,10 +3073,26 @@ namespace gpg::gal
      const bool scale
    )
    {
@@ -1052,7 +1080,7 @@ index 215312f..ed4fe6b 100644
        VkImageCopy region{};
        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-@@ -2770,6 +3359,11 @@ namespace gpg::gal
+@@ -2770,6 +3373,11 @@ namespace gpg::gal
      Vk().vkDeviceWaitIdle(mDevice);
      CollectCompleted();
      for (std::size_t headIndex = 0U; headIndex < mSwapChains.size(); ++headIndex) {
@@ -1064,7 +1092,7 @@ index 215312f..ed4fe6b 100644
        Head& head = mDeviceContext.GetHead(static_cast<std::uint32_t>(headIndex));
        std::uint32_t width = head.mWidth;
        std::uint32_t height = head.mHeight;
-@@ -2779,7 +3373,12 @@ namespace gpg::gal
+@@ -2779,7 +3387,12 @@ namespace gpg::gal
          width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
          height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
        }
@@ -1078,7 +1106,7 @@ index 215312f..ed4fe6b 100644
      }
      // The acquire semaphores of the old images may be signalled: start the frame over.
      Submit(true, false);
-@@ -2793,9 +3392,93 @@ namespace gpg::gal
+@@ -2793,9 +3406,93 @@ namespace gpg::gal
      Reset(&mDeviceContext);
    }
  
@@ -1173,7 +1201,7 @@ index 215312f..ed4fe6b 100644
    }
  
    void DeviceVulkan::BeginScene() {}
-@@ -2818,7 +3501,7 @@ namespace gpg::gal
+@@ -2818,7 +3515,7 @@ namespace gpg::gal
    void DeviceVulkan::DumpBackBufferIfDue()
    {
      static const char* const directory = std::getenv("FAF_GAL_DUMP_DIR");
@@ -1182,7 +1210,7 @@ index 215312f..ed4fe6b 100644
        return;
      }
      static const DWORD interval = [] {
-@@ -2844,6 +3527,12 @@ namespace gpg::gal
+@@ -2844,6 +3541,12 @@ namespace gpg::gal
      WriteBmp(path, image);
    }
  
@@ -1195,7 +1223,17 @@ index 215312f..ed4fe6b 100644
    void DeviceVulkan::LogMemoryIfDue()
    {
      // Diagnostics: with FAF_GAL_MEMORY_LOG=<seconds>, as Direct3D 12 logs it.
-@@ -2889,10 +3578,11 @@ namespace gpg::gal
+@@ -2872,7 +3575,8 @@ namespace gpg::gal
+   {
+     const std::lock_guard<std::recursive_mutex> lock(mMutex);
+     ++mFrameNumber;
+-    mPipelineCacheFile.OnFrame(mDevice, mPipelineCache);
++    // Android client build: a batch of builds is over once none is pending or waits for another try.
++    mPipelineCacheFile.OnFrame(mDevice, mPipelineCache, !mPendingPipelines.empty() || gPipelineRetries.Size() != 0U);
+     {
+       static const long start = [] {
+         const char* const value = std::getenv("FAF_GAL_TRACE_START");
+@@ -2889,10 +3593,11 @@ namespace gpg::gal
      LogMemoryIfDue();
  
      for (std::size_t index = 0U; index < mHeadOutputContexts.size(); ++index) {
@@ -1209,7 +1247,7 @@ index 215312f..ed4fe6b 100644
        vulkan::TrackedImage& head =
          static_cast<RenderTargetVulkan*>(mHeadOutputContexts[index].surface.get())->Current().image;
        if (swapChain.scaled) {
-@@ -2906,7 +3596,9 @@ namespace gpg::gal
+@@ -2906,7 +3611,9 @@ namespace gpg::gal
  
      for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
        SwapChain& swapChain = mSwapChains[index];
@@ -1220,7 +1258,7 @@ index 215312f..ed4fe6b 100644
          continue;
        }
        VkPresentInfoKHR present{};
-@@ -2917,15 +3609,22 @@ namespace gpg::gal
+@@ -2917,15 +3624,22 @@ namespace gpg::gal
        present.pSwapchains = &swapChain.swapchain;
        present.pImageIndices = &swapChain.acquired;
        const VkResult result = Vk().vkQueuePresentKHR(mQueue, &present);
@@ -1243,7 +1281,7 @@ index 215312f..ed4fe6b 100644
        }
      }
  
-@@ -2935,7 +3634,7 @@ namespace gpg::gal
+@@ -2935,7 +3649,7 @@ namespace gpg::gal
      Frame& frame = mFrames[mFrameIndex];
      WaitForSerial(frame.serial);
      CollectCompleted();
@@ -1252,7 +1290,7 @@ index 215312f..ed4fe6b 100644
      frame.used = 0U;
      for (VkDescriptorPool pool : frame.descriptorPools) {
        Vk().vkResetDescriptorPool(mDevice, pool, 0U);
-@@ -2948,15 +3647,50 @@ namespace gpg::gal
+@@ -2948,15 +3662,50 @@ namespace gpg::gal
      frame.gpuPool = 0U;
      AcquireNextImages();
      BeginCommandBuffer();
@@ -1309,7 +1347,7 @@ index 215312f..ed4fe6b 100644
    }
  
    void DeviceVulkan::SetCursor(
-@@ -3395,6 +4129,24 @@ namespace gpg::gal
+@@ -3395,6 +4144,24 @@ namespace gpg::gal
      bound.valid = bound.vertexShader != nullptr && bound.vertexShader->succeeded &&
        (bound.pixelShader == nullptr || bound.pixelShader->succeeded) && (!tessellated || mTessellationSupported) &&
        (bound.hullShader == nullptr || (bound.hullShader->succeeded && bound.domainShader->succeeded));
@@ -1334,7 +1372,7 @@ index 215312f..ed4fe6b 100644
  
      ProgramState& state = StateFor(program);
      effects::ParameterStore& parameters = program.Parameters();
-@@ -3615,7 +4367,8 @@ namespace gpg::gal
+@@ -3615,7 +4382,8 @@ namespace gpg::gal
      const effects::SpirvInterface& vertexInterface = InterfaceOf(*vertex);
      const effects::SpirvInterface& pixelInterface = InterfaceOf(entry);
      std::map<std::uint32_t, std::uint32_t> locations;
@@ -1344,7 +1382,7 @@ index 215312f..ed4fe6b 100644
      for (const effects::SpirvInterfaceVariable& input : pixelInterface.inputs) {
        if (input.builtIn) {
          continue;
-@@ -3743,6 +4496,26 @@ namespace gpg::gal
+@@ -3743,6 +4511,26 @@ namespace gpg::gal
        mPipelineMemo.Store(inputs, found->second);
        return found->second;
      }
@@ -1371,7 +1409,7 @@ index 215312f..ed4fe6b 100644
      // Engine addition (ren_AsyncPipelines): one a worker is building is taken once it is done; until then the draw
      // is skipped.
      const bool defer = PipelinesMayDefer();
-@@ -3752,15 +4525,26 @@ namespace gpg::gal
+@@ -3752,15 +4540,26 @@ namespace gpg::gal
          mPipelineDeferred = true;
          return VK_NULL_HANDLE;
        }
@@ -1386,7 +1424,9 @@ index 215312f..ed4fe6b 100644
 +        return VK_NULL_HANDLE;
 +      }
 +      return (end == PipelineBuildEnd::kBuilt) ? built : VK_NULL_HANDLE;
-+    }
+     }
+-    if (defer && mPendingPipelines.size() >= kMaxPendingPipelines) {
+-      CollectFinishedPipelines(mPendingPipelines, mPipelines); // finished builds free their slots
 +    // One the driver refused for want of memory waits for its next try, and its last try is made in place.
 +    const PipelineRetries::Turn turn = gPipelineRetries.TurnOf(key.Key(), PipelineRetries::Clock::now());
 +    if (turn == PipelineRetries::Turn::kWaiting) {
@@ -1394,17 +1434,15 @@ index 215312f..ed4fe6b 100644
 +      return VK_NULL_HANDLE;
      }
 -    if (defer && mPendingPipelines.size() >= kMaxPendingPipelines) {
--      CollectFinishedPipelines(mPendingPipelines, mPipelines); // finished builds free their slots
 +    const bool deferBuild = defer && turn != PipelineRetries::Turn::kLast;
 +    if (deferBuild && mPendingPipelines.size() >= kMaxPendingPipelines) {
 +      SettleFinishedPipelines(mPendingPipelines, keep); // finished builds free their slots
-     }
--    if (defer && mPendingPipelines.size() >= kMaxPendingPipelines) {
++    }
 +    if (deferBuild && mPendingPipelines.size() >= kMaxPendingPipelines) {
        mPipelineDeferred = true;
        return VK_NULL_HANDLE; // the workers are busy: asked again next frame
      }
-@@ -3877,7 +4661,8 @@ namespace gpg::gal
+@@ -3877,7 +4676,8 @@ namespace gpg::gal
      raster.depthBiasEnable =
        (rasterizer.depthBias != 0 || rasterizer.slopeScaledDepthBias != 0.0f) ? VK_TRUE : VK_FALSE;
      raster.depthBiasConstantFactor = static_cast<float>(rasterizer.depthBias);
@@ -1414,7 +1452,7 @@ index 215312f..ed4fe6b 100644
      raster.depthBiasSlopeFactor = rasterizer.slopeScaledDepthBias;
      raster.lineWidth = 1.0f;
      VkPipelineMultisampleStateCreateInfo multisample{};
-@@ -3951,7 +4736,7 @@ namespace gpg::gal
+@@ -3951,7 +4751,7 @@ namespace gpg::gal
      info.pColorBlendState = &colorBlend;
      info.pDynamicState = &dynamic;
      info.layout = EffectPipelineLayout();
@@ -1423,7 +1461,7 @@ index 215312f..ed4fe6b 100644
        // The job owns copies of every structure the create info points at (the shader modules are the device's and
        // outlive it: teardown collects pending jobs first). The pipeline cache synchronizes itself.
        struct Job
-@@ -4019,40 +4804,57 @@ namespace gpg::gal
+@@ -4019,40 +4819,57 @@ namespace gpg::gal
        const PFN_vkCreateGraphicsPipelines create = Vk().vkCreateGraphicsPipelines;
        const VkDevice device = mDevice;
        const VkPipelineCache cache = mPipelineCache;
@@ -1509,7 +1547,22 @@ index 215312f..ed4fe6b 100644
    }
  
    void DeviceVulkan::CollectPendingPipelines() noexcept
-@@ -4081,6 +4883,11 @@ namespace gpg::gal
+@@ -4065,6 +4882,14 @@ namespace gpg::gal
+     mPendingPipelines.clear();
+   }
+ 
++  void DeviceVulkan::SavePipelineCache() noexcept
++  {
++    const std::lock_guard<std::recursive_mutex> lock(mMutex);
++    if (mPipelineCache != VK_NULL_HANDLE) {
++      mPipelineCacheFile.Flush(mDevice, mPipelineCache);
++    }
++  }
++
+   bool DeviceVulkan::PrepareDraw(
+     const std::uint32_t topologyToken,
+     const bool indexed
+@@ -4081,6 +4906,11 @@ namespace gpg::gal
      if (mPass.hullShader != nullptr) {
        // A tessellated pass draws each triangle of a list as one 3-point patch.
        if (topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
@@ -1521,7 +1574,7 @@ index 215312f..ed4fe6b 100644
          ++mSkippedDraws;
          return false;
        }
-@@ -4142,8 +4949,13 @@ namespace gpg::gal
+@@ -4142,8 +4972,13 @@ namespace gpg::gal
      mPipelineDeferred = false;
      const VkPipeline pipeline = PipelineFor(mPass, topology);
      if (pipeline == VK_NULL_HANDLE) {

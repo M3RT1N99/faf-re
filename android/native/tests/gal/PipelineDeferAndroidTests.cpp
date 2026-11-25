@@ -2,8 +2,9 @@
 // a draw waits for). A deferred build is queued only once the pending list holds its slot, so that no job the worker has
 // outlives the device that waits for its list; a pipeline refused for want of memory is tried six times in all, over
 // 15.5 s, the last in place; a build's end says whether it may build later; the worker runs each job, two at once at
-// least, and counts the builds it finished with their time and what their driver said of them. Upstream's own tests of
-// the header (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
+// least, and counts the builds it finished with their time and what their driver said of them; the pipeline cache is
+// saved once a batch of builds is over, and every 10 s while builds go on. Upstream's own tests of the header
+// (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
 
 #include <gtest/gtest.h>
 
@@ -338,4 +339,36 @@ TEST(
   EXPECT_EQ(finished.told, 2U) << "only the builds whose job said so";
   EXPECT_EQ(finished.fromCache, 1U);
   EXPECT_EQ(finished.driverTime, 12ms);
+}
+
+TEST(
+  AndroidPipelineDefer,
+  ThePipelineCacheIsSavedOnceABatchOfBuildsIsOver
+)
+{
+  using Saves = gpg::gal::PipelineCacheSaves;
+  Saves saves;
+  const Saves::Clock::time_point opened{};
+  saves.Saved(opened); // read from its file
+  EXPECT_FALSE(saves.Due(opened + 1s, false, false)) << "a cache as its file has it";
+  EXPECT_FALSE(saves.Due(opened + 1s, true, true)) << "builds go on, and the last save is recent";
+  EXPECT_TRUE(saves.Due(opened + 1s, true, false)) << "the batch is over: no build is pending";
+}
+
+TEST(
+  AndroidPipelineDefer,
+  ThePipelineCacheIsSavedEveryTenSecondsWhileBuildsGoOn
+)
+{
+  using Saves = gpg::gal::PipelineCacheSaves;
+  ASSERT_EQ(gpg::gal::kPipelineCacheSaveEvery, 10s);
+  Saves saves;
+  const Saves::Clock::time_point start{};
+  saves.Saved(start);
+  EXPECT_FALSE(saves.Due(start + 10s - 1ns, true, true));
+  EXPECT_TRUE(saves.Due(start + 10s, true, true)) << "a run Android ends keeps what was built until 10 s before";
+  saves.Saved(start + 10s);
+  EXPECT_FALSE(saves.Due(start + 15s, true, true)) << "counted from the last save";
+  EXPECT_TRUE(saves.Due(start + 20s, true, true));
+  EXPECT_FALSE(saves.Due(start + 30s, false, true)) << "nothing grew";
 }

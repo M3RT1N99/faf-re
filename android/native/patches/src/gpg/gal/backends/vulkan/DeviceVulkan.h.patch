@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-index 39ce88622..808cf1aca 100644
+index 39ce886..e60ae16 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 @@ -210,6 +210,7 @@ namespace gpg::gal
@@ -10,7 +10,16 @@ index 39ce88622..808cf1aca 100644
  
      [[nodiscard]] vulkan::UploadAllocation AllocateUpload(VkDeviceSize bytes, VkDeviceSize alignment);
      [[nodiscard]] vulkan::TrackedBuffer CreateDeviceBuffer(VkDeviceSize bytes, VkBufferUsageFlags usage);
-@@ -284,6 +285,8 @@ namespace gpg::gal
+@@ -233,6 +234,8 @@ namespace gpg::gal
+     /** Destroys the image (and its view) once the GPU is done with the commands recorded so far. */
+     void Retire(vulkan::TrackedImage& image, VkImageView view);
+     void Retire(vulkan::TrackedBuffer& buffer);
++    /** Android client build: writes the pipeline cache now if it grew (gSavePipelineCache). */
++    void SavePipelineCache() noexcept;
+ 
+   private:
+     struct RenderState
+@@ -284,6 +287,8 @@ namespace gpg::gal
        std::uint32_t headWidth = 0; // the size the engine draws the head at
        std::uint32_t headHeight = 0;
        // Out of date or suboptimal for the window: made again at the window's size before the next acquire.
@@ -19,7 +28,7 @@ index 39ce88622..808cf1aca 100644
        bool stale = false;
        void* window = nullptr;
      };
-@@ -333,8 +336,17 @@ namespace gpg::gal
+@@ -333,8 +338,17 @@ namespace gpg::gal
      void CopyHeadToSwapChain(vulkan::TrackedImage& head, SwapChain& swapChain);
      /** A device-local colour image with a view, usable as a target, a texture and a copy source or destination. */
      RenderTargetVulkan::Buffer CreateColorTargetImage(VkFormat format, std::uint32_t width, std::uint32_t height);
@@ -37,7 +46,7 @@ index 39ce88622..808cf1aca 100644
      void CheckAvailableFormats(DeviceContext* context);
      void Shutdown() noexcept;
      void ResetState();
-@@ -352,6 +364,8 @@ namespace gpg::gal
+@@ -352,6 +366,8 @@ namespace gpg::gal
      void TransitionForTransferWrite(vulkan::TrackedImage& image);
      void TransitionSampled(const std::vector<effects::TextureBinding>& bindings);
      void TransferBarrier();
@@ -46,7 +55,7 @@ index 39ce88622..808cf1aca 100644
  
      [[nodiscard]] ProgramState& StateFor(effects::EffectProgram& program);
      [[nodiscard]] VkDescriptorSet AllocateSet(VkDescriptorSetLayout layout);
-@@ -420,6 +434,9 @@ namespace gpg::gal
+@@ -420,6 +436,9 @@ namespace gpg::gal
      bool mAnisotropy = false;
      bool mWireframeSupported = false;
      bool mTessellationSupported = false; // engine addition: tessellated passes draw only with it
