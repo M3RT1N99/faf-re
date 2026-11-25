@@ -1,5 +1,5 @@
 diff --git a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
-index 81b683b..0bed2aa 100644
+index 81b683b..c42c5f3 100644
 --- a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
 +++ b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
 @@ -3,11 +3,12 @@
@@ -20,9 +20,11 @@ index 81b683b..0bed2aa 100644
  
  #if !FAFRE_PLATFORM_WINDOWS
  
-@@ -27,10 +28,14 @@
+@@ -26,18 +27,34 @@
+ #include <cstring>
  #include <ctime>
  #include <exception>
++#include <typeinfo>
  
 +#include <Windows.h>
  #include <csignal>
@@ -34,8 +36,16 @@ index 81b683b..0bed2aa 100644
 +#include <semaphore.h>
  #include <sys/utsname.h>
  #include <unistd.h>
++#if FAFRE_PLATFORM_LINUX
++#include <link.h>
++#include <sys/syscall.h>
++#endif
++#if FAFRE_PLATFORM_ANDROID
++#include <android/log.h>
++#include <android/set_abort_message.h>
++#endif
  
-@@ -38,6 +43,9 @@ namespace
+ namespace
  {
    constexpr std::size_t kPathBytes = 4096;
    constexpr int kMaxFrames = 64;
@@ -45,7 +55,7 @@ index 81b683b..0bed2aa 100644
  
    struct CrashSection
    {
-@@ -50,30 +58,31 @@ namespace
+@@ -50,64 +67,103 @@ namespace
    int gSectionCount = 0;
    std::atomic<bool> gWritingReport{false};
  
@@ -59,6 +69,14 @@ index 81b683b..0bed2aa 100644
 +  char gReportReason[2048]{};
 +  void* gReportFrames[kMaxFrames]{};
 +  int gReportFrameCount = 0;
++  long gReportThreadId = 0;
++
++  // The engine's library (or executable), as InstallCrtDiagnosticHooks found it: the report's first lines give the
++  // stack's addresses in it by their offsets from its load bias, as a tombstone does (WriteFirstLines).
++  char gEngineModule[kPathBytes]{};
++  std::uintptr_t gEngineBias = 0;
++  std::uintptr_t gEngineStart = 0;
++  std::uintptr_t gEngineEnd = 0;
 +
 +  char gReportDir[kPathBytes]{};
    char gDiagLogPath[kPathBytes]{};
@@ -94,11 +112,65 @@ index 81b683b..0bed2aa 100644
 +    return gReportDir;
    }
  
-   void AppendToFile(
-@@ -97,17 +106,16 @@ namespace
+-  void AppendToFile(
+-    const char* const path,
++  /// `text` to `fd`, all of it unless the system refuses.
++  void WriteAll(
++    const int fd,
+     const char* const text,
+     const std::size_t length
+   )
+   {
+-    const int fd = ::open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+-    if (fd < 0) {
+-      return;
+-    }
+     std::size_t written = 0;
+     while (written < length) {
+       const ssize_t put = ::write(fd, text + written, length - written);
+       if (put <= 0) {
+-        break;
++        return;
+       }
+       written += static_cast<std::size_t>(put);
+     }
++  }
++
++  void AppendToFile(
++    const char* const path,
++    const char* const text,
++    const std::size_t length
++  )
++  {
++    const int fd = ::open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
++    if (fd < 0) {
++      return;
++    }
++    WriteAll(fd, text, length);
      (void)::close(fd);
    }
  
++  /// printf to the end of `buffer`, whose `length` grows; what does not fit is cut.
++  __attribute__((format(printf, 4, 5))) void AppendTo(
++    char* const buffer,
++    std::size_t& length,
++    const std::size_t size,
++    const char* const format,
++    ...
++  )
++  {
++    if (length + 1 >= size) {
++      return;
++    }
++    va_list arguments;
++    va_start(arguments, format);
++    const int put = std::vsnprintf(buffer + length, size - length, format, arguments);
++    va_end(arguments);
++    if (put > 0) {
++      length = std::min(size - 1, length + static_cast<std::size_t>(put));
++    }
++  }
++
 +  /// The stack of the thread that asked for the report.
    void WriteStack(
      std::FILE* const sink,
@@ -117,7 +189,7 @@ index 81b683b..0bed2aa 100644
      }
    }
  
-@@ -131,12 +139,41 @@ namespace
+@@ -131,31 +187,69 @@ namespace
      }
    }
  
@@ -157,10 +229,25 @@ index 81b683b..0bed2aa 100644
 +      }
 +    }
 +
++    // A signal a process sent (abort's, kill's) names the sender in place of an address.
      char reason[256]{};
-     std::snprintf(
-       reason, sizeof(reason), "%s at address %p", SignalName(signalNumber), info != nullptr ? info->si_addr : nullptr
-@@ -144,18 +181,15 @@ namespace
+-    std::snprintf(
+-      reason, sizeof(reason), "%s at address %p", SignalName(signalNumber), info != nullptr ? info->si_addr : nullptr
+-    );
++    if (info != nullptr && info->si_code <= 0) {
++      std::snprintf(
++        reason,
++        sizeof(reason),
++        "%s from process %d (code %d)",
++        SignalName(signalNumber),
++        static_cast<int>(info->si_pid),
++        info->si_code
++      );
++    } else {
++      std::snprintf(
++        reason, sizeof(reason), "%s at address %p", SignalName(signalNumber), info != nullptr ? info->si_addr : nullptr
++      );
++    }
      gpg::diag::CrashReportContext context{};
      context.reason = reason;
      gpg::diag::HandleFatalPath(context);
@@ -182,7 +269,7 @@ index 81b683b..0bed2aa 100644
    )
    {
      char line[128];
-@@ -170,8 +204,7 @@ namespace
+@@ -170,8 +264,7 @@ namespace
      void* frames[kMaxFrames];
      const int count = platform::posix::Backtrace(frames, kMaxFrames);
      platform::posix::BacktraceSymbolsFd(frames, count, 2);
@@ -192,7 +279,7 @@ index 81b683b..0bed2aa 100644
    }
  
    // Priority 100: before the reflection pre-registration phase (101, StaticInitPhase.h).
-@@ -183,8 +216,8 @@ namespace
+@@ -183,16 +276,44 @@ namespace
      action.sa_sigaction = &OnEarlyFatalSignal;
      action.sa_flags = SA_SIGINFO | SA_RESETHAND;
      sigemptyset(&action.sa_mask);
@@ -203,27 +290,137 @@ index 81b683b..0bed2aa 100644
      }
    }
  #pragma clang diagnostic pop
-@@ -200,6 +233,87 @@ namespace
+ 
++  /// Why std::terminate was called, into `reason`: the uncaught exception's type, as the compiler names it, and
++  /// what(), as the C++ runtime's own handler says it, which OnTerminate takes the place of.
++  void DescribeTermination(
++    char* const reason,
++    const std::size_t size
++  )
++  {
++    const std::exception_ptr uncaught = std::current_exception();
++    if (!uncaught) {
++      std::snprintf(reason, size, "std::terminate, with no exception");
++      return;
++    }
++    try {
++      std::rethrow_exception(uncaught);
++    } catch (const std::exception& error) {
++      std::snprintf(reason, size, "std::terminate: uncaught %s: %s", typeid(error).name(), error.what());
++    } catch (...) {
++      std::snprintf(reason, size, "std::terminate: uncaught exception of a type not std::exception");
++    }
++  }
++
+   void OnTerminate()
+   {
++    static char reason[1024];
++    DescribeTermination(reason, sizeof(reason));
++#if FAFRE_PLATFORM_ANDROID
++    // As libc++abi's handler does: the line in logcat, and the tombstone's abort message.
++    (void)__android_log_write(ANDROID_LOG_FATAL, "faf", reason);
++    android_set_abort_message(reason);
++#endif
+     gpg::diag::CrashReportContext context{};
+-    context.reason = "std::terminate";
++    context.reason = reason;
+     gpg::diag::HandleFatalPath(context);
+     std::abort();
+   }
+@@ -200,6 +321,196 @@ namespace
  
  namespace gpg::diag
  {
 +  namespace
 +  {
++    /**
++     * The report's first lines, with the system's calls alone and buffers of this file's: the reason, the process and
++     * the thread that asked, its memory (/proc/self/status), and the stack's addresses, those in the engine's library
++     * by their offsets there. The full report after them needs the C library's heap (a FILE and its buffer, the time
++     * zone, the sections' text), which a process that ran out of memory may not have. True when they are in `path`.
++     */
++    bool WriteFirstLines(
++      const char* const path
++    )
++    {
++      static char lines[8192];
++      std::size_t length = 0;
++      AppendTo(lines, length, sizeof(lines), "FAF crash report (POSIX)\nreason: %s\n", gReportReason);
++      AppendTo(
++        lines, length, sizeof(lines), "process: %d, thread %ld\n", static_cast<int>(::getpid()), gReportThreadId
++      );
++#if FAFRE_PLATFORM_LINUX
++      static char status[8192];
++      if (const int fd = ::open("/proc/self/status", O_RDONLY | O_CLOEXEC); fd >= 0) {
++        std::size_t filled = 0;
++        for (ssize_t got = 0; filled + 1 < sizeof(status); filled += static_cast<std::size_t>(got)) {
++          got = ::read(fd, status + filled, sizeof(status) - 1 - filled);
++          if (got <= 0) {
++            break;
++          }
++        }
++        (void)::close(fd);
++        status[filled] = '\0';
++        for (char* line = status; line != nullptr && *line != '\0';) {
++          char* const end = std::strchr(line, '\n');
++          if (end != nullptr) {
++            *end = '\0';
++          }
++          for (const char* const field : {"VmRSS:", "VmData:", "VmSwap:", "Threads:"}) {
++            if (std::strncmp(line, field, std::strlen(field)) == 0) {
++              AppendTo(lines, length, sizeof(lines), "%s\n", line);
++            }
++          }
++          line = (end != nullptr) ? end + 1 : nullptr;
++        }
++      }
++#endif
++      if (gEngineModule[0] != '\0') {
++        AppendTo(
++          lines, length, sizeof(lines), "engine: %s at %p\n", gEngineModule, reinterpret_cast<void*>(gEngineBias)
++        );
++      }
++      const char* const slash = std::strrchr(gEngineModule, '/');
++      const char* const engine = (slash != nullptr) ? slash + 1 : gEngineModule;
++      AppendTo(lines, length, sizeof(lines), "stack:");
++      for (int index = 1; index < gReportFrameCount; ++index) {
++        const auto address = reinterpret_cast<std::uintptr_t>(gReportFrames[index]);
++        if (address >= gEngineStart && address < gEngineEnd) {
++          AppendTo(lines, length, sizeof(lines), " %s+0x%zx", engine, static_cast<std::size_t>(address - gEngineBias));
++        } else {
++          AppendTo(lines, length, sizeof(lines), " %p", gReportFrames[index]);
++        }
++      }
++      AppendTo(lines, length, sizeof(lines), "\n");
++
++      const int fd = ::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
++      if (fd < 0) {
++        return false;
++      }
++      WriteAll(fd, lines, length);
++      (void)::close(fd);
++      return true;
++    }
++
 +    bool WriteReport()
 +    {
-+      // The newest report's file first: the app collects it, also when a section ends the report early.
++      // The newest report's file first: the app collects it, also when a section ends the report early. Its first
++      // lines need no heap, and the rest follows them.
 +      const char* const latestPath = CrashLatestReportPath();
-+      std::FILE* const sink = std::fopen(latestPath, "w");
++      const bool firstLines = WriteFirstLines(latestPath);
++      std::FILE* const sink = std::fopen(latestPath, firstLines ? "a" : "w");
 +      if (sink == nullptr) {
-+        return false;
++        return firstLines;
 +      }
 +      std::setvbuf(sink, nullptr, _IOLBF, 0);
 +
 +      const std::time_t now = std::time(nullptr);
-+      std::fprintf(sink, "FAF crash report (POSIX)\n");
++      if (!firstLines) {
++        std::fprintf(sink, "FAF crash report (POSIX)\n");
++        std::fprintf(sink, "process: %d\n", static_cast<int>(::getpid()));
++        std::fprintf(sink, "reason: %s\n", gReportReason);
++      }
 +      std::fprintf(sink, "time: %s", std::ctime(&now));
-+      std::fprintf(sink, "process: %d\n", static_cast<int>(::getpid()));
-+      std::fprintf(sink, "reason: %s\n", gReportReason);
 +
 +      const CrashSectionInfo info{};
 +      int section = 0;
@@ -274,6 +471,42 @@ index 81b683b..0bed2aa 100644
 +      return nullptr;
 +    }
 +
++    /// Where the engine's code is (gEngineModule): the library or executable this file is in, and its extent.
++    void FindEngineModule()
++    {
++      Dl_info module{};
++      if (::dladdr(reinterpret_cast<void*>(&WriteFirstLines), &module) == 0 || module.dli_fbase == nullptr) {
++        return;
++      }
++      std::snprintf(gEngineModule, sizeof(gEngineModule), "%s", (module.dli_fname != nullptr) ? module.dli_fname : "?");
++      gEngineBias = reinterpret_cast<std::uintptr_t>(module.dli_fbase);
++#if FAFRE_PLATFORM_LINUX
++      // The load segments of the module that holds this code: their extent, and the bias of their addresses.
++      (void)::dl_iterate_phdr(
++        [](dl_phdr_info* const info, std::size_t, void*) {
++        const auto code = reinterpret_cast<std::uintptr_t>(&WriteFirstLines);
++        std::uintptr_t start = ~std::uintptr_t{0};
++        std::uintptr_t end = 0;
++        for (int header = 0; header < info->dlpi_phnum; ++header) {
++          const ElfW(Phdr)& segment = info->dlpi_phdr[header];
++          if (segment.p_type == PT_LOAD) {
++            start = std::min<std::uintptr_t>(start, info->dlpi_addr + segment.p_vaddr);
++            end = std::max<std::uintptr_t>(end, info->dlpi_addr + segment.p_vaddr + segment.p_memsz);
++          }
++        }
++        if (code < start || code >= end) {
++          return 0;
++        }
++        gEngineBias = info->dlpi_addr;
++        gEngineStart = start;
++        gEngineEnd = end;
++        return 1;
++      },
++        nullptr
++      );
++#endif
++    }
++
 +    void StartReportThread()
 +    {
 +      if (::sem_init(&gReportAsked, 0, 0U) != 0 || ::sem_init(&gReportEnded, 0, 0U) != 0) {
@@ -291,7 +524,7 @@ index 81b683b..0bed2aa 100644
    void InstallCrtDiagnosticHooks(
      const CrtDiagOptions& options
    )
-@@ -215,19 +329,22 @@ namespace gpg::diag
+@@ -215,19 +526,23 @@ namespace gpg::diag
  
      struct sigaction action{};
      action.sa_sigaction = &OnFatalSignal;
@@ -305,6 +538,7 @@ index 81b683b..0bed2aa 100644
        (void)::sigaction(signalNumber, &action, nullptr);
      }
      std::set_terminate(&OnTerminate);
++    FindEngineModule();
 +    StartReportThread();
      DiagLine("diagnostic hooks installed (POSIX: fatal signals, std::terminate)");
    }
@@ -317,7 +551,7 @@ index 81b683b..0bed2aa 100644
      }
      return gDiagLogPath;
    }
-@@ -334,7 +451,7 @@ namespace gpg::diag
+@@ -334,7 +649,7 @@ namespace gpg::diag
        (void)::localtime_r(&now, &parts);
        char stamp[32]{};
        (void)std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &parts);
@@ -326,7 +560,7 @@ index 81b683b..0bed2aa 100644
      }
      return gReportPath;
    }
-@@ -342,7 +459,7 @@ namespace gpg::diag
+@@ -342,7 +657,7 @@ namespace gpg::diag
    const char* CrashLatestReportPath()
    {
      if (gLatestReportPath[0] == '\0') {
@@ -335,7 +569,7 @@ index 81b683b..0bed2aa 100644
      }
      return gLatestReportPath;
    }
-@@ -368,47 +485,20 @@ namespace gpg::diag
+@@ -368,47 +683,23 @@ namespace gpg::diag
        return false;
      }
  
@@ -348,6 +582,9 @@ index 81b683b..0bed2aa 100644
 +    // What only this thread knows.
 +    std::snprintf(gReportReason, sizeof(gReportReason), "%s", context.reason != nullptr ? context.reason : "(unknown)");
 +    gReportFrameCount = platform::posix::Backtrace(gReportFrames, kMaxFrames);
++#if FAFRE_PLATFORM_LINUX
++    gReportThreadId = static_cast<long>(::syscall(SYS_gettid));
++#endif
  
 -    const std::time_t now = std::time(nullptr);
 -    std::fprintf(sink, "FAF crash report (POSIX)\n");
