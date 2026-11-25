@@ -7,14 +7,21 @@ import static org.junit.Assert.assertTrue;
 
 import android.media.AudioManager;
 
+import java.util.function.BooleanSupplier;
+
 import org.junit.Test;
 
 /**
- * The program's hold on the audio focus (AudioFocus): what the program is told, and the report's line when another app
- * takes it and when it comes back with the sound, however it comes back, and no line where nothing changed.
+ * The program's hold on the audio focus (AudioFocus): what the program is told, the report's line when another app takes it
+ * and when it comes back with the sound, however it comes back, and no line where nothing changed; and when the game asks
+ * for it again.
  */
 public class AudioFocusTest {
     private static final String BACK = "game: the audio focus is back, and with it the game's sound";
+    /** Back in front the game asks whatever plays: whether another app plays is not asked. */
+    private static final BooleanSupplier UNASKED = () -> {
+        throw new AssertionError("asked whether another app plays");
+    };
 
     @Test
     public void theGamesOwnRequestsSayNothingWhileItHoldsIt() {
@@ -31,7 +38,7 @@ public class AudioFocusTest {
         assertEquals("game: another app has the audio focus for a while", focus.changed(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT));
         assertFalse(focus.held());
         assertNull("still lost", focus.changed(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK));
-        assertFalse(focus.lostForGood());
+        assertFalse("Android gives it back", focus.asksAgain(true, UNASKED));
         assertEquals(BACK, focus.changed(AudioManager.AUDIOFOCUS_GAIN));
         assertTrue(focus.held());
         assertNull(focus.changed(AudioManager.AUDIOFOCUS_GAIN));
@@ -47,16 +54,31 @@ public class AudioFocusTest {
     @Test
     public void aLossForGoodComesBackWithTheRequestAfterIt() {
         AudioFocus focus = new AudioFocus();
-        assertEquals("game: another app took the audio focus for good: the game asks for it again at a touch, once no other "
-            + "app plays", focus.changed(AudioManager.AUDIOFOCUS_LOSS));
-        assertTrue(focus.lostForGood());
+        assertEquals("game: another app took the audio focus for good: the game asks for it again when it is back in front, "
+            + "and at a touch once no other app plays", focus.changed(AudioManager.AUDIOFOCUS_LOSS));
+        assertTrue(focus.asksAgain(true, UNASKED));
         assertEquals(BACK, focus.requested(AudioManager.AUDIOFOCUS_REQUEST_GRANTED));
-        assertFalse(focus.lostForGood());
+        assertFalse(focus.asksAgain(true, UNASKED));
         assertTrue(focus.held());
         // Android's own word gives it back too.
         focus.changed(AudioManager.AUDIOFOCUS_LOSS);
         assertEquals(BACK, focus.changed(AudioManager.AUDIOFOCUS_GAIN));
-        assertFalse(focus.lostForGood());
+        assertFalse(focus.asksAgain(true, UNASKED));
+    }
+
+    @Test
+    public void aLossForGoodIsAskedForBackInFrontWhateverPlaysAndAtATouchOnceNothingPlays() {
+        AudioFocus focus = new AudioFocus();
+        assertFalse("held", focus.asksAgain(true, UNASKED));
+        assertFalse("held", focus.asksAgain(false, UNASKED));
+        focus.changed(AudioManager.AUDIOFOCUS_LOSS);
+        assertTrue("back in front while the other app plays", focus.asksAgain(true, UNASKED));
+        assertFalse("a touch while the other app plays", focus.asksAgain(false, () -> true));
+        assertTrue("a touch once nothing plays", focus.asksAgain(false, () -> false));
+        // Refused: asked for again in front as well.
+        focus.requested(AudioManager.AUDIOFOCUS_REQUEST_FAILED);
+        assertTrue(focus.asksAgain(true, UNASKED));
+        assertFalse(focus.asksAgain(false, () -> true));
     }
 
     @Test
@@ -65,12 +87,12 @@ public class AudioFocusTest {
         assertEquals("game: another app has the audio focus until it lets go of it, as a call does",
             focus.requested(AudioManager.AUDIOFOCUS_REQUEST_DELAYED));
         assertFalse(focus.held());
-        assertFalse("Android gives it later", focus.lostForGood());
+        assertFalse("Android gives it later", focus.asksAgain(true, UNASKED));
         assertEquals(BACK, focus.changed(AudioManager.AUDIOFOCUS_GAIN));
 
-        assertEquals("game: Android refused the game the audio focus: the game asks again at a touch, once no other app plays",
-            focus.requested(AudioManager.AUDIOFOCUS_REQUEST_FAILED));
-        assertTrue(focus.lostForGood());
+        assertEquals("game: Android refused the game the audio focus: the game asks again when it is back in front, and at a "
+            + "touch once no other app plays", focus.requested(AudioManager.AUDIOFOCUS_REQUEST_FAILED));
+        assertTrue(focus.asksAgain(true, UNASKED));
         assertNull("no change", focus.changed(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT));
         assertFalse(focus.held());
         assertEquals(BACK, focus.requested(AudioManager.AUDIOFOCUS_REQUEST_GRANTED));

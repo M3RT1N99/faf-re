@@ -708,14 +708,14 @@ public final class GameActivity extends SDLActivity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             hideSystemBars();
-            takeAudioFocusBack();
+            takeAudioFocusBack(true);
         }
     }
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            takeAudioFocusBack();
+            takeAudioFocusBack(false);
         }
         return super.dispatchTouchEvent(event);
     }
@@ -739,9 +739,14 @@ public final class GameActivity extends SDLActivity {
         Game.audioFocus(sAudioFocus.held());
     }
 
-    /** The player is back at the game: its sound returns if the app that took the focus for good has stopped. */
-    private void takeAudioFocusBack() {
-        if (mShowsProgram && sAudioFocus.lostForGood() && !getSystemService(AudioManager.class).isMusicActive()) {
+    /**
+     * The player is back at the game, its window in front again or a finger on it: the game asks for the focus that another
+     * app took for good, in front whatever plays, at a touch once no other app plays (AudioFocus.asksAgain). The resume
+     * asks in any case (onResume).
+     */
+    private void takeAudioFocusBack(boolean backInFront) {
+        if (mShowsProgram
+            && sAudioFocus.asksAgain(backInFront, () -> getSystemService(AudioManager.class).isMusicActive())) {
             requestAudioFocus();
         }
     }

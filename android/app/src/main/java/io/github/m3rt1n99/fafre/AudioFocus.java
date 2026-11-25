@@ -2,6 +2,8 @@ package io.github.m3rt1n99.fafre;
 
 import android.media.AudioManager;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * The program's hold on Android's audio focus, which its sound follows (GameActivity asks for it in front, and the sound
  * pauses without it: android/native/src/app/SoundAndroid.cpp), and the report's line when another app takes it and when
@@ -19,8 +21,14 @@ final class AudioFocus {
         return mHeld;
     }
 
-    boolean lostForGood() {
-        return mLostForGood;
+    /**
+     * Whether the game asks again for the focus that another app took for good, or that Android refused it: each time the
+     * game is back in front, whatever plays, as the player came back to it (from the notification shade, the other half
+     * of a split screen, another app); at a touch only once no other app plays, as a touch is no word that the player wants
+     * the game's sound over the other app's. {@code otherAppPlays} is asked only then.
+     */
+    boolean asksAgain(boolean backInFront, BooleanSupplier otherAppPlays) {
+        return mLostForGood && (backInFront || !otherAppPlays.getAsBoolean());
     }
 
     /** Android's answer to the game's request (AudioManager.requestAudioFocus); the report's line, or null for none. */
@@ -32,8 +40,8 @@ final class AudioFocus {
             case AudioManager.AUDIOFOCUS_REQUEST_DELAYED:
                 return held(false, "another app has the audio focus until it lets go of it, as a call does");
             default:
-                return held(false, "Android refused the game the audio focus: the game asks again at a touch, once no "
-                    + "other app plays");
+                return held(false, "Android refused the game the audio focus: the game asks again when it is back in front, "
+                    + "and at a touch once no other app plays");
         }
     }
 
@@ -45,8 +53,8 @@ final class AudioFocus {
                 return held(true, null);
             case AudioManager.AUDIOFOCUS_LOSS:
                 mLostForGood = true;
-                return held(false, "another app took the audio focus for good: the game asks for it again at a touch, "
-                    + "once no other app plays");
+                return held(false, "another app took the audio focus for good: the game asks for it again when it is back "
+                    + "in front, and at a touch once no other app plays");
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                 return held(false, "another app has the audio focus for a while");
