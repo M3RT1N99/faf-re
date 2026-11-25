@@ -51,7 +51,9 @@ namespace replayhold
     if (hold.beats >= caps.beats) {
       return End::kBeats;
     }
-    if (caps.heapBytes <= 0 || hold.heapGrowth >= caps.heapBytes) {
+    // The heap counts from the first beat held, and a hold of none would leave the session no beat of the new sim: its
+    // tick, the old sim's, would stay, and the move would end where it began.
+    if (hold.beats > 0 && (caps.heapBytes <= 0 || hold.heapGrowth >= caps.heapBytes)) {
       return End::kMemory;
     }
     return hold.stalled ? End::kStalled : End::kHolding;

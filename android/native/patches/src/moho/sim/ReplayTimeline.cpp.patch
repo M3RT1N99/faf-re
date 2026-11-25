@@ -324,8 +324,8 @@ index e4f93ae..3b80c92 100644
 +      sHoldCapSaid = true;
 +      if (caps.heapBytes == 0) {
 +        gpg::Logf(
-+          "Replay timeline: the move holds none of the new sim's beats (replay_HeldBeatsMaxMB 0): they are applied as "
-+          "they come, and the way to tick %d plays in view",
++          "Replay timeline: the move holds the new sim's first beat alone (replay_HeldBeatsMaxMB 0): the rest are "
++          "applied as they come, and the way to tick %d plays in view",
 +          sTargetTick
 +        );
 +      } else {

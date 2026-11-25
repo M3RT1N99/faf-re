@@ -76,6 +76,9 @@ WXT_TEST(AHoldWithoutAMemoryCapEndsAtItsFirstBeatAndAStallEndsOneThatHolds)
   WXT_CHECK_EQ(replayhold::HoldEnds(Held(1, 1, 0), none), End::kMemory);
   WXT_CHECK_EQ(replayhold::HoldEnds(Held(1, 1, -kMegabyte), none), End::kMemory);
   WXT_CHECK_EQ(replayhold::HoldEnds(Held(786, 1, 0), none), End::kTarget);
+  // Before the first beat no cap of the heap binds, with none or with a growth since the hold before.
+  WXT_CHECK_EQ(replayhold::HoldEnds(Held(-1, 0, 0), none), End::kHolding);
+  WXT_CHECK_EQ(replayhold::HoldEnds(Held(-1, 0, 2048 * kMegabyte), replayhold::Caps{3000, 1024 * kMegabyte}), End::kHolding);
 
   replayhold::Hold stalled = Held(500, 500, kMegabyte);
   stalled.stalled = true;
