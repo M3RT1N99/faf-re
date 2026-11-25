@@ -402,8 +402,11 @@ void profiler::SimBeat(const std::uint32_t tick)
   if (gOff.load(std::memory_order_relaxed)) {
     return;
   }
-  if (::gettid() != simsampler::gState.thread.load(std::memory_order_relaxed)) {
+  // By the thread itself, not its tid, which the system may give a later thread.
+  static thread_local bool sTimed = false;
+  if (!sTimed) {
     // A new sim's first beat: its thread takes the timer from the last sim's.
+    sTimed = true;
     int error = 0;
     {
       const std::lock_guard<std::mutex> lock(gTimerLock);

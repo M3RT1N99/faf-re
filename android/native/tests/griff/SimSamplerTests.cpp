@@ -60,9 +60,25 @@ WXT_TEST(TheSamplerTakesAThreadsPcAndItsCallersByItsCpuTime)
   Drain();
   const std::uint64_t droppedBefore = simsampler::gState.dropped.load();
   int started = -1;
+  std::uintptr_t usable = 0;
+  std::uintptr_t top = 0;
+  std::size_t guarded = 0;
   std::thread worker([&] {
     timer_t timer{};
     started = simsampler::Start(5'000'000, timer);
+    // The walk's bounds are the thread's stack without its guard, which bionic counts in and maps without access.
+    void* stack = nullptr;
+    std::size_t size = 0;
+    std::size_t guard = 0;
+    pthread_attr_t attributes;
+    if (pthread_getattr_np(pthread_self(), &attributes) == 0) {
+      (void)pthread_attr_getstack(&attributes, &stack, &size);
+      (void)pthread_attr_getguardsize(&attributes, &guard);
+      (void)pthread_attr_destroy(&attributes);
+    }
+    usable = reinterpret_cast<std::uintptr_t>(stack) + guard;
+    top = reinterpret_cast<std::uintptr_t>(stack) + size;
+    guarded = guard;
     if (started == 0) {
       (void)gSpin(6, 1);
       simsampler::Stop(timer);
@@ -71,6 +87,10 @@ WXT_TEST(TheSamplerTakesAThreadsPcAndItsCallersByItsCpuTime)
   worker.join();
   WXT_CHECK_EQ(started, 0);
   WXT_CHECK_EQ(simsampler::gState.thread.load(), 0);
+  // A thread of the default attributes has a guard: the test sees it left out.
+  WXT_CHECK(guarded > 0 && usable < top);
+  WXT_CHECK_EQ(simsampler::gState.stackLow.load(), usable);
+  WXT_CHECK_EQ(simsampler::gState.stackHigh.load(), top);
 
   // 300 ms of the thread's CPU time at 200 Hz is 60 samples; the kernel looks at the timer on its ticks.
   int samples = 0;

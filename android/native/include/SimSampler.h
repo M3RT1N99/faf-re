@@ -120,13 +120,18 @@ namespace simsampler
   {
     void* stack = nullptr;
     std::size_t size = 0;
+    std::size_t guard = 0;
     pthread_attr_t attributes;
     if (pthread_getattr_np(pthread_self(), &attributes) == 0) {
-      (void)pthread_attr_getstack(&attributes, &stack, &size);
+      if (pthread_attr_getstack(&attributes, &stack, &size) != 0 || pthread_attr_getguardsize(&attributes, &guard) != 0) {
+        size = 0;
+      }
       (void)pthread_attr_destroy(&attributes);
     }
-    // Without its bounds a sample has the PC and the link register alone.
-    gState.stackLow.store(reinterpret_cast<std::uintptr_t>(stack), std::memory_order_relaxed);
+    // Bionic's stack begins with its guard, which is mapped without access. Without the bounds a sample has the PC and
+    // the link register alone.
+    const std::uintptr_t low = reinterpret_cast<std::uintptr_t>(stack) + (guard < size ? guard : size);
+    gState.stackLow.store(low, std::memory_order_relaxed);
     gState.stackHigh.store(reinterpret_cast<std::uintptr_t>(stack) + size, std::memory_order_relaxed);
     const pid_t thread = gettid();
     gState.thread.store(thread, std::memory_order_release);
