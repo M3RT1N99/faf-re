@@ -336,8 +336,9 @@ the cumulative one, by each function of a sample's short stack: where the sim's 
   the interrupted PC, the link register (arm64's) and the return addresses the frame pointers chain, eight addresses at
   most, into a lock-free ring. The NDK's clang keeps frame pointers in every function but a leaf (`-mframe-pointer=non-leaf`,
   its default for Android, which the build keeps; compiler-rt's prebuilt helpers have none), and the link register names a
-  leaf's caller. The handler reads frame records only within the thread's own stack (`pthread_getattr_np`), each above the
-  last, and takes no step that is not async-signal-safe: the registers, atomics, `gettid` and the monotonic clock. A
+  leaf's caller. The handler reads frame records only within the thread's own stack (`pthread_getattr_np`, without the
+  guard at its bottom, which bionic counts in and maps without access), each above the last, and takes no step that is not
+  async-signal-safe: the registers, atomics, `gettid` and the monotonic clock. A
   SIGPROF that is not the timer's (`SI_TIMER`), or that reaches another thread, is let go. Each sim has a thread of its own,
   a game's and each one a replay's move back makes: a sim's first beat gives the timer to its thread (`moho::gSimBeforeBeat`,
   as for the speed lines).
