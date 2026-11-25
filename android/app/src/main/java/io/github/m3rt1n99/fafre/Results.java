@@ -16,7 +16,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -130,17 +132,8 @@ final class Results {
             if (!TestState.gameReport().isEmpty()) {
                 add(out, "game.txt", TestState.gameReport().getBytes(StandardCharsets.UTF_8));
             }
-            File gameTombstone = GameReport.tombstone(context);
-            if (gameTombstone.isFile()) {
-                addFile(out, GameReport.TOMBSTONE, gameTombstone);
-            }
-            File previousGame = GameReport.previous(context);
-            if (previousGame.isFile()) {
-                addFile(out, GameReport.PREVIOUS, previousGame);
-            }
-            File previousTombstone = GameReport.previousTombstone(context);
-            if (previousTombstone.isFile()) {
-                addFile(out, GameReport.PREVIOUS_TOMBSTONE, previousTombstone);
+            for (Map.Entry<String, File> file : gameFiles(context.getFilesDir()).entrySet()) {
+                addFile(out, file.getKey(), file.getValue());
             }
             File gameLog = GameReport.log(storage);
             if (gameLog.isFile()) {
@@ -163,6 +156,22 @@ final class Results {
             throw new IOException(e);
         }
         return zip;
+    }
+
+    /**
+     * The game's files in the app's files {@code files} that the zip takes beside its report, by their names there, those
+     * that are there: a native crash's tombstone, or the end of the logcat of a process a signal ended without one, and the
+     * last game's report, tombstone and logcat (GameReport), as the FAF client's logs have them (GameLogs.texts).
+     */
+    static Map<String, File> gameFiles(File files) {
+        Map<String, File> found = new LinkedHashMap<>();
+        for (File file : new File[] {GameReport.tombstone(files), GameReport.logcat(files), GameReport.previous(files),
+                GameReport.previousTombstone(files), GameReport.previousLogcat(files)}) {
+            if (file.isFile()) {
+                found.put(file.getName(), file);
+            }
+        }
+        return found;
     }
 
     private static void add(ZipOutputStream out, String name, byte[] data) throws IOException {

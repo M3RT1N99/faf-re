@@ -170,8 +170,9 @@ the game data they imported. Everything lives in the app's external files folder
   to fill, and the compositor scales the picture to the panel. The host writes `game.txt` in the
   app's files; when the process is gone, the app adds how it ended (the exit code, a fatal error's
   message, or what `ApplicationExitInfo` says, the tombstone of a native crash) and why the renderer
-  could not start, from the engine's log. A new game keeps the last game's as `game-previous.txt`
-  and `game-previous-tombstone.pb`. A crash also leaves the engine's own report in the game's HOME
+  could not start, from the engine's log, and after a signal that left no tombstone the end of the process's logcat
+  (`game-logcat.txt`). A new game keeps the last game's as `game-previous.txt`, `game-previous-tombstone.pb`
+  and `game-previous-logcat.txt`. A crash also leaves the engine's own report in the game's HOME
   (`faf_crash_latest.txt`).
 - **Touch controls**: a button on the game card chooses how fingers play a game, *mouse* (the default, above) or *Griff*
   (`TouchScheme`), from the game's next start on (a game that runs, also in the back, keeps the controls it started with),
@@ -369,8 +370,9 @@ the game data they imported. Everything lives in the app's external files folder
   - The app starts the game with `/notelemetry`: the engine's records of desyncs and of a game's end, with the players'
     names, stay on the phone instead of going to the engine author's server.
 - **Share results** zips `summary.json`, the math output, the log, the game's report, tombstone, log and crash report
-  (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the last
-  game's (`game-previous.txt`, `game-previous-tombstone.pb`) and each replay's `headless.out`,
+  (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the end of its process's logcat
+  where a signal ended it without a tombstone (`game-logcat.txt`), the last game's (`game-previous.txt`,
+  `game-previous-tombstone.pb`, `game-previous-logcat.txt`) and each replay's `headless.out`,
   `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks symbolized. The FAF client gets the
   game's part of it scrubbed, the tombstones as text, for its problem report (the launcher's contract, The logs).
 
@@ -794,6 +796,7 @@ next call, which deletes it and takes its grants back: the client reads or copie
 | `report.txt` | The app's version and version code, the engine's commit, Android's version and API level, the device's maker and model, and the stand-ins below; no account |
 | `game.txt`, `game-previous.txt` | The last game's report, with its end once the game's process is gone, and the one before |
 | `game-tombstone.txt`, `game-previous-tombstone.txt` | A native crash's tombstone of either game as text (`Tombstone`): the signal and its fault address, the cause, the abort message, each thread's stack (library and offset, function) and the libraries' build ids, for `tools/tombstone.py`'s way of symbolizing a build's frames; not the tombstone's memory, registers, open files, log and command line |
+| `game-logcat.txt`, `game-previous-logcat.txt` | For either game whose process a signal ended without a tombstone: the last 500 lines of its process's logcat, main and crash buffers (`ProcessExit.keepLogcat`), libc's `Fatal signal` line and the abort message among them, after a line that names the command, or why it could not be read |
 | `game/engine.sclog` | The engine's log of the last game |
 | `game/faf_crash_latest.txt` | The engine's newest crash report, which can be an earlier game's (its `time` says when) |
 | `probe.txt` | The device check's last report (contract 2: *The device check*, above) |
