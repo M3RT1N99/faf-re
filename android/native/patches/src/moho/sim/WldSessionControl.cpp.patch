@@ -1,20 +1,22 @@
 diff --git a/src/moho/sim/WldSessionControl.cpp b/src/moho/sim/WldSessionControl.cpp
-index 673b157..1a59230 100644
+index 673b157..3bd4adb 100644
 --- a/src/moho/sim/WldSessionControl.cpp
 +++ b/src/moho/sim/WldSessionControl.cpp
-@@ -8,7 +8,11 @@
+@@ -8,7 +8,13 @@
  #endif
  
  #include <chrono>
 +#include <cstdio>
 +#include <thread>
  
++#include <ReplayHold.h>
++
 +#include "gpg/gal/PipelineDefer.h"
 +#include "moho/console/CConCommand.h"
  #include "moho/render/GpuPathSettings.h"
  #include "moho/render/SkyDome.h"
  #include "moho/sim/CWldSessionLoaderImpl.h"
-@@ -27,6 +31,85 @@ namespace moho
+@@ -27,6 +33,85 @@ namespace moho
  
        return dynamic_cast<IWldUIProvider*>(sWldUIProvider);
      }
@@ -100,7 +102,102 @@ index 673b157..1a59230 100644
    } // namespace
  
    // gActiveWldSession: moho/sim/WldSessionState.cpp (WldSessionState.h).
-@@ -894,13 +977,17 @@ namespace moho
+@@ -55,6 +140,8 @@ namespace moho
+       WaitingForSync,
+       WaitingForReady,
+       Holding,
++      // Android client build: the held beats go to the session a slice a frame (include/ReplayHold.h).
++      Applying,
+     };
+     EReplaySimSwap sReplaySimSwap = EReplaySimSwap::None;
+     // The new sim's beats until the move's target: the session and what it draws stay as they are.
+@@ -62,6 +149,10 @@ namespace moho
+     int sReplaySwapRate = 0;
+     std::int32_t sReplaySwapFocus = -1;
+     std::chrono::steady_clock::time_point sReplaySwapStart{};
++    // Android client build: how many of the held beats the session has, from when, over how many frames.
++    std::size_t sReplayHeldApplied = 0;
++    std::chrono::steady_clock::time_point sReplayApplyStart{};
++    int sReplayApplyFrames = 0;
+ 
+     // ---- Crash-report "Sim" section (new diagnostics functionality) ----
+     //
+@@ -714,6 +805,8 @@ namespace moho
+      * Engine addition (replay timeline): one frame of a sim swap: the steps of `WLD_DoInitializing`
+      * and `WLD_DoPostInitializing` without their UI, then the new sim's beats are held until the
+      * target, and applied in one frame. True while the session has no beats to take.
++     *
++     * Android client build (include/ReplayHold.h): applied a slice a frame instead, the rest held meanwhile.
+      */
+     [[nodiscard]] bool StepReplaySimSwap(
+       CWldSession& session
+@@ -777,29 +870,49 @@ namespace moho
+       }
+ 
+       simDriver->SetGeomCams(CAM_GetAllCameras());
+-      bool gameOver = false;
+-      while (!gameOver && !REPLAY_HoldIsDone(sReplayHeldBeats.size()) && simDriver->HasSyncData()) {
+-        SSyncData* syncData = nullptr;
+-        simDriver->GetSyncData(syncData);
+-        sReplayHeldBeats.push_back(syncData);
+-        REPLAY_NoteHeldTick(syncData->mCurTick);
+-        gameOver = syncData->mGameOver;
++      if (sReplaySimSwap == EReplaySimSwap::Holding) {
++        bool gameOver = false;
++        while (!gameOver && !REPLAY_HoldIsDone(sReplayHeldBeats.size()) && simDriver->HasSyncData()) {
++          SSyncData* syncData = nullptr;
++          simDriver->GetSyncData(syncData);
++          sReplayHeldBeats.push_back(syncData);
++          REPLAY_NoteHeldTick(syncData->mCurTick);
++          gameOver = syncData->mGameOver;
++        }
++        if (!gameOver && !REPLAY_HoldIsDone(sReplayHeldBeats.size())) {
++          return true;
++        }
++        // Android client build (include/ReplayHold.h): the held beats take the place of what the old sim published a
++        // slice a frame, as a fast-forward takes its beats, and the UI draws between the slices: on a Galaxy S22 Ultra
++        // 786 of them took 9.3 s in one frame, the UI frozen. The new sim's next beats wait in the driver's queue.
++        session.ResetForNewReplaySim();
++        sReplayHeldApplied = 0;
++        sReplayApplyFrames = 0;
++        sReplayApplyStart = std::chrono::steady_clock::now();
++        sReplaySimSwap = EReplaySimSwap::Applying;
++      }
++
++      const auto sliceStart = std::chrono::steady_clock::now();
++      ++sReplayApplyFrames;
++      for (std::size_t applied = 0; sReplayHeldApplied < sReplayHeldBeats.size() &&
++                                    replayhold::SliceGoesOn(applied, std::chrono::steady_clock::now() - sliceStart);
++           ++applied) {
++        // The session's from here on: a teardown meanwhile deletes those still held alone.
++        SSyncData* const held = sReplayHeldBeats[sReplayHeldApplied];
++        sReplayHeldBeats[sReplayHeldApplied++] = nullptr;
++        session.DoBeat(fa::auto_ptr<SSyncData>(held));
+       }
+-      if (!gameOver && !REPLAY_HoldIsDone(sReplayHeldBeats.size())) {
++      if (sReplayHeldApplied < sReplayHeldBeats.size()) {
+         return true;
+       }
+-
+-      const auto applyStart = std::chrono::steady_clock::now();
+-      session.ResetForNewReplaySim();
+-      for (SSyncData* const held : sReplayHeldBeats) {
+-        session.DoBeat(fa::auto_ptr<SSyncData>(held));
+-      }
+       gpg::Logf(
+-        "Replay timeline: %d held beats applied in %.2f s",
++        "Replay timeline: %d held beats applied in %.2f s, over %d frames",
+         static_cast<int>(sReplayHeldBeats.size()),
+-        std::chrono::duration<double>(std::chrono::steady_clock::now() - applyStart).count()
++        std::chrono::duration<double>(std::chrono::steady_clock::now() - sReplayApplyStart).count(),
++        sReplayApplyFrames
+       );
+       sReplayHeldBeats.clear();
++      sReplayHeldApplied = 0;
+       sReplaySimSwap = EReplaySimSwap::None;
+       REPLAY_SimRestarted(session);
+       return false;
+@@ -894,13 +1007,17 @@ namespace moho
  
        (void)WLD_DispatchOnTeardownCallbacksCoreFromGlobalList();
  
@@ -119,7 +216,7 @@ index 673b157..1a59230 100644
          gReadyAfterFirstFrame = true;
        } else if (CClientManagerImpl* const clientManager = simDriver->GetClientManager(); clientManager != nullptr) {
          clientManager->Cleanup();
-@@ -936,6 +1023,11 @@ namespace moho
+@@ -936,6 +1053,11 @@ namespace moho
        simDriver->Dispatch();
        CClientManagerImpl* const clientManager = simDriver->GetClientManager();
  
@@ -131,7 +228,7 @@ index 673b157..1a59230 100644
        // Engine addition: the frame that built the game interface has been drawn, with the UI's
        // first update (`OnFirstUpdate`) and the world's first render, which take a few hundred ms
        // more. Ready now, so the session's shared start (wld_PreciseSharedStart) is when the last
-@@ -1279,6 +1371,8 @@ namespace moho
+@@ -1279,13 +1401,17 @@ namespace moho
  
    void WLD_Teardown()
    {
@@ -140,3 +237,12 @@ index 673b157..1a59230 100644
      DropEarlySim();      // engine addition (wld_StartSimEarly): a load given up before its session
      REPLAY_OnTeardown(); // engine addition (replay timeline)
      sReplaySimSwap = EReplaySimSwap::None;
++    // Android client build: those the session took already are null.
+     for (SSyncData* const held : sReplayHeldBeats) {
+       delete held;
+     }
+     sReplayHeldBeats.clear();
++    sReplayHeldApplied = 0;
+     if (sSimDriver) {
+       sSimDriver->ShutDown();
+       CWldSession* const session = gActiveWldSession;

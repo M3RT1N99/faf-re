@@ -1,8 +1,19 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..258b993 100644
+index e4f93ae..2f1fdb1 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
-@@ -57,12 +57,19 @@ namespace moho
+@@ -33,8 +33,10 @@
+ #include <zstd.h>
+ 
+ #include <memory>
++#include <ReplayHold.h>
+ #include "gpg/core/containers/ReadArchive.h"
+ #include "gpg/core/containers/WriteArchive.h"
++#include "gpg/core/utils/Global.h"
+ #include "gpg/core/utils/SharedPtrUtils.h"
+ #include "gpg/core/utils/Logging.h"
+ #include "moho/console/CConCommand.h"
+@@ -57,12 +59,19 @@ namespace moho
  {
    namespace
    {
@@ -23,7 +34,49 @@ index e4f93ae..258b993 100644
        &replay_KeyframeEvery
      );
  
-@@ -149,6 +156,9 @@ namespace moho
+@@ -97,6 +106,24 @@ namespace moho
+     constexpr std::int32_t kMinTicksToMeasure = 50;
+     // A longer way than this from a keyframe plays forward in view: holding it would take too much memory.
+     constexpr std::size_t kMaxHeldBeats = 3000;
++
++    /**
++     * Android client build (upstream PR candidate): what a move back's held beats may take of the engine's heap, as their
++     * count is capped. A Galaxy S22 Ultra's heap grew from 0.39 to 2.4 GB while 786 beats of an 8-player game were held.
++     */
++    int replay_HeldBeatsMaxMB =
++#if FAFRE_PLATFORM_ANDROID
++      0;
++#else
++      1024;
++#endif
++    TConVar<int> gTConVar_replay_HeldBeatsMaxMB(
++      "replay_HeldBeatsMaxMB",
++      "Megabytes the engine's heap may grow by while a move back holds the new sim's beats, the screen keeping what it "
++      "shows, as it holds 3000 at most; then they are applied, a slice a frame, and the rest of the way plays in view. "
++      "0: none are held, and the whole way plays in view, the beats applied as they come.",
++      &replay_HeldBeatsMaxMB
++    );
+     // Beats that can't come for this long mean the replay has ended before its target.
+     constexpr double kFastForwardStallSeconds = 10.0;
+     // A save stops the sim, so the next keyframe waits this many ticks per second the last save took:
+@@ -128,6 +155,16 @@ namespace moho
+     std::int32_t sTargetTick = -1;
+     std::int32_t sStartTick = 0;
+     std::int32_t sHeldTick = -1; // of the new sim's last beat being held
++    // Android client build: the engine's heap at the hold's first beat, and whether the hold's cap was logged.
++    std::size_t sHoldHeapStart = 0;
++    bool sHoldCapSaid = false;
++
++    [[nodiscard]] std::size_t HeapInUse()
++    {
++      gpg::HeapStats heap{};
++      gpg::GetHeapInfo(&heap);
++      return heap.inUse;
++    }
+ 
+     // What a move costs on this machine: first guesses, then what the last moves took.
+     double sLoadSeconds = 5.0;
+@@ -149,6 +186,9 @@ namespace moho
      Clock::time_point sLastProgress{};
      std::int32_t sLastProgressTick = 0;
  
@@ -33,7 +86,7 @@ index e4f93ae..258b993 100644
      bool sLaunchPending = false;
      bool sRestartWanted = false;
      bool sRestarting = false;
-@@ -586,6 +596,25 @@ namespace moho
+@@ -586,6 +626,25 @@ namespace moho
      void StartKeyframePreparation()
      {
        sPrepareStartDue = false;
@@ -59,7 +112,7 @@ index e4f93ae..258b993 100644
        if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
          return;
        }
-@@ -1021,7 +1050,10 @@ namespace moho
+@@ -1021,7 +1080,10 @@ namespace moho
  
      ForgetKeyframes();
      RemoveLeftoverKeyframes();
@@ -70,7 +123,7 @@ index e4f93ae..258b993 100644
      EndSeek();
      sReplayPath = path;
      sTotalBeats = gVcrReplayBeats;
-@@ -1131,11 +1163,22 @@ namespace moho
+@@ -1131,11 +1193,22 @@ namespace moho
      return progress;
    }
  
@@ -93,7 +146,7 @@ index e4f93ae..258b993 100644
      if (!session.IsReplay || sReplayPath.empty()) {
        return;
      }
-@@ -1163,6 +1206,14 @@ namespace moho
+@@ -1163,6 +1236,14 @@ namespace moho
        return;
      }
  
@@ -108,7 +161,7 @@ index e4f93ae..258b993 100644
      if (replay_KeyframeEvery <= 0 || sKeyframePending || sRestarting) {
        return;
      }
-@@ -1179,9 +1230,13 @@ namespace moho
+@@ -1179,9 +1260,13 @@ namespace moho
      }
      // Or will be: a save stops the sim, which shows.
  #if !FAFRE_PLATFORM_WINDOWS
@@ -125,7 +178,7 @@ index e4f93ae..258b993 100644
      }
  #else
      if (
-@@ -1233,6 +1288,8 @@ namespace moho
+@@ -1233,6 +1318,8 @@ namespace moho
  
    void REPLAY_OnTeardown()
    {
@@ -134,3 +187,58 @@ index e4f93ae..258b993 100644
      // The teardown before this replay's session starts, not the end of the replay.
      if (sLaunchPending) {
        return;
+@@ -1261,6 +1348,9 @@ namespace moho
+       sRunStart = Clock::now();
+       sRunStartTick = tick;
+       sLoadSeconds = std::chrono::duration<double>(sRunStart - sRestartAsked).count();
++      // Android client build: the held beats' heap counts from the hold's first beat (replay_HeldBeatsMaxMB).
++      sHoldHeapStart = HeapInUse();
++      sHoldCapSaid = false;
+     }
+     sHeldTick = tick;
+     sLastProgress = Clock::now();
+@@ -1270,8 +1360,42 @@ namespace moho
+     const std::size_t beatsHeld
+   )
+   {
+-    const bool stalled = std::chrono::duration<double>(Clock::now() - sLastProgress).count() > kFastForwardStallSeconds;
+-    return sHeldTick >= sTargetTick || beatsHeld >= kMaxHeldBeats || stalled;
++    // Android client build (include/ReplayHold.h): the held beats are capped by the heap they grow, as by their count.
++    replayhold::Hold hold;
++    hold.heldTick = sHeldTick;
++    hold.targetTick = sTargetTick;
++    hold.beats = beatsHeld;
++    hold.heapGrowth = static_cast<std::int64_t>(HeapInUse()) - static_cast<std::int64_t>(sHoldHeapStart);
++    hold.stalled = std::chrono::duration<double>(Clock::now() - sLastProgress).count() > kFastForwardStallSeconds;
++    const replayhold::Caps caps{kMaxHeldBeats, static_cast<std::int64_t>(std::max(replay_HeldBeatsMaxMB, 0)) << 20};
++    const replayhold::End end = replayhold::HoldEnds(hold, caps);
++    if ((end == replayhold::End::kBeats || end == replayhold::End::kMemory) && !sHoldCapSaid) {
++      sHoldCapSaid = true;
++      if (caps.heapBytes == 0) {
++        gpg::Logf(
++          "Replay timeline: the move holds none of the new sim's beats (replay_HeldBeatsMaxMB 0): they are applied as "
++          "they come, and the way to tick %d plays in view",
++          sTargetTick
++        );
++      } else {
++        char cap[64];
++        if (end == replayhold::End::kBeats) {
++          std::snprintf(cap, sizeof(cap), "their count's cap of %d", static_cast<int>(kMaxHeldBeats));
++        } else {
++          std::snprintf(cap, sizeof(cap), "their heap's cap of %d MB (replay_HeldBeatsMaxMB)", replay_HeldBeatsMaxMB);
++        }
++        gpg::Logf(
++          "Replay timeline: the held beats reached %s by tick %d, %d beats with the engine's heap %.0f MB larger: they "
++          "are applied a slice a frame, and the way on to tick %d plays in view",
++          cap,
++          sHeldTick,
++          static_cast<int>(beatsHeld),
++          static_cast<double>(hold.heapGrowth) / (1024.0 * 1024.0),
++          sTargetTick
++        );
++      }
++    }
++    return end != replayhold::End::kHolding;
+   }
+ 
+   void REPLAY_SimRestarted(

@@ -162,7 +162,10 @@ manager's `Frame`), the camera manager's frame and `REN_Frame`, which only sets 
 figures, and the frame after the move's end (at its target, a cancel or a stall) runs them again. The frames are drawn
 meanwhile: the controls' `OnFrame` (`UpdateFrameRate`) and the paint (`CD3DDevice::Refresh`) run each frame, so the UI
 shows, with the timeline's strip of the move's progress and its *Cancel*, and so does the world, its camera and its
-render clock held where the move began. SDL's output is not paused for a move.
+render clock held where the move began. SDL's output is not paused for a move. A move back plays the replay again from its
+start, as Android saves no keyframes, and its way to the target shows as a fast-forward's does, the new sim's beats taken as
+they come, a slice a frame (`patches/README.md`, `ReplayTimeline.cpp` and `WldSessionControl.cpp`, a move back's held
+beats).
 
 FFmpeg is the engine's submodule, unchanged, built by `ffmpeg/CMakeLists.txt` with the NDK's clang
 from what its configure writes for each ABI, checked in under `ffmpeg/<abi>/`. `ffmpeg/generate.sh`
@@ -363,7 +366,8 @@ past the map's edges (`include/CameraClear.h`), the choice of the small control 
 (`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), the
 device's classes of cores from sysfs's texts and where the threads go by them, with the report's line of it, the watch's
 rule of a move and the sim's speed lines (`include/CoreClasses.h`), the sim's profile and its sampler
-(`include/SimProfile.h`, `include/SimSampler.h`, The sim's profile), and the
+(`include/SimProfile.h`, `include/SimSampler.h`, The sim's profile), when a replay's move back ends its hold of the new
+sim's beats and the slices it applies them in (`include/ReplayHold.h`), and the
 touch layer's gestures (`src/touch`; `Touch*Tests.cpp` are the app's Java tests of it, case by case,
 but for `PictureSize`'s, which stay with the activity). It needs nothing of the engine and is linked statically, so the same program
 runs on the emulator and on a Linux host; the app's workflow runs the arm64 build on an arm64 runner.

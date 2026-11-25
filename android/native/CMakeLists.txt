@@ -438,6 +438,7 @@ add_executable(faf_griff_tests
   tests/griff/GriffUndoTests.cpp
   tests/griff/HostQueueTests.cpp
   tests/griff/ListDragTests.cpp
+  tests/griff/ReplayHoldTests.cpp
   tests/griff/SimProfileTests.cpp
   tests/griff/SimSamplerTests.cpp
   tests/griff/TapTargetTests.cpp
