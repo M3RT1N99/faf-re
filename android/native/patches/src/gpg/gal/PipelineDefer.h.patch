@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..4cd73d2 100644
+index e97176b..3e550f5 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
 @@ -8,19 +8,46 @@
@@ -34,8 +34,8 @@ index e97176b..4cd73d2 100644
  
 -  /** Pipelines building at once at most; a draw that finds them all busy is skipped and asks again next frame. */
 +  /**
-+   * Pipelines pending at most, building or queued; a draw that finds them all busy is skipped and asks again next frame.
-+   * kPipelineWorkerThreads of them build at once (PipelineWorker).
++   * Pipelines pending at most, building or queued; a draw that finds them all busy is skipped and asks again next
++   * frame. kPipelineWorkerThreads of them build at once (PipelineWorker).
 +   */
 +#if FAFRE_PLATFORM_ANDROID
 +  // A phone's driver refused mesh pipelines for want of memory while up to four built at once (Xclipse 920:
@@ -50,7 +50,7 @@ index e97176b..4cd73d2 100644
  
    /** How many PipelineDeferScope are open (render thread only). */
    inline int gPipelineDeferDepth = 0;
-@@ -45,29 +72,243 @@ namespace gpg::gal
+@@ -45,29 +72,244 @@ namespace gpg::gal
      return gAsyncPipelines && gPipelineDeferDepth > 0;
    }
  
@@ -116,7 +116,9 @@ index e97176b..4cd73d2 100644
 +        std::packaged_task<Handle()> build;
 +        {
 +          std::unique_lock<std::mutex> lock(mMutex);
-+          mWake.wait(lock, [this] { return !mJobs.empty(); });
++          mWake.wait(lock, [this] {
++            return !mJobs.empty();
++          });
 +          build = std::move(mJobs.front());
 +          mJobs.pop_front();
 +        }
@@ -193,8 +195,8 @@ index e97176b..4cd73d2 100644
 +    }
 +
 +    /**
-+     * A try of `key` refused for want of memory at `now`: true when another try follows, false after the last one, which
-+     * forgets the key.
++     * A try of `key` refused for want of memory at `now`: true when another try follows, false after the last one,
++     * which forgets the key.
 +     */
 +    bool Refused(
 +      const std::string& key,
@@ -272,18 +274,18 @@ index e97176b..4cd73d2 100644
 +    Handle built{};
      try {
 -      return build.get();
+-    } catch (...) {
+-      return Handle{};
 +      built = build.get();
 +      how = PipelineBuildEnd::kBuilt;
 +    } catch (const PipelineRefused& refused) {
 +      how = refused.forNow ? PipelineBuildEnd::kRefusedForNow : PipelineBuildEnd::kRefused;
 +    } catch (const std::bad_alloc&) {
 +      how = PipelineBuildEnd::kRefusedForNow;
-     } catch (...) {
--      return Handle{};
-     }
++    } catch (...) {}
 +    if (end != nullptr) {
 +      *end = how;
-+    }
+     }
 +    return built;
    }
  
@@ -305,7 +307,7 @@ index e97176b..4cd73d2 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +317,23 @@ namespace gpg::gal
+@@ -76,9 +318,23 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {

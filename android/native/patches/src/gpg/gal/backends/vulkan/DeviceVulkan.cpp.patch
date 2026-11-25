@@ -1,8 +1,8 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index 215312f..1fab58e 100644
+index 215312f..c77c806 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-@@ -3,10 +3,12 @@
+@@ -3,14 +3,21 @@
  #include "DeviceVulkan.h"
  
  #include <algorithm>
@@ -13,9 +13,18 @@ index 215312f..1fab58e 100644
  #include <cstdio>
 +#include <cstdlib>
  #include <cstring>
++#include <set>
  #include <string>
++#include <tuple>
  #include <vector>
-@@ -19,6 +21,7 @@
+ 
++#include <Windows.h>
++#include <psapi.h>
++
+ #if FAFRE_PLATFORM_WINDOWS
+ #include <d3dcompiler.h>
+ #include <wrl/client.h>
+@@ -19,6 +26,7 @@
  #include "platform/posix/dxc/DxcGlue.h"
  #endif
  
@@ -23,7 +32,7 @@ index 215312f..1fab58e 100644
  #include "gpg/core/utils/Logging.h"
  #include "gpg/gal/backends/common/BackendErrors.h"
  #include "gpg/gal/backends/common/ImageCodec.h"
-@@ -37,6 +40,7 @@
+@@ -37,6 +45,7 @@
  #include "gpg/gal/effects/RayTracedShadows.h"
  #include "gpg/gal/effects/ShadowCascades.h"
  #include "gpg/gal/effects/TextureFiltering.h"
@@ -31,7 +40,7 @@ index 215312f..1fab58e 100644
  #include "gpg/gal/Head.hpp"
  #include "gpg/gal/IndexBufferContext.hpp"
  #include "gpg/gal/PipelineDefer.h"
-@@ -47,6 +51,26 @@
+@@ -47,6 +56,26 @@
  #include "VulkanAttachmentBarrier.h"
  #include "VulkanSurface.h"
  
@@ -58,7 +67,7 @@ index 215312f..1fab58e 100644
  namespace gpg::gal
  {
    using backend::CheckHresult;
-@@ -134,6 +158,41 @@ namespace gpg::gal
+@@ -134,6 +163,41 @@ namespace gpg::gal
        return format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
      }
  
@@ -100,7 +109,7 @@ index 215312f..1fab58e 100644
      /** See DeviceD3D12: plain counts, D3DSTREAMSOURCE_INDEXEDDATA | count, or an instance-data stream. */
      [[nodiscard]] std::uint32_t InstanceCount(
        const std::int32_t token
-@@ -316,6 +375,74 @@ namespace gpg::gal
+@@ -316,6 +380,283 @@ namespace gpg::gal
        }
        return VK_FALSE;
      }
@@ -172,10 +181,219 @@ index 215312f..1fab58e 100644
 +      }
 +      return create(device, cache, 1U, &info, nullptr, &pipeline);
 +    }
++
++    /** The device's heaps, and with VK_EXT_memory_budget what the driver allows and uses of them now. */
++    struct MemoryBudget
++    {
++      std::uint64_t local = 0U; // the device-local heaps
++      std::uint64_t nonLocal = 0U;
++      std::uint64_t localBudget = 0U;
++      std::uint64_t localUsage = 0U;
++      std::uint64_t nonLocalBudget = 0U;
++      std::uint64_t nonLocalUsage = 0U;
++    };
++
++    [[nodiscard]] MemoryBudget ReadMemoryBudget(
++      const PFN_vkGetPhysicalDeviceMemoryProperties2 properties,
++      const VkPhysicalDevice physical,
++      const bool budgetExtension
++    )
++    {
++      VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
++      budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
++      VkPhysicalDeviceMemoryProperties2 memory{};
++      memory.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
++      memory.pNext = budgetExtension ? &budget : nullptr;
++      properties(physical, &memory);
++      MemoryBudget out;
++      for (std::uint32_t heap = 0U; heap < memory.memoryProperties.memoryHeapCount; ++heap) {
++        const bool local = (memory.memoryProperties.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0U;
++        (local ? out.local : out.nonLocal) += memory.memoryProperties.memoryHeaps[heap].size;
++        if (budgetExtension) {
++          (local ? out.localBudget : out.nonLocalBudget) += budget.heapBudget[heap];
++          (local ? out.localUsage : out.nonLocalUsage) += budget.heapUsage[heap];
++        }
++      }
++      return out;
++    }
++
++    /** What a pipeline's lines in the log name (ReportPipelineBuild): its pass, and how to read the device's memory. */
++    struct PipelineReport
++    {
++      std::string pass; // PassLabel
++      PFN_vkGetPhysicalDeviceMemoryProperties2 memoryProperties = nullptr;
++      VkPhysicalDevice physical = VK_NULL_HANDLE;
++      bool budget = false; // VK_EXT_memory_budget
++    };
++
++    /**
++     * `mesh.fx technique "T" pass "P" (vs VS, ps PS), vertex format 24`: a pipeline's pass as its effect describes it,
++     * the first pass with its entry points; a pair of them can serve several passes, which `and 2 more` counts.
++     */
++    [[nodiscard]] std::string PassLabel(
++      const effects::EffectProgram& program,
++      const effects::CompiledEntry& vertex,
++      const effects::CompiledEntry* const pixel,
++      const std::uint32_t format
++    )
++    {
++      const std::string pixelName = (pixel != nullptr) ? pixel->entryName : std::string();
++      const effects::Technique* technique = nullptr;
++      const effects::Pass* found = nullptr;
++      unsigned more = 0U;
++      for (const effects::Technique& candidate : program.Description().techniques) {
++        for (const effects::Pass& pass : candidate.passes) {
++          if (pass.vertexShader.entry != vertex.entryName || pass.pixelShader.entry != pixelName) {
++            continue;
++          }
++          if (found == nullptr) {
++            technique = &candidate;
++            found = &pass;
++          } else {
++            ++more;
++          }
++        }
++      }
++      std::string label = program.Name();
++      if (found != nullptr) {
++        label += " technique \"" + technique->name + "\" pass \"" + found->name + "\"";
++        if (more != 0U) {
++          label += " and " + std::to_string(more) + " more";
++        }
++      }
++      label += " (vs " + vertex.entryName;
++      if (pixel != nullptr) {
++        label += ", ps " + pixel->entryName;
++      }
++      return label + "), vertex format " + std::to_string(format);
++    }
++
++    /**
++     * `VmRSS 2412 MB, VmData 2641 MB, device-local 1203 of 3072 MB used, other 10 of 40 MB`: the process's resident
++     * and private memory (on Windows its working set and private bytes) and the device's use of its budget
++     * (VK_EXT_memory_budget), as the runtime info reads it, else the heaps' sizes.
++     */
++    void FormatMemory(
++      char* const text,
++      const std::size_t size,
++      const PipelineReport& report
++    )
++    {
++      constexpr unsigned long long kMiB = 1024ULL * 1024ULL;
++      int length = 0;
++      PROCESS_MEMORY_COUNTERS_EX process{};
++      process.cb = sizeof(process);
++      if (
++        ::GetProcessMemoryInfo(
++          ::GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&process), sizeof(process)
++        )
++      ) {
++        length = std::snprintf(
++          text,
++          size,
++#if FAFRE_PLATFORM_WINDOWS
++          "working set %llu MB, private %llu MB, ",
++#else
++          "VmRSS %llu MB, VmData %llu MB, ",
++#endif
++          static_cast<unsigned long long>(process.WorkingSetSize) / kMiB,
++          static_cast<unsigned long long>(process.PrivateUsage) / kMiB
++        );
++      }
++      if (length < 0 || static_cast<std::size_t>(length) >= size) {
++        length = 0;
++      }
++      const MemoryBudget memory = ReadMemoryBudget(report.memoryProperties, report.physical, report.budget);
++      if (report.budget) {
++        std::snprintf(
++          text + length,
++          size - static_cast<std::size_t>(length),
++          "device-local %llu of %llu MB used, other %llu of %llu MB",
++          static_cast<unsigned long long>(memory.localUsage) / kMiB,
++          static_cast<unsigned long long>(memory.localBudget) / kMiB,
++          static_cast<unsigned long long>(memory.nonLocalUsage) / kMiB,
++          static_cast<unsigned long long>(memory.nonLocalBudget) / kMiB
++        );
++      } else {
++        std::snprintf(
++          text + length,
++          size - static_cast<std::size_t>(length),
++          "device-local heaps %llu MB, other %llu MB (no VK_EXT_memory_budget)",
++          static_cast<unsigned long long>(memory.local) / kMiB,
++          static_cast<unsigned long long>(memory.nonLocal) / kMiB
++        );
++      }
++    }
++
++    /** A refusal after which the pipeline is tried again (PipelineRetries): for want of memory, not the last try's. */
++    [[nodiscard]] bool TriedAgain(
++      const unsigned refusals,
++      const VkResult result
++    ) noexcept
++    {
++      return OutOfMemory(result) && refusals + 1U < kPipelineTries;
++    }
++
++    /**
++     * Whether a build after `refusals` refused tries that ended in `result` changes what the log says of its pipeline:
++     * its first refusal, its build after refusals, and a refusal for good. The tries in between say nothing.
++     */
++    [[nodiscard]] bool PipelineBuildIsNews(
++      const unsigned refusals,
++      const VkResult result
++    ) noexcept
++    {
++      return (result == VK_SUCCESS) ? refusals != 0U : (refusals == 0U || !TriedAgain(refusals, result));
++    }
++
++    /** The line of such a build (PipelineBuildIsNews), with the memory the process and the device had then. */
++    void ReportPipelineBuild(
++      const PipelineReport& report,
++      const unsigned refusals,
++      const VkResult result
++    )
++    {
++      char memory[256]{};
++      FormatMemory(memory, sizeof(memory), report);
++      if (result == VK_SUCCESS) {
++        gpg::Logf(
++          "Vulkan: pipeline of %s built on try %u of %u; %s", report.pass.c_str(), refusals + 1U, kPipelineTries, memory
++        );
++      } else if (TriedAgain(refusals, result)) {
++        gpg::Warnf(
++          "Vulkan: pipeline of %s failed: %s; tried again in %.1f s, %u tries in all, the last in place; %s",
++          report.pass.c_str(),
++          vulkan::ResultName(result),
++          std::chrono::duration<double>(PipelineRetries::Spacing(refusals + 1U)).count(),
++          kPipelineTries,
++          memory
++        );
++      } else {
++        char attempt[32]{};
++        if (refusals != 0U) {
++          std::snprintf(attempt, sizeof(attempt), " on try %u of %u", refusals + 1U, kPipelineTries);
++        }
++        gpg::Warnf(
++          "Vulkan: pipeline of %s failed%s: %s; its draws are skipped; %s",
++          report.pass.c_str(),
++          attempt,
++          vulkan::ResultName(result),
++          memory
++        );
++      }
++    }
++
++    /** Draws that waited for their pipeline since the line that last said so (DeviceVulkan::Present). Render thread. */
++    struct WaitingDraws
++    {
++      std::uint32_t count = 0U;
++      std::chrono::steady_clock::time_point since{};
++    };
++    WaitingDraws gWaitingDraws;
    } // namespace
  
    namespace
-@@ -399,6 +526,7 @@ namespace gpg::gal
+@@ -399,6 +740,7 @@ namespace gpg::gal
        CollectCompleted();
        mPipelineMemo.Clear();
        CollectPendingPipelines(); // into mPipelines, destroyed below
@@ -183,7 +401,7 @@ index 215312f..1fab58e 100644
        for (auto& [key, pipeline] : mPipelines) {
          if (pipeline != VK_NULL_HANDLE) {
            Vk().vkDestroyPipeline(mDevice, pipeline, nullptr);
-@@ -477,7 +605,7 @@ namespace gpg::gal
+@@ -477,7 +819,7 @@ namespace gpg::gal
      } else {
        for (SwapChain& swapChain : mSwapChains) {
          if (swapChain.surface != VK_NULL_HANDLE && mInstance != VK_NULL_HANDLE) {
@@ -192,7 +410,7 @@ index 215312f..1fab58e 100644
          }
        }
        mSwapChains.clear();
-@@ -673,11 +801,25 @@ namespace gpg::gal
+@@ -673,11 +1015,25 @@ namespace gpg::gal
      features.features.fillModeNonSolid = available.features.fillModeNonSolid;
      features.features.textureCompressionBC = available.features.textureCompressionBC;
      features.features.tessellationShader = available.features.tessellationShader;
@@ -219,7 +437,7 @@ index 215312f..1fab58e 100644
      }
      // A software rasterizer (llvmpipe, as in a virtual machine without 3D, issue #256) gets no ray
      // queries below: ray-traced shadows would trace on the CPU that already rasterizes every pixel.
-@@ -799,6 +941,20 @@ namespace gpg::gal
+@@ -799,6 +1155,20 @@ namespace gpg::gal
  
    void DeviceVulkan::CreateLayouts()
    {
@@ -240,7 +458,7 @@ index 215312f..1fab58e 100644
      // Tessellated passes (engine addition) read textures and constants in their hull and domain shaders too.
      const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
        (mTessellationSupported ? VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT
-@@ -959,16 +1115,24 @@ namespace gpg::gal
+@@ -959,16 +1329,24 @@ namespace gpg::gal
      Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkSurfaceFormatKHR> formats(count);
      Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, formats.data());
@@ -273,7 +491,7 @@ index 215312f..1fab58e 100644
      }
      Vk().vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkPresentModeKHR> modes(count);
-@@ -1009,11 +1173,25 @@ namespace gpg::gal
+@@ -1009,11 +1387,25 @@ namespace gpg::gal
      info.imageColorSpace = chosen.colorSpace;
      info.imageExtent = extent;
      info.imageArrayLayers = 1U;
@@ -303,7 +521,7 @@ index 215312f..1fab58e 100644
      info.clipped = VK_TRUE;
      info.oldSwapchain = swapChain.swapchain;
      VkSwapchainKHR created = VK_NULL_HANDLE;
-@@ -1039,6 +1217,11 @@ namespace gpg::gal
+@@ -1039,6 +1431,11 @@ namespace gpg::gal
      }
      swapChain.swapchain = created;
      swapChain.format = chosen.format;
@@ -315,7 +533,7 @@ index 215312f..1fab58e 100644
      swapChain.extent = extent;
      swapChain.presentMode = mode;
      Vk().vkGetSwapchainImagesKHR(mDevice, created, &count, nullptr);
-@@ -1055,7 +1238,14 @@ namespace gpg::gal
+@@ -1055,7 +1452,14 @@ namespace gpg::gal
      }
      swapChain.hasImage = false;
      swapChain.stale = false;
@@ -331,7 +549,7 @@ index 215312f..1fab58e 100644
    }
  
    void DeviceVulkan::DestroySwapChain(
-@@ -1074,11 +1264,25 @@ namespace gpg::gal
+@@ -1074,11 +1478,25 @@ namespace gpg::gal
      swapChain.images.clear();
      swapChain.hasImage = false;
      if (!keepSurface && swapChain.surface != VK_NULL_HANDLE) {
@@ -358,7 +576,7 @@ index 215312f..1fab58e 100644
    void DeviceVulkan::CreateSwapChains(
      const DeviceContext& context
    )
-@@ -1093,7 +1297,21 @@ namespace gpg::gal
+@@ -1093,7 +1511,21 @@ namespace gpg::gal
          width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
          height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
        }
@@ -381,7 +599,7 @@ index 215312f..1fab58e 100644
      }
      VkSemaphoreCreateInfo semaphore{};
      semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-@@ -1211,6 +1429,35 @@ namespace gpg::gal
+@@ -1211,6 +1643,35 @@ namespace gpg::gal
      return buffer;
    }
  
@@ -417,7 +635,7 @@ index 215312f..1fab58e 100644
    void DeviceVulkan::CreateRenderTargets()
    {
      mHeadOutputContexts.clear();
-@@ -1220,34 +1467,11 @@ namespace gpg::gal
+@@ -1220,34 +1681,11 @@ namespace gpg::gal
        // The head keeps the size the window had when the device made it; a resize only remakes the swap chain.
        swapChain.headWidth = swapChain.extent.width;
        swapChain.headHeight = swapChain.extent.height;
@@ -457,7 +675,7 @@ index 215312f..1fab58e 100644
        OutputContext& output = mHeadOutputContexts[headIndex];
        auto* const target =
          new RenderTargetVulkan(std::move(buffers), DXGI_FORMAT_B8G8R8A8_UNORM, static_cast<int>(headIndex));
-@@ -1361,9 +1585,7 @@ namespace gpg::gal
+@@ -1361,9 +1799,7 @@ namespace gpg::gal
      for (int headIndex = 0; headIndex < context->GetHeadCount(); ++headIndex) {
        SwapChain& swapChain = mSwapChains[static_cast<std::size_t>(headIndex)];
        swapChain.window = context->GetHead(static_cast<std::uint32_t>(headIndex)).mWindow;
@@ -468,7 +686,7 @@ index 215312f..1fab58e 100644
      }
      PickPhysicalDevice(context->mAdapter);
      CreateLogicalDevice();
-@@ -1373,13 +1595,15 @@ namespace gpg::gal
+@@ -1373,13 +1809,15 @@ namespace gpg::gal
      CreateNullImages();
      CreateGpuDrivenObjects();
      CreateRayTracingObjects();
@@ -485,7 +703,35 @@ index 215312f..1fab58e 100644
      CreateRenderTargets();
      gpg::Logf(
        "Vulkan: ready (%d head(s), effects through the FAF effect layer, %s SPIR-V, shader cache %s, vsync %s)",
-@@ -1479,14 +1703,14 @@ namespace gpg::gal
+@@ -1421,20 +1859,13 @@ namespace gpg::gal
+ 
+     // Device-local heaps count as video memory, the rest as shared system
+     // memory; the budget extension adds what the driver allows and uses now.
+-    VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
+-    budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+-    VkPhysicalDeviceMemoryProperties2 memory{};
+-    memory.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+-    memory.pNext = mMemoryBudget ? &budget : nullptr;
+-    Vk().vkGetPhysicalDeviceMemoryProperties2(mPhysical, &memory);
+-    for (std::uint32_t heap = 0U; heap < memory.memoryProperties.memoryHeapCount; ++heap) {
+-      const bool local = (memory.memoryProperties.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0U;
+-      (local ? out.dedicatedVideoMemory : out.sharedSystemMemory) += memory.memoryProperties.memoryHeaps[heap].size;
+-      if (mMemoryBudget) {
+-        (local ? out.localBudget : out.nonLocalBudget) += budget.heapBudget[heap];
+-        (local ? out.localUsage : out.nonLocalUsage) += budget.heapUsage[heap];
+-      }
+-    }
++    const MemoryBudget memory = ReadMemoryBudget(Vk().vkGetPhysicalDeviceMemoryProperties2, mPhysical, mMemoryBudget);
++    out.dedicatedVideoMemory += memory.local;
++    out.sharedSystemMemory += memory.nonLocal;
++    out.localBudget += memory.localBudget;
++    out.localUsage += memory.localUsage;
++    out.nonLocalBudget += memory.nonLocalBudget;
++    out.nonLocalUsage += memory.nonLocalUsage;
+ 
+     if (!mSwapChains.empty()) {
+       const SwapChain& swapChain = mSwapChains.front();
+@@ -1479,14 +1910,14 @@ namespace gpg::gal
        info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
        info.commandBufferCount = 1U;
        VkCommandBuffer buffer = VK_NULL_HANDLE;
@@ -502,7 +748,7 @@ index 215312f..1fab58e 100644
      mViewportDirty = true;
    }
  
-@@ -1496,7 +1720,7 @@ namespace gpg::gal
+@@ -1496,7 +1927,7 @@ namespace gpg::gal
    )
    {
      EndRendering();
@@ -511,7 +757,7 @@ index 215312f..1fab58e 100644
  
      std::vector<VkSemaphoreSubmitInfo> waits;
      std::vector<VkSemaphoreSubmitInfo> signals;
-@@ -1511,7 +1735,7 @@ namespace gpg::gal
+@@ -1511,7 +1942,7 @@ namespace gpg::gal
          semaphore.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
          waits.push_back(semaphore);
        }
@@ -520,7 +766,7 @@ index 215312f..1fab58e 100644
          VkSemaphoreSubmitInfo semaphore{};
          semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
          semaphore.semaphore = swapChain.renderFinished[swapChain.acquired];
-@@ -1538,7 +1762,7 @@ namespace gpg::gal
+@@ -1538,7 +1969,7 @@ namespace gpg::gal
      submit.pCommandBufferInfos = &commands;
      submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signals.size());
      submit.pSignalSemaphoreInfos = signals.data();
@@ -529,7 +775,7 @@ index 215312f..1fab58e 100644
      frame.serial = serial;
      // Waited once; later submissions of the frame need not wait again.
      for (SwapChain& swapChain : mSwapChains) {
-@@ -1572,7 +1796,7 @@ namespace gpg::gal
+@@ -1572,7 +2003,7 @@ namespace gpg::gal
      info.semaphoreCount = 1U;
      info.pSemaphores = &mTimeline;
      info.pValues = &serial;
@@ -538,7 +784,7 @@ index 215312f..1fab58e 100644
    }
  
    void DeviceVulkan::CollectCompleted()
-@@ -1609,8 +1833,8 @@ namespace gpg::gal
+@@ -1609,8 +2040,8 @@ namespace gpg::gal
      Frame& frame = mFrames[mFrameIndex];
      for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
        SwapChain& swapChain = mSwapChains[index];
@@ -549,7 +795,7 @@ index 215312f..1fab58e 100644
          continue;
        }
        // A scaled head's swap chain follows the window: made again once it's out of date (only the window's
-@@ -1642,10 +1866,14 @@ namespace gpg::gal
+@@ -1642,10 +2073,14 @@ namespace gpg::gal
          }
        } else if (result == VK_ERROR_OUT_OF_DATE_KHR && swapChain.scaled) {
          swapChain.stale = true;
@@ -564,7 +810,7 @@ index 215312f..1fab58e 100644
        }
      }
    }
-@@ -1657,6 +1885,13 @@ namespace gpg::gal
+@@ -1657,6 +2092,13 @@ namespace gpg::gal
      return (swapChain < mSwapChains.size()) ? mSwapChains[swapChain].acquired : 0U;
    }
  
@@ -578,7 +824,7 @@ index 215312f..1fab58e 100644
    vulkan::UploadAllocation DeviceVulkan::AllocateUpload(
      const VkDeviceSize bytes,
      const VkDeviceSize alignment
-@@ -1713,6 +1948,23 @@ namespace gpg::gal
+@@ -1713,6 +2155,23 @@ namespace gpg::gal
      Vk().vkCmdPipelineBarrier2(mCommands, &dependency);
    }
  
@@ -602,7 +848,7 @@ index 215312f..1fab58e 100644
    void DeviceVulkan::UploadBuffer(
      vulkan::TrackedBuffer& destination,
      const VkDeviceSize offset,
-@@ -1879,9 +2131,17 @@ namespace gpg::gal
+@@ -1879,9 +2338,17 @@ namespace gpg::gal
      const std::uint32_t height = std::max(1U, destination.height >> level);
      const std::uint32_t depth = std::max(1U, destination.depth >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -622,7 +868,7 @@ index 215312f..1fab58e 100644
      EndRendering();
      TransitionForTransferWrite(destination);
      VkBufferImageCopy region{};
-@@ -1905,10 +2165,13 @@ namespace gpg::gal
+@@ -1905,10 +2372,13 @@ namespace gpg::gal
      const std::uint32_t width = std::max(1U, source.width >> level);
      const std::uint32_t height = std::max(1U, source.height >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -637,7 +883,7 @@ index 215312f..1fab58e 100644
      info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
      CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreateBuffer(mDevice, &info, nullptr, &readback.buffer));
      VkMemoryRequirements requirements{};
-@@ -1929,8 +2192,20 @@ namespace gpg::gal
+@@ -1929,8 +2399,20 @@ namespace gpg::gal
      Vk().vkCmdCopyImageToBuffer(
        mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region
      );
@@ -659,7 +905,7 @@ index 215312f..1fab58e 100644
      Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
      mMemory.Free(readback.memory);
    }
-@@ -1942,6 +2217,10 @@ namespace gpg::gal
+@@ -1942,6 +2424,10 @@ namespace gpg::gal
    )
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
@@ -670,7 +916,7 @@ index 215312f..1fab58e 100644
      image.Allocate(format, source.width, source.height, source.mipLevels, source.layers);
      for (std::uint32_t layer = 0U; layer < source.layers; ++layer) {
        for (std::uint32_t level = 0U; level < source.mipLevels; ++level) {
-@@ -2003,6 +2282,13 @@ namespace gpg::gal
+@@ -2003,6 +2489,13 @@ namespace gpg::gal
      }
      auto* const target = static_cast<RenderTargetVulkan*>(outputContext_.surface.get());
      RenderTargetVulkan::Buffer& buffer = target->Current();
@@ -684,7 +930,7 @@ index 215312f..1fab58e 100644
      format = buffer.image.format;
      image = &buffer.image;
      width = buffer.image.width;
-@@ -2295,12 +2581,27 @@ namespace gpg::gal
+@@ -2295,12 +2788,27 @@ namespace gpg::gal
      } else {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid source specified for texture data");
      }
@@ -713,7 +959,7 @@ index 215312f..1fab58e 100644
  
      vulkan::TrackedImage tracked;
      VkImageCreateInfo info{};
-@@ -2486,10 +2787,26 @@ namespace gpg::gal
+@@ -2486,10 +2994,26 @@ namespace gpg::gal
      const bool scale
    )
    {
@@ -741,7 +987,7 @@ index 215312f..1fab58e 100644
        VkImageCopy region{};
        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-@@ -2770,6 +3087,11 @@ namespace gpg::gal
+@@ -2770,6 +3294,11 @@ namespace gpg::gal
      Vk().vkDeviceWaitIdle(mDevice);
      CollectCompleted();
      for (std::size_t headIndex = 0U; headIndex < mSwapChains.size(); ++headIndex) {
@@ -753,7 +999,7 @@ index 215312f..1fab58e 100644
        Head& head = mDeviceContext.GetHead(static_cast<std::uint32_t>(headIndex));
        std::uint32_t width = head.mWidth;
        std::uint32_t height = head.mHeight;
-@@ -2779,7 +3101,12 @@ namespace gpg::gal
+@@ -2779,7 +3308,12 @@ namespace gpg::gal
          width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
          height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
        }
@@ -767,7 +1013,7 @@ index 215312f..1fab58e 100644
      }
      // The acquire semaphores of the old images may be signalled: start the frame over.
      Submit(true, false);
-@@ -2793,9 +3120,93 @@ namespace gpg::gal
+@@ -2793,9 +3327,93 @@ namespace gpg::gal
      Reset(&mDeviceContext);
    }
  
@@ -862,7 +1108,7 @@ index 215312f..1fab58e 100644
    }
  
    void DeviceVulkan::BeginScene() {}
-@@ -2818,7 +3229,7 @@ namespace gpg::gal
+@@ -2818,7 +3436,7 @@ namespace gpg::gal
    void DeviceVulkan::DumpBackBufferIfDue()
    {
      static const char* const directory = std::getenv("FAF_GAL_DUMP_DIR");
@@ -871,7 +1117,7 @@ index 215312f..1fab58e 100644
        return;
      }
      static const DWORD interval = [] {
-@@ -2844,6 +3255,12 @@ namespace gpg::gal
+@@ -2844,6 +3462,12 @@ namespace gpg::gal
      WriteBmp(path, image);
    }
  
@@ -884,7 +1130,7 @@ index 215312f..1fab58e 100644
    void DeviceVulkan::LogMemoryIfDue()
    {
      // Diagnostics: with FAF_GAL_MEMORY_LOG=<seconds>, as Direct3D 12 logs it.
-@@ -2889,10 +3306,11 @@ namespace gpg::gal
+@@ -2889,10 +3513,11 @@ namespace gpg::gal
      LogMemoryIfDue();
  
      for (std::size_t index = 0U; index < mHeadOutputContexts.size(); ++index) {
@@ -898,7 +1144,7 @@ index 215312f..1fab58e 100644
        vulkan::TrackedImage& head =
          static_cast<RenderTargetVulkan*>(mHeadOutputContexts[index].surface.get())->Current().image;
        if (swapChain.scaled) {
-@@ -2906,7 +3324,9 @@ namespace gpg::gal
+@@ -2906,7 +3531,9 @@ namespace gpg::gal
  
      for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
        SwapChain& swapChain = mSwapChains[index];
@@ -909,7 +1155,7 @@ index 215312f..1fab58e 100644
          continue;
        }
        VkPresentInfoKHR present{};
-@@ -2917,15 +3337,22 @@ namespace gpg::gal
+@@ -2917,15 +3544,22 @@ namespace gpg::gal
        present.pSwapchains = &swapChain.swapchain;
        present.pImageIndices = &swapChain.acquired;
        const VkResult result = Vk().vkQueuePresentKHR(mQueue, &present);
@@ -932,7 +1178,7 @@ index 215312f..1fab58e 100644
        }
      }
  
-@@ -2935,7 +3362,7 @@ namespace gpg::gal
+@@ -2935,7 +3569,7 @@ namespace gpg::gal
      Frame& frame = mFrames[mFrameIndex];
      WaitForSerial(frame.serial);
      CollectCompleted();
@@ -941,7 +1187,64 @@ index 215312f..1fab58e 100644
      frame.used = 0U;
      for (VkDescriptorPool pool : frame.descriptorPools) {
        Vk().vkResetDescriptorPool(mDevice, pool, 0U);
-@@ -3615,7 +4042,8 @@ namespace gpg::gal
+@@ -2948,15 +3582,23 @@ namespace gpg::gal
+     frame.gpuPool = 0U;
+     AcquireNextImages();
+     BeginCommandBuffer();
+-    if (mSkippedDraws != 0U) {
+-      static int logged = 0;
+-      if (logged++ < 10) {
+-        gpg::Warnf(
+-          "Vulkan: %u draw(s) skipped in frame %u (pass without shaders or pipeline)", mSkippedDraws, mFrameNumber
+-        );
+-      }
+-      mSkippedDraws = 0U;
++    // Engine addition: the draws that waited for their pipeline (a worker's build, or the next try of one refused for
++    // want of memory), in a line a second while there are any. What is skipped for good has its own line once: a
++    // pipeline that failed (ReportPipelineBuild) and a pass without shaders (BindPass).
++    const auto now = std::chrono::steady_clock::now();
++    if (gWaitingDraws.count == 0U) {
++      gWaitingDraws.since = now;
++    } else if (now - gWaitingDraws.since >= std::chrono::seconds(1)) {
++      gpg::Logf(
++        "Vulkan: %u draw(s) waited for their pipeline in %.1f s (%zu pending, %zu to be tried again)",
++        gWaitingDraws.count,
++        std::chrono::duration<double>(now - gWaitingDraws.since).count(),
++        mPendingPipelines.size(),
++        gPipelineRetries.Size()
++      );
++      gWaitingDraws = WaitingDraws{0U, now};
+     }
++    mSkippedDraws = 0U;
+   }
+ 
+   void DeviceVulkan::SetCursor(
+@@ -3395,6 +4037,24 @@ namespace gpg::gal
+     bound.valid = bound.vertexShader != nullptr && bound.vertexShader->succeeded &&
+       (bound.pixelShader == nullptr || bound.pixelShader->succeeded) && (!tessellated || mTessellationSupported) &&
+       (bound.hullShader == nullptr || (bound.hullShader->succeeded && bound.domainShader->succeeded));
++    // Engine addition: a pass whose draws are skipped (PrepareDraw) says so once, and why.
++    if (!bound.valid) {
++      static std::set<std::tuple<const effects::EffectProgram*, std::uint32_t, std::uint32_t>> said;
++      if (said.emplace(&program, technique, pass).second) {
++        const char* const why = (bound.vertexShader == nullptr)             ? "it has no vertex shader"
++          : !bound.vertexShader->succeeded                                  ? "its vertex shader did not compile"
++          : (bound.pixelShader != nullptr && !bound.pixelShader->succeeded) ? "its pixel shader did not compile"
++          : (tessellated && !mTessellationSupported) ? "it is tessellated, and the device has no tessellation"
++                                                     : "its hull or domain shader did not compile";
++        gpg::Warnf(
++          "Vulkan: the draws of %s technique \"%s\" pass \"%s\" are skipped: %s",
++          program.Name().c_str(),
++          program.Description().techniques[technique].name.c_str(),
++          passDesc.name.c_str(),
++          why
++        );
++      }
++    }
+ 
+     ProgramState& state = StateFor(program);
+     effects::ParameterStore& parameters = program.Parameters();
+@@ -3615,7 +4275,8 @@ namespace gpg::gal
      const effects::SpirvInterface& vertexInterface = InterfaceOf(*vertex);
      const effects::SpirvInterface& pixelInterface = InterfaceOf(entry);
      std::map<std::uint32_t, std::uint32_t> locations;
@@ -951,7 +1254,7 @@ index 215312f..1fab58e 100644
      for (const effects::SpirvInterfaceVariable& input : pixelInterface.inputs) {
        if (input.builtIn) {
          continue;
-@@ -3743,6 +4171,17 @@ namespace gpg::gal
+@@ -3743,6 +4404,26 @@ namespace gpg::gal
        mPipelineMemo.Store(inputs, found->second);
        return found->second;
      }
@@ -966,10 +1269,19 @@ index 215312f..1fab58e 100644
 +      mPipelines.emplace(done, (end == PipelineBuildEnd::kBuilt) ? built : VK_NULL_HANDLE);
 +      return false;
 +    };
++    // What the log's lines of this pipeline name (ReportPipelineBuild).
++    const auto reportFor = [this, &pass] {
++      return PipelineReport{
++        PassLabel(*pass.program, *pass.vertexShader, pass.pixelShader, mBoundFormat),
++        Vk().vkGetPhysicalDeviceMemoryProperties2,
++        mPhysical,
++        mMemoryBudget,
++      };
++    };
      // Engine addition (ren_AsyncPipelines): one a worker is building is taken once it is done; until then the draw
      // is skipped.
      const bool defer = PipelinesMayDefer();
-@@ -3752,15 +4191,26 @@ namespace gpg::gal
+@@ -3752,15 +4433,26 @@ namespace gpg::gal
          mPipelineDeferred = true;
          return VK_NULL_HANDLE;
        }
@@ -1002,7 +1314,7 @@ index 215312f..1fab58e 100644
        mPipelineDeferred = true;
        return VK_NULL_HANDLE; // the workers are busy: asked again next frame
      }
-@@ -3877,7 +4327,8 @@ namespace gpg::gal
+@@ -3877,7 +4569,8 @@ namespace gpg::gal
      raster.depthBiasEnable =
        (rasterizer.depthBias != 0 || rasterizer.slopeScaledDepthBias != 0.0f) ? VK_TRUE : VK_FALSE;
      raster.depthBiasConstantFactor = static_cast<float>(rasterizer.depthBias);
@@ -1012,7 +1324,7 @@ index 215312f..1fab58e 100644
      raster.depthBiasSlopeFactor = rasterizer.slopeScaledDepthBias;
      raster.lineWidth = 1.0f;
      VkPipelineMultisampleStateCreateInfo multisample{};
-@@ -3951,7 +4402,7 @@ namespace gpg::gal
+@@ -3951,7 +4644,7 @@ namespace gpg::gal
      info.pColorBlendState = &colorBlend;
      info.pDynamicState = &dynamic;
      info.layout = EffectPipelineLayout();
@@ -1021,9 +1333,11 @@ index 215312f..1fab58e 100644
        // The job owns copies of every structure the create info points at (the shader modules are the device's and
        // outlive it: teardown collects pending jobs first). The pipeline cache synchronizes itself.
        struct Job
-@@ -4021,24 +4472,35 @@ namespace gpg::gal
+@@ -4019,40 +4712,46 @@ namespace gpg::gal
+       const PFN_vkCreateGraphicsPipelines create = Vk().vkCreateGraphicsPipelines;
+       const VkDevice device = mDevice;
        const VkPipelineCache cache = mPipelineCache;
-       std::string name = pass.program->Name();
+-      std::string name = pass.program->Name();
        const std::uint32_t format = mBoundFormat;
 -      mPendingPipelines.emplace(
 -        std::move(key.Key()), std::async(std::launch::async, [job, create, device, cache, name, format] {
@@ -1034,19 +1348,20 @@ index 215312f..1fab58e 100644
 -            "Vulkan: pipeline for %s (vertex format %u) failed: %s", name.c_str(), format, vulkan::ResultName(made)
 -          );
 -          built = VK_NULL_HANDLE; // cached as a failure when taken, as below
++      const unsigned refusals = gPipelineRetries.Refusals(key.Key());
 +      try {
 +        std::future<VkPipeline> built = PipelineWorker<VkPipeline>::Instance().Post(
-+          std::packaged_task<VkPipeline()>([job, create, device, cache, name, format] {
-+            VkPipeline made = VK_NULL_HANDLE;
-+            const VkResult result = CreateGraphicsPipeline(create, device, cache, job->info, format, made);
-+            if (result != VK_SUCCESS) {
-+              gpg::Warnf(
-+                "Vulkan: pipeline for %s (vertex format %u) failed: %s", name.c_str(), format, vulkan::ResultName(result)
-+              );
-+              throw PipelineRefused{OutOfMemory(result)}; // kept as a failure when taken, or tried again (above)
-+            }
-+            return made;
-+          })
++          std::packaged_task<VkPipeline()>([job, create, device, cache, format, refusals, report = reportFor()] {
++          VkPipeline made = VK_NULL_HANDLE;
++          const VkResult result = CreateGraphicsPipeline(create, device, cache, job->info, format, made);
++          if (PipelineBuildIsNews(refusals, result)) {
++            ReportPipelineBuild(report, refusals, result);
++          }
++          if (result != VK_SUCCESS) {
++            throw PipelineRefused{OutOfMemory(result)}; // kept as a failure when taken, or tried again (above)
++          }
++          return made;
++        })
 +        );
 +        mPendingPipelines.emplace(std::move(key.Key()), std::move(built));
 +        mPipelineDeferred = true;
@@ -1067,24 +1382,58 @@ index 215312f..1fab58e 100644
      }
      VkPipeline pipeline = VK_NULL_HANDLE;
 -    const VkResult result = Vk().vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1U, &info, nullptr, &pipeline);
+-    if (result != VK_SUCCESS) {
+-      static int logged = 0;
+-      if (logged++ < 16) {
+-        gpg::Warnf(
+-          "Vulkan: pipeline for %s (vertex format %u) failed: %s",
+-          pass.program->Name().c_str(),
+-          mBoundFormat,
+-          vulkan::ResultName(result)
+-        );
+-      }
+-      pipeline = VK_NULL_HANDLE;
++    const unsigned refusals = gPipelineRetries.Refusals(key.Key());
 +    const VkResult result =
 +      CreateGraphicsPipeline(Vk().vkCreateGraphicsPipelines, mDevice, mPipelineCache, info, mBoundFormat, pipeline);
-     if (result != VK_SUCCESS) {
-       static int logged = 0;
-       if (logged++ < 16) {
-@@ -4049,10 +4511,12 @@ namespace gpg::gal
-           vulkan::ResultName(result)
-         );
-       }
--      pipeline = VK_NULL_HANDLE;
-     }
--    mPipelines.emplace(std::move(key.Key()), pipeline);
--    return pipeline;
++    if (PipelineBuildIsNews(refusals, result)) {
++      ReportPipelineBuild(reportFor(), refusals, result);
++    }
 +    if (keep(key.Key(), pipeline, EndOf(result))) {
 +      mPipelineDeferred = defer;
 +      return VK_NULL_HANDLE;
-+    }
+     }
+-    mPipelines.emplace(std::move(key.Key()), pipeline);
+-    return pipeline;
 +    return (result == VK_SUCCESS) ? pipeline : VK_NULL_HANDLE;
    }
  
    void DeviceVulkan::CollectPendingPipelines() noexcept
+@@ -4081,6 +4780,11 @@ namespace gpg::gal
+     if (mPass.hullShader != nullptr) {
+       // A tessellated pass draws each triangle of a list as one 3-point patch.
+       if (topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
++        static bool said = false;
++        if (!said) {
++          said = true;
++          gpg::Warnf("Vulkan: a tessellated pass's draws of other primitives than a triangle list are skipped");
++        }
+         ++mSkippedDraws;
+         return false;
+       }
+@@ -4142,8 +4846,13 @@ namespace gpg::gal
+     mPipelineDeferred = false;
+     const VkPipeline pipeline = PipelineFor(mPass, topology);
+     if (pipeline == VK_NULL_HANDLE) {
+-      // Waiting for a worker's pipeline (ren_AsyncPipelines) is expected, not the broken pass the warning reports.
+-      ++(mPipelineDeferred ? mDeferredDraws : mSkippedDraws);
++      // Waiting for a pipeline (ren_AsyncPipelines, PipelineRetries) is expected, and reported once a second (Present).
++      if (mPipelineDeferred) {
++        ++mDeferredDraws;
++        ++gWaitingDraws.count;
++      } else {
++        ++mSkippedDraws;
++      }
+       return false;
+     }
+     BeginRendering();
