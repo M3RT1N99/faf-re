@@ -385,7 +385,8 @@ waits for): a deferred build is queued only once the pending list holds its slot
 slot; a pipeline refused for want of memory is tried six times in all over 15.5 s, the last in place; a build's end
 says whether it may build later; the worker runs each job, and what one throws reaches its future. Upstream's own tests
 of the header (`../../tests/gal/PipelineDeferTests.cpp`) run on the patched copy beside them. Header-only and linked
-statically, so the x86_64 build runs on a Linux host as well (WSL here):
+statically, so the x86_64 build runs on a Linux host as well (WSL here), and the app's workflow runs the arm64 build on
+an arm64 runner:
 
 ```sh
 adb push build/android-x64/bin/faf_gal_tests /data/local/tmp/
