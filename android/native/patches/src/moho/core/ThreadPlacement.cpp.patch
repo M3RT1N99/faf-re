@@ -1,0 +1,29 @@
+diff --git a/src/moho/core/ThreadPlacement.cpp b/src/moho/core/ThreadPlacement.cpp
+index c9a44cd..fbcd6fd 100644
+--- a/src/moho/core/ThreadPlacement.cpp
++++ b/src/moho/core/ThreadPlacement.cpp
+@@ -228,6 +228,10 @@ namespace moho
+ 
+   int sys_ThreadPlacement = -1;
+ 
++#if FAFRE_PLATFORM_ANDROID
++  std::atomic<HostThreadPlacement> gHostThreadPlacement{nullptr};
++#endif
++
+   TConVar<int> gTConVar_sys_ThreadPlacement(
+     "sys_ThreadPlacement",
+     "Where threads run: 0 lets the OS decide, 1 gives the main, sim and issue threads and the workers "
+@@ -298,6 +302,13 @@ namespace moho
+     const unsigned int index
+   )
+   {
++#if FAFRE_PLATFORM_ANDROID
++    // Android client build: the app's placement by the device's classes of cores, where it has one (gHostThreadPlacement).
++    if (const HostThreadPlacement host = gHostThreadPlacement.load(std::memory_order_acquire); host != nullptr) {
++      host(role, index);
++      return;
++    }
++#endif
+     const int mode = ResolvePlacementMode();
+     if (mode != 1 && mode != 2) {
+       return;

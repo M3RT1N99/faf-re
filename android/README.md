@@ -128,7 +128,8 @@ the game data they imported. Everything lives in the app's external files folder
     keyboard, and so do the bar's *Keys* and *Keyboard* in the game's Menu tab; typed text goes to the field, Back hides the
     keyboard before it is Esc again, Enter goes to the game and then hides it.
   - The report (`game.txt`) names the GPU, each swap chain, whether BC textures are the GPU's or decoded
-    on the CPU, the sound's output or why the sound did not start, and the whole command line. Tests' extras
+    on the CPU, the sound's output or why the sound did not start, the cores the threads run on by the phone's
+    classes of cores ([native README](native/README.md), The cores), and the whole command line. Tests' extras
     of the activity (`am start -S ... --ef hudScale 1.6 --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
     arguments, and the phones' way with BC textures on a GPU that has BC. Only the program's start reads them:
     without `-S` a running program goes on as it was, and the report says so.

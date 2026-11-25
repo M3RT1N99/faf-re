@@ -1,0 +1,29 @@
+diff --git a/src/moho/core/Thread.cpp b/src/moho/core/Thread.cpp
+index 6957ef9..8fe1976 100644
+--- a/src/moho/core/Thread.cpp
++++ b/src/moho/core/Thread.cpp
+@@ -1,6 +1,9 @@
+ #include "Thread.h"
+ 
+ #include "platform/Platform.h"
++#if FAFRE_PLATFORM_ANDROID
++#include "moho/core/ThreadPlacement.h"
++#endif
+ 
+ #include <memory>
+ #include <new>
+@@ -69,6 +72,14 @@ void moho::THREAD_SetAffinity(
+   const bool preferLowest
+ ) noexcept
+ {
++#if FAFRE_PLATFORM_ANDROID
++  // Android client build: a host that places the threads leaves each where it put it (gHostThreadPlacement). The binary
++  // pins the main thread to the process's lowest CPU, which the threads it starts take on, and a UDP connector's thread
++  // to its highest: on a phone a little core and the fastest, the sim's.
++  if (gHostThreadPlacement.load(std::memory_order_acquire) != nullptr) {
++    return;
++  }
++#endif
+   DWORD_PTR procMask = 0;
+   DWORD_PTR sysMask = 0;
+ 

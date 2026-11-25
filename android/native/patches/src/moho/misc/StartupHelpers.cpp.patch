@@ -1,5 +1,5 @@
 diff --git a/src/moho/misc/StartupHelpers.cpp b/src/moho/misc/StartupHelpers.cpp
-index 8a30fc65a..3c4ae477e 100644
+index 8a30fc6..c33f3b9 100644
 --- a/src/moho/misc/StartupHelpers.cpp
 +++ b/src/moho/misc/StartupHelpers.cpp
 @@ -397,6 +397,12 @@ namespace
@@ -15,7 +15,27 @@ index 8a30fc65a..3c4ae477e 100644
      const HMODULE kernelModule = ::GetModuleHandleA("kernel32.dll");
      using SetPriorityClassFn = BOOL(WINAPI*)(HANDLE, DWORD);
      auto* const setPriorityClass = kernelModule != nullptr
-@@ -730,12 +736,19 @@ namespace
+@@ -423,6 +429,19 @@ namespace
+     }
+ 
+     const DWORD_PTR affinityMask = static_cast<DWORD_PTR>(static_cast<std::uint32_t>(luaL_checknumber(state, 1)));
++#if FAFRE_PLATFORM_ANDROID
++    // Android client build: the app places the threads by the device's classes of cores (moho::gHostThreadPlacement).
++    // FAF's init asks for every CPU but the first two, which a Windows PC's system crowds; on a phone whose first four
++    // cores are little that keeps two of those. Nothing failed, which FAF's init would log as a failure.
++    if (moho::gHostThreadPlacement.load(std::memory_order_acquire) != nullptr) {
++      gpg::Logf(
++        "SetProcessAffinityMask(0x%llX) from Lua is not taken: the app places the threads by the device's classes of cores",
++        static_cast<unsigned long long>(affinityMask)
++      );
++      lua_pushboolean(state, 1);
++      return 1;
++    }
++#endif
+     // Engine change: a server given its CPUs keeps them (ThreadPlacement.h).
+     const BOOL result =
+       moho::ProcessCpusAreLocked() ? TRUE : ::SetProcessAffinityMask(::GetCurrentProcess(), affinityMask);
+@@ -730,12 +749,19 @@ namespace
      fa::vector<moho::SVFSMountPoint>& mountPoints
    )
    {
@@ -35,7 +55,7 @@ index 8a30fc65a..3c4ae477e 100644
      std::error_code error;
      if (!std::filesystem::is_directory(folder, error)) {
        return;
-@@ -3223,14 +3236,16 @@ fa::string moho::FILE_Dir(
+@@ -3223,14 +3249,16 @@ fa::string moho::FILE_Dir(
    if (filename == nullptr || filename[0] == '\0') {
      ThrowStartupFileError("Moho::FILE_Dir", "Null argument.");
    }

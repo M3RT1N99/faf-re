@@ -1,7 +1,8 @@
 // faf_griff_tests: the touch scheme Griff's rules (include/Griff*.h: the draft, the pins, the handle's
 // place, the tap's reach, the undo), the choice of what a finger meant (include/TapTarget.h,
-// include/ListDrag.h) and the touch layer's gestures (src/touch, Touch*Tests.cpp), all of them code that
-// needs nothing of the engine. Linked statically, so it runs on the emulator and on Linux hosts alike.
+// include/ListDrag.h), the touch layer's gestures (src/touch, Touch*Tests.cpp) and the device's classes of
+// cores (include/CoreClasses.h), all of them code that needs nothing of the engine. Linked statically, so it
+// runs on the emulator and on Linux hosts alike.
 // Exit code 0 when every check passes, 1 otherwise.
 
 #include <cstdio>

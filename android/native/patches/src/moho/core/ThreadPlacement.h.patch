@@ -1,0 +1,32 @@
+diff --git a/src/moho/core/ThreadPlacement.h b/src/moho/core/ThreadPlacement.h
+index 7378820..4a1d541 100644
+--- a/src/moho/core/ThreadPlacement.h
++++ b/src/moho/core/ThreadPlacement.h
+@@ -1,5 +1,9 @@
+ #pragma once
+ 
++#if FAFRE_PLATFORM_ANDROID
++#include <atomic>
++#endif
++
+ namespace moho
+ {
+   /**
+@@ -37,6 +41,17 @@ namespace moho
+    */
+   void PlaceCurrentThread(EThreadRole role, unsigned int index = 0);
+ 
++#if FAFRE_PLATFORM_ANDROID
++  /**
++   * Android client build: a host that places the engine's threads itself, by what it knows of the device's cores (the
++   * Android app, by their classes). Set before the engine's threads start; `PlaceCurrentThread` then hands each thread to
++   * it in place of `sys_ThreadPlacement`, on that thread, and Lua's `SetProcessAffinityMask` (FAF's init) sets nothing.
++   * Null: the engine's own way.
++   */
++  using HostThreadPlacement = void (*)(EThreadRole role, unsigned int index);
++  extern std::atomic<HostThreadPlacement> gHostThreadPlacement;
++#endif
++
+   /**
+    * Engine addition: `--cpus <list>` for a server sharing a machine, for example "8-15" or "0,2,4,6".
+    * Confines the process to those CPUs, before any other thread starts, so every thread it makes

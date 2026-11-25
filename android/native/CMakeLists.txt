@@ -363,6 +363,7 @@ target_compile_definitions(faf_adpf PRIVATE __ANDROID_UNAVAILABLE_SYMBOLS_ARE_WE
 target_compile_options(faf_adpf PRIVATE -Werror=unguarded-availability -Wall -Wextra -fvisibility=hidden)
 
 add_library(faf_client OBJECT ${_faf_client_files}
+  src/app/CoresAndroid.cpp
   src/app/GameJniAndroid.cpp
   src/app/GameMainAndroid.cpp
   src/app/PerformanceAndroid.cpp
@@ -380,7 +381,7 @@ target_link_libraries(faf_client PUBLIC faf_android_settings FAudio-static SDL3:
   faf_msdfgen faf_netlink faf_touch)
 # Device.cpp includes the patched DeviceVulkan.h by its path; the header finds the neighbours it
 # includes by their bare names here. The patched UI file takes the choice of a finger's target from
-# include/ (TapTarget.h).
+# include/ (TapTarget.h), and the app's placement on the cores their classes (CoreClasses.h).
 target_include_directories(faf_client PRIVATE "${FAF_REPO}/src/gpg/gal/backends/vulkan" "${FAF_ANDROID_DIR}/include")
 add_dependencies(faf_client faf_build_info)
 # Griff's and the menus' fingers take the engine's UI by its private header, whose helpers they mostly do not use.
@@ -418,12 +419,14 @@ target_link_libraries(faf_movie_tests PRIVATE faf_android_settings faf_sim_archi
 target_link_options(faf_movie_tests PRIVATE -Wl,--gc-sections)
 
 # faf_griff_tests (tests/griff): the rules of the touch scheme Griff (../TOUCH_UI.md), headers of their
-# own (include/), the choice of the small control a finger's tap meant, and the touch layer's gestures
-# (src/touch; tests/griff/Touch*Tests.cpp are the app's Java tests of the layer, case by case). Linked
-# statically, so it runs on the emulator and on Linux hosts alike (CI's arm64 runner).
+# own (include/), the choice of the small control a finger's tap meant, the touch layer's gestures
+# (src/touch; tests/griff/Touch*Tests.cpp are the app's Java tests of the layer, case by case) and the
+# device's classes of cores with where the threads go by them. Linked statically, so it runs on the
+# emulator and on Linux hosts alike (CI's arm64 runner).
 add_executable(faf_griff_tests
   tests/griff/Main.cpp
   tests/griff/CameraClearTests.cpp
+  tests/griff/CoreClassesTests.cpp
   tests/griff/GriffCameraTests.cpp
   tests/griff/GriffDraftTests.cpp
   tests/griff/GriffGroupsTests.cpp

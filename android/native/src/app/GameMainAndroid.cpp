@@ -22,6 +22,8 @@
 //   process, and SDL's activity would outlive it.
 // - Android's performance hints for the render thread and the sim's (PerformanceAndroid.cpp), which time the engine's
 //   frames and beats through its hooks, and the watch of the phone's thermal headroom.
+// - The cores the threads run on (CoresAndroid.cpp), by the device's classes of cores: the sim's thread on the fastest,
+//   the render thread and the workers off the little ones, in place of the mask FAF's init asks for.
 //
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
 // when the first frame went to the screen, and the program's exit code; and of the engine's log what a
@@ -48,6 +50,7 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_system.h>
 
+#include "CoresAndroid.h"
 #include "GameAndroid.h"
 #include "PerformanceAndroid.h"
 #include "ScreenKeyboardAndroid.h"
@@ -208,6 +211,8 @@ namespace
     screenkeyboard::Install();
     host::Install();
     performance::Install();
+    // After the thermal watch began, which keeps every core: the threads this one starts from here on take its cores on.
+    cores::Install();
     // Logged to until the process ends, which runs no destructors.
     static ReportLines reportLines;
     program.exitCode = SDL_main(program.argc, program.argv);

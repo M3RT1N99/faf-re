@@ -44,7 +44,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 | `faf_touch` | The touch layer (`src/touch`): fingers made into a mouse's input, in a game (the touch scheme Griff among it) and in the menus' pages, platform-neutral C++ |
 | `faf_adpf` | The NDK's calls for Android's performance hints and thermal headroom (`src/app/AdpfAndroid.cpp`), newer than Android 8.0, as weak references (see Performance hints and the heat) |
-| `faf_griff_tests` | The touch scheme Griff's rules and the touch layer's gestures (`tests/griff`), linked statically |
+| `faf_griff_tests` | The touch scheme Griff's rules, the touch layer's gestures and the device's classes of cores (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
@@ -66,6 +66,7 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 | `src/app/ScreenKeyboardAndroid.cpp` | The phone's keyboard for FAF's text fields: SDL's, shown when a finger's press lands on a text field (the lobby's chat, a profile's name, the console's line; the host's presses too, `FingerPressed`) or FAF's Menu tab asks for it; it asks for plain keys (`TYPE_NULL`), which a keyboard that sends keys for them types as a keyboard does (one that commits text instead, as AOSP's does for most characters, still closes the console that its grave accent opens: `patches/README.md`, Shell.cpp), Back hides it before Back is Esc again, Enter goes to the game and then hides it. It watches SDL's events through the window layer's hook for the developer windows, which Android, with its one window, never makes |
 | `src/app/SoundAndroid.cpp` | The game's sound follows the activity and Android's audio focus, which the activity asks for: SDL's own pause of its output (`AAUDIO_PauseDevices`, `OPENSLES_PauseDevices`: the stream under the game's sound and a movie's, and with their patch the streams SDL builds while it lasts) in the back and while another app has the focus, on SDL's main thread; the report says when it pauses and when it plays again |
 | `src/app/GameJniAndroid.cpp` | The natives of the app's `Game` class on SDL's activity: the activity's front and its audio focus; for `NetworkGameService` whether a UDP connector has its socket open (`NET_OpenUDPConnectors`, the patched `CNetUDPConnector.cpp`) or a peer link of the game's own is up (`NET_PeerTransportsActive`, see The network), whether a game is playing (`UI_GamePlaying`) and whether its session is a replay's (`REPLAY_SessionIsReplay`, the patched `ReplayTimeline.cpp`); the app's lines in the report |
+| `src/app/CoresAndroid.cpp` | Where the game's threads run (see The cores): by the device's classes of cores (`include/CoreClasses.h`), the sim's thread on the fastest class and the next, the render thread, the issue thread and the workers off the little cores, through the engine's placement of each thread as it starts (`patches/README.md`, `ThreadPlacement.cpp`), in place of the mask FAF's init asks for; a watch places them again where Android set their CPUs anew; the report says what was set and why |
 | `src/app/PerformanceAndroid.cpp`, `AdpfAndroid.cpp` | Android's performance hint sessions for the render thread and the sim's, which time the engine's frames and beats through its hooks, and the watch of the phone's thermal headroom with its lines in the report (see Performance hints and the heat); `AdpfAndroid.cpp` has the NDK's calls, each behind its API level |
 | `src/host/HostSdl.cpp` | The host on SDL's activity: the tasks the activity gives the game's thread wait with one wake each in SDL's queue and run where it comes, and the input they give goes to the engine as its window events, next (`include/HostQueue.h`, `patches/README.md`'s `WindowSdl.cpp`), with Windows' double click |
 | `src/host/GriffAndroid.cpp`, `GriffShown.cpp` | The touch scheme Griff's half in the engine (`../TOUCH_UI.md`): its tasks on the program's thread (taps, rests, strokes, the draft, the groups, the undo) and its globals for FAF's Lua (`FafreGriff*`), which `fafre/griff.lua` and the hooks read |
@@ -254,6 +255,36 @@ newer, and their forced headers would meet the newer declarations that the weak 
 Android 8.0, where the calls are null. The targets' arithmetic and the marks' rule have `static_assert`s, which the build
 checks, and `GamePhaseTest` pins the game's phases; what the sessions do to the frame times and the heat needs a phone.
 
+### The cores
+
+A phone's cores are of two or three classes: the Galaxy S22 Ultra has four little A510 (cpu0-3), three A710 (cpu4-6) and
+one X2 (cpu7). `src/app/CoresAndroid.cpp` reads the classes as the program starts, by `cpu_capacity` where sysfs has one
+for every CPU, the scheduler's own rating, else by `cpufreq/cpuinfo_max_freq`, as the app's replay test does
+(`SpeedSampler`), and places the engine's threads by them (`include/CoreClasses.h`, which `faf_griff_tests` checks):
+
+- the sim's thread on the fastest class and the next, never on the little one, starting on the fastest: cpu4-7, from
+  cpu7 on, on the S22 Ultra, and the big cores alone on a phone of two classes;
+- the render thread (the program's thread, the engine's main one), the issue thread and the workers, the sim's and the
+  user's, on every class but the little one where those are at least half of the CPUs, and on every core where they are
+  fewer (two big cores of eight). The engine sizes its worker pools by the CPUs `GetProcessAffinityMask` answers, those
+  (two workers each on cpu4-7).
+
+The program's thread goes first, before the engine's threads start, which take its cores on; then each engine thread as
+it starts, by its role (`moho::PlaceCurrentThread`, which the patched `ThreadPlacement.cpp` hands to the app). FAF's init
+asks for every CPU but the first two, which on the S22 Ultra keeps two little cores, and the binary pins the main thread
+to the process's lowest CPU as it starts (`THREAD_SetAffinity`); while the app places the threads, the patched
+`StartupHelpers.cpp` takes no mask from Lua and the patched `Thread.cpp` pins no thread. A device of one class, as the
+emulator, keeps FAF's way. Where
+the kernel is older than Linux 6.2, a thread's CPUs are set to its CPU group's when Android moves the process into another
+group (its cpusets: top-app in front, others in the back), so the cores' watch (`faf-cores`) looks each second whether the
+render thread's and the sim's are still those they were given, and places every placed thread again where they are not.
+
+| Line | When |
+|---|---|
+| `cores: big cpu7 (capacity 1024), mid cpu4-6 (capacity …), little cpu0-3 (capacity …) by cpu_capacity; the sim's thread on cpu4-7, starting on cpu7; the render thread, the issue thread and the workers on cpu4-7, off the little cores, which the engine sizes its worker pools by; FAF's init's mask is not taken` | As the program starts; `cores: cpu0-7 (…) by …: one class, so the threads go where FAF's init and Android put them` on a device of one class, `cores: sysfs rates no CPU …` where sysfs rates none |
+| `cores: Android had set the threads' CPUs anew, as it does when it moves the process into another of its CPU groups; the 13 placed threads are back on their cores`; `cores: Android holds the process on cpu0-3 for now (Invalid argument), as in the back; the threads go back on their cores once it lets them` | When the watch found the CPUs set anew |
+| `cores: a thread could not go on cpu4-7 (…), it runs on cpu0-3 until Android lets it` | Once, where a thread could not go where the plan has it as it started |
+
 ## Tests
 
 `faf_griff_tests` (`tests/griff`) checks the rules of the touch scheme Griff (`include/Griff*.h`: the
@@ -261,7 +292,9 @@ draft and its skirts, the groups, the handle's place, the reach of a tap, the un
 moves in FAF's split screen), the camera's clamp
 past the map's edges (`include/CameraClear.h`), the choice of the small control a finger's tap meant
 (`include/TapTarget.h`), the sharing out of a finger's drag between a list and the page
-(`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), and the
+(`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), the
+device's classes of cores from sysfs's texts and where the threads go by them, with the report's line of it
+(`include/CoreClasses.h`), and the
 touch layer's gestures (`src/touch`; `Touch*Tests.cpp` are the app's Java tests of it, case by case,
 but for `PictureSize`'s, which stay with the activity). It needs nothing of the engine and is linked statically, so the same program
 runs on the emulator and on a Linux host; the app's workflow runs the arm64 build on an arm64 runner.
