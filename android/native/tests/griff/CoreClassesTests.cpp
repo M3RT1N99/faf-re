@@ -119,6 +119,25 @@ WXT_TEST(ACpuWithoutItsRatingTakesTheOtherFileOrNone)
   WXT_CHECK(coreclasses::Read({}, {}).source == Source::kNone);
 }
 
+WXT_TEST(CapacitiesThatRateEveryCpuAlikeLeaveTheClassesToTheClocks)
+{
+  // A kernel whose device tree gives no capacity-dmips-mhz rates every CPU 1024, however fast it is: two clusters of
+  // A53 at 1.5 and 2.0 GHz, as on a Helio P-series phone.
+  const coreclasses::Reading reading =
+    coreclasses::Read(Texts({{8, "1024\n"}}), Texts({{4, "1500000\n"}, {4, "2001000\n"}}));
+  WXT_CHECK(reading.source == Source::kMaxFrequency);
+  WXT_CHECK_EQ(reading.classes.size(), 2U);
+  const coreclasses::Plan plan = coreclasses::PlanFor(reading);
+  WXT_CHECK_EQ(plan.sim, CpuSet{0xF0});
+  WXT_CHECK_EQ(plan.others, CpuSet{0xF0});
+
+  // Clocks alike too, or none: one class by cpu_capacity, as before.
+  WXT_CHECK(coreclasses::Read(Texts({{8, "1024\n"}}), Texts({{8, "2000000\n"}})).source == Source::kCapacity);
+  const coreclasses::Reading unclocked = coreclasses::Read(Texts({{8, "1024\n"}}), Texts({{8, ""}}));
+  WXT_CHECK(unclocked.source == Source::kCapacity);
+  WXT_CHECK_EQ(unclocked.classes.size(), 1U);
+}
+
 WXT_TEST(OneClassKeepsFafsWay)
 {
   const coreclasses::Reading reading = coreclasses::Read(Texts({{8, "1024\n"}}), {});

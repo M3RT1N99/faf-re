@@ -268,7 +268,8 @@ checks, and `GamePhaseTest` pins the game's phases; what the sessions do to the 
 A phone's cores are of two or three classes: the Galaxy S22 Ultra has four little A510 (cpu0-3), three A710 (cpu4-6) and
 one X2 (cpu7). `src/app/CoresAndroid.cpp` reads the classes as the program starts, by `cpu_capacity` where sysfs has one
 for every CPU, the scheduler's own rating, else by `cpufreq/cpuinfo_max_freq`, as the app's replay test does
-(`SpeedSampler`), and places the engine's threads by them (`include/CoreClasses.h`, which `faf_griff_tests` checks):
+(`SpeedSampler`), and by the clocks too where `cpu_capacity` rates every CPU alike and they do not (a device tree without
+`capacity-dmips-mhz` rates every CPU 1024), and places the engine's threads by them (`include/CoreClasses.h`, which `faf_griff_tests` checks):
 
 - the sim's thread on the fastest class and the next, never on the little one, starting on the fastest: cpu4-7, from
   cpu7 on, on the S22 Ultra, and the big cores alone on a phone of two classes;

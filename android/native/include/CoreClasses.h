@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace coreclasses
@@ -96,16 +97,20 @@ namespace coreclasses
     return classes;
   }
 
-  /// The device's classes: by cpu_capacity where every CPU has one, else by cpuinfo_max_freq where every CPU has that. One
-  /// text of each for each CPU, cpu0's first; a missing file's is empty.
+  /// The device's classes: by cpu_capacity where every CPU has one, else by cpuinfo_max_freq where every CPU has that. A
+  /// cpu_capacity of one class gives way to clocks that tell classes apart: a kernel whose device tree has no
+  /// capacity-dmips-mhz rates every CPU 1024, however fast it is. One text of each for each CPU, cpu0's first; a missing
+  /// file's is empty.
   [[nodiscard]] inline Reading Read(const std::vector<std::string>& capacities, const std::vector<std::string>& maxFrequencies)
   {
     Reading reading;
     reading.classes = ClassesOf(capacities);
-    reading.source = Source::kCapacity;
-    if (reading.classes.empty()) {
-      reading.classes = ClassesOf(maxFrequencies);
-      reading.source = reading.classes.empty() ? Source::kNone : Source::kMaxFrequency;
+    reading.source = reading.classes.empty() ? Source::kNone : Source::kCapacity;
+    if (reading.classes.size() < 2) {
+      if (std::vector<CoreClass> byClock = ClassesOf(maxFrequencies); byClock.size() > reading.classes.size()) {
+        reading.classes = std::move(byClock);
+        reading.source = Source::kMaxFrequency;
+      }
     }
     for (const CoreClass& coreClass : reading.classes) {
       reading.all |= coreClass.cpus;
