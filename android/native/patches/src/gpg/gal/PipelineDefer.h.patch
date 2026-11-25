@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..8a1206b 100644
+index e97176b..13bd8d7 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
 @@ -8,19 +8,47 @@
@@ -51,7 +51,7 @@ index e97176b..8a1206b 100644
  
    /** How many PipelineDeferScope are open (render thread only). */
    inline int gPipelineDeferDepth = 0;
-@@ -45,29 +73,267 @@ namespace gpg::gal
+@@ -45,29 +73,299 @@ namespace gpg::gal
      return gAsyncPipelines && gPipelineDeferDepth > 0;
    }
  
@@ -62,6 +62,11 @@ index e97176b..8a1206b 100644
 +  {
 +    unsigned count = 0U;
 +    std::chrono::steady_clock::duration time{};
++    // Those whose driver said how they went (PipelineWorker::Told): how many it took from the pipeline cache, and its
++    // own time for them, which leaves out what their threads waited for before the driver.
++    unsigned told = 0U;
++    unsigned fromCache = 0U;
++    std::chrono::steady_clock::duration driverTime{};
 +  };
 +
 +  /**
@@ -106,7 +111,28 @@ index e97176b..8a1206b 100644
 +      return std::exchange(mFinished, PipelineBuildTimes{});
 +    }
 +
++    /**
++     * From a job, on the thread that runs it: what the driver said of its build (VkPipelineCreationFeedback), which
++     * the build's count takes along (TakeFinished). A job that says nothing counts its time alone.
++     */
++    static void Told(
++      const bool fromCache,
++      const std::chrono::steady_clock::duration driverTime
++    ) noexcept
++    {
++      tTelling = Telling{true, fromCache, driverTime};
++    }
++
 +  private:
++    /** What the job running on this thread said of its build (Told). */
++    struct Telling
++    {
++      bool told = false;
++      bool fromCache = false;
++      std::chrono::steady_clock::duration driverTime{};
++    };
++    static inline thread_local Telling tTelling;
++
 +    PipelineWorker() = default;
 +
 +    /** The threads not running yet: one the system refuses now is asked for again with the next job. */
@@ -140,12 +166,18 @@ index e97176b..8a1206b 100644
 +          build = std::move(mJobs.front());
 +          mJobs.pop_front();
 +        }
++        tTelling = Telling{};
 +        const auto start = std::chrono::steady_clock::now();
 +        build(); // what it throws goes into its future
 +        const auto took = std::chrono::steady_clock::now() - start;
 +        const std::lock_guard<std::mutex> lock(mMutex);
 +        ++mFinished.count;
 +        mFinished.time += took;
++        if (tTelling.told) {
++          ++mFinished.told;
++          mFinished.fromCache += tTelling.fromCache ? 1U : 0U;
++          mFinished.driverTime += tTelling.driverTime;
++        }
 +      }
 +    }
 +
@@ -331,7 +363,7 @@ index e97176b..8a1206b 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +342,45 @@ namespace gpg::gal
+@@ -76,9 +374,45 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {

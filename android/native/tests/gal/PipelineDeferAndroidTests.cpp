@@ -2,8 +2,8 @@
 // a draw waits for). A deferred build is queued only once the pending list holds its slot, so that no job the worker has
 // outlives the device that waits for its list; a pipeline refused for want of memory is tried six times in all, over
 // 15.5 s, the last in place; a build's end says whether it may build later; the worker runs each job, two at once at
-// least, and counts the builds it finished with their time. Upstream's own tests of the header
-// (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
+// least, and counts the builds it finished with their time and what their driver said of them. Upstream's own tests of
+// the header (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
 
 #include <gtest/gtest.h>
 
@@ -291,4 +291,51 @@ TEST(
   EXPECT_EQ(finished.count, 3U);
   EXPECT_GE(finished.time, 60ms) << "each from its start on a thread to its end";
   EXPECT_EQ(worker.TakeFinished().count, 0U) << "each build is taken once";
+}
+
+TEST(
+  AndroidPipelineDefer,
+  TheWorkerTakesAlongWhatTheDriverSaidOfABuild
+)
+{
+  // A worker of its own: a job that says what the driver said (Told), and one that says nothing after it on the same
+  // threads, which must not take the earlier job's word for its own.
+  gpg::gal::PipelineWorker<unsigned char>& worker = gpg::gal::PipelineWorker<unsigned char>::Instance();
+  using Worker = gpg::gal::PipelineWorker<unsigned char>;
+  std::vector<std::future<unsigned char>> builds;
+  builds.push_back(worker.Post(std::packaged_task<unsigned char()>([] {
+    Worker::Told(true, 5ms);
+    return static_cast<unsigned char>(1);
+  })));
+  builds.push_back(worker.Post(std::packaged_task<unsigned char()>([] {
+    Worker::Told(false, 7ms);
+    return static_cast<unsigned char>(2);
+  })));
+  for (std::future<unsigned char>& build : builds) {
+    (void)build.get();
+  }
+  for (int index = 0; index < 4; ++index) {
+    builds.push_back(worker.Post(std::packaged_task<unsigned char()>([] {
+      return static_cast<unsigned char>(3);
+    })));
+  }
+  for (std::future<unsigned char>& build : builds) {
+    if (build.valid()) {
+      (void)build.get();
+    }
+  }
+  gpg::gal::PipelineBuildTimes finished{};
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (finished.count < 6U && std::chrono::steady_clock::now() < deadline) {
+    const gpg::gal::PipelineBuildTimes more = worker.TakeFinished();
+    finished.count += more.count;
+    finished.told += more.told;
+    finished.fromCache += more.fromCache;
+    finished.driverTime += more.driverTime;
+    std::this_thread::sleep_for(1ms);
+  }
+  EXPECT_EQ(finished.count, 6U);
+  EXPECT_EQ(finished.told, 2U) << "only the builds whose job said so";
+  EXPECT_EQ(finished.fromCache, 1U);
+  EXPECT_EQ(finished.driverTime, 12ms);
 }
