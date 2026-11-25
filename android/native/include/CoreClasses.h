@@ -223,6 +223,27 @@ namespace coreclasses
     return line + "; FAF's init's mask is not taken";
   }
 
+  /// What the cores' watch makes of a placed thread's CPUs as the kernel answers them now.
+  enum class Look
+  {
+    /// Its own, or fewer of them: the kernel answers only the active ones, and a core that is paused or gone off leaves.
+    kOwn,
+    /// CPUs the plan did not give it, as at the last look: Android holds the process there, as in the back.
+    kHeld,
+    /// CPUs the plan did not give it, anew: Android moved the process into another of its CPU groups, which set the
+    /// threads' CPUs to the group's (on kernels before Linux 6.2).
+    kMoved,
+  };
+
+  /// `now`: the thread's CPUs as the kernel answers them; `cpus`: those the plan gave it; `seen`: those at the last look.
+  [[nodiscard]] inline Look LookAt(const CpuSet now, const CpuSet cpus, const CpuSet seen)
+  {
+    if ((now & ~cpus) == 0) {
+      return Look::kOwn;
+    }
+    return now == seen ? Look::kHeld : Look::kMoved;
+  }
+
   /// What /proc/<pid>/task/<tid>/stat says of a thread: the CPU it ran on last (field 39, processor), its CPU time in clock
   /// ticks (fields 14 and 15, utime and stime) and when it started, in clock ticks since the boot (field 22, starttime).
   struct ThreadStat

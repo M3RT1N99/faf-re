@@ -285,7 +285,9 @@ to the process's lowest CPU as it starts (`THREAD_SetAffinity`); while the app p
 emulator, keeps FAF's way. Where
 the kernel is older than Linux 6.2, a thread's CPUs are set to its CPU group's when Android moves the process into another
 group (its cpusets: top-app in front, others in the back), so the cores' watch (`faf-cores`) looks each second whether the
-render thread's and the sim's are still those they were given, and places every placed thread again where they are not.
+render thread and the sim's may run on CPUs the plan did not give them, and where they newly may it places every placed
+thread again (`coreclasses::LookAt`). Fewer CPUs of their own are no such move: the kernel answers only the active ones,
+and a phone pauses cores and lets them go on again by itself.
 
 The watch also has the sim's speed in the report, on every device, for comparing one phone run with the next: every 30 s
 of play the sim's ticks a second, how much of the time its thread was on a CPU, and on which class, shared out by the CPU
@@ -299,7 +301,7 @@ where it waits, the game's speed is.
 | Line | When |
 |---|---|
 | `cores: big cpu7 (capacity 1024), mid cpu4-6 (capacity …), little cpu0-3 (capacity …) by cpu_capacity; the sim's thread on cpu4-7, starting on cpu7; the render thread, the issue thread and the workers on cpu4-7, off the little cores, which the engine sizes its worker pools by; FAF's init's mask is not taken` | As the program starts; `cores: cpu0-7 (…) by …: one class, so the threads go where FAF's init and Android put them` on a device of one class, `cores: sysfs rates no CPU …` where sysfs rates none |
-| `cores: Android had set the threads' CPUs anew, as it does when it moves the process into another of its CPU groups; the 13 placed threads are back on their cores`; `cores: Android holds the process on cpu0-3 for now (Invalid argument), as in the back; the threads go back on their cores once it lets them` | When the watch found the CPUs set anew |
+| `cores: Android had put the threads on cpu0-7, as it does when it moves the process into another of its CPU groups; the 13 placed threads are back on their cores`; `cores: Android holds the process on cpu0-3 for now (Invalid argument), as in the back; the threads go back on their cores once it lets them` | When the watch found the threads on CPUs the plan did not give them, newly |
 | `cores: a thread could not go on cpu4-7 (…), it runs on cpu0-3 until Android lets it` | Once, where a thread could not go where the plan has it as it started |
 | `sim: 3.6 ticks a second over 30 s (ticks 6120 to 6228), in a replay's move; its thread on a CPU 97% of the time: big 71%, mid 29%, little 0%; thermal headroom 0.78` | Every 30 s of play; `in a replay's move` where the timeline's fast-forward went on in it, the classes' shares where there are classes, the headroom where Android gives one |
 
@@ -311,8 +313,8 @@ moves in FAF's split screen), the camera's clamp
 past the map's edges (`include/CameraClear.h`), the choice of the small control a finger's tap meant
 (`include/TapTarget.h`), the sharing out of a finger's drag between a list and the page
 (`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), the
-device's classes of cores from sysfs's texts and where the threads go by them, with the report's line of it, and the
-sim's speed lines (`include/CoreClasses.h`), and the
+device's classes of cores from sysfs's texts and where the threads go by them, with the report's line of it, the watch's
+rule of a move and the sim's speed lines (`include/CoreClasses.h`), and the
 touch layer's gestures (`src/touch`; `Touch*Tests.cpp` are the app's Java tests of it, case by case,
 but for `PictureSize`'s, which stay with the activity). It needs nothing of the engine and is linked statically, so the same program
 runs on the emulator and on a Linux host; the app's workflow runs the arm64 build on an arm64 runner.

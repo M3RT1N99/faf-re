@@ -191,6 +191,25 @@ WXT_TEST(ACpuListIsTheKernels)
   WXT_CHECK_EQ(coreclasses::CpuList(~CpuSet{0}), "0-63");
 }
 
+WXT_TEST(OnlyCpusThePlanDidNotGiveMoveAThread)
+{
+  using coreclasses::Look;
+  using coreclasses::LookAt;
+  constexpr CpuSet kPlaced = 0xF0;
+  WXT_CHECK(LookAt(0xF0, kPlaced, 0xF0) == Look::kOwn);
+  // The kernel answers the active CPUs alone: a paused core, or one gone off, takes none of the plan's away.
+  WXT_CHECK(LookAt(0x70, kPlaced, 0xF0) == Look::kOwn);
+  WXT_CHECK(LookAt(0xF0, kPlaced, 0x70) == Look::kOwn);
+  // Android set the CPUs to the top-app group's, or to the back's, which hold none of the plan's.
+  WXT_CHECK(LookAt(0xFF, kPlaced, 0xF0) == Look::kMoved);
+  WXT_CHECK(LookAt(0x0F, kPlaced, 0xF0) == Look::kMoved);
+  // Where the back's group held the threads at the last look, they are held still, and the front's group moves them.
+  WXT_CHECK(LookAt(0x0F, kPlaced, 0x0F) == Look::kHeld);
+  WXT_CHECK(LookAt(0xFF, kPlaced, 0x0F) == Look::kMoved);
+  // A thread on every CPU is never moved.
+  WXT_CHECK(LookAt(0x0F, 0xFF, 0xFF) == Look::kOwn);
+}
+
 WXT_TEST(AThreadsStatGivesItsCpuItsTimeAndItsStart)
 {
   const coreclasses::ThreadStat stat = coreclasses::ParseStat(StatLine(7));

@@ -9,8 +9,9 @@
 //
 // Where the kernel is older than Linux 6.2, which keeps a thread's own CPUs, Android sets a thread's CPUs anew to its CPU
 // group's when it moves the process into another group (its cpusets: top-app in front, others in the back). So the cores'
-// watch, a thread of its own, looks each second whether the render thread's and the sim's are still those they had, and
-// where they are not it places every placed thread again.
+// watch, a thread of its own, looks each second whether the render thread and the sim's may run on CPUs the plan did not
+// give them, and where they newly may it places every placed thread again. Fewer CPUs of their own are no such move: the
+// kernel answers only the active ones, and a phone pauses cores and lets them go on again by itself.
 //
 // The watch also has the sim's speed in the report, on every device: every 30 s of play its ticks a second, how much of
 // the time its thread was on a CPU, and on which class, by the CPU it ran on last (/proc/self/task/<tid>/stat's processor)
@@ -236,21 +237,28 @@ namespace
     Remember(role, index, first, cpus);
   }
 
-  /// Whether Android set the CPUs of the render thread or the sim's anew since their placement. A thread that is gone, or
-  /// whose tid another one has now, is forgotten. Under the lock.
-  [[nodiscard]] bool MovedLocked()
+  /// Whether Android set the CPUs of the render thread or the sim's anew since the last look (coreclasses::LookAt), and to
+  /// which (`found`). A thread that is gone, or whose tid another one has now, is forgotten. Under the lock.
+  [[nodiscard]] bool MovedLocked(CpuSet& found)
   {
     bool moved = false;
     for (auto at = gPlaced.begin(); at != gPlaced.end();) {
-      const bool watched =
-        (at->role == moho::EThreadRole::Main || at->role == moho::EThreadRole::Sim) && at->cpus != gReading.all;
-      if (watched) {
-        if (const CpuSet now = CpusOf(at->tid); now != at->seen) {
-          if (now == 0 || StatOf(at->tid).startTime != at->startTime) {
-            at = gPlaced.erase(at);
-            continue;
-          }
+      if (at->role == moho::EThreadRole::Main || at->role == moho::EThreadRole::Sim) {
+        const CpuSet now = CpusOf(at->tid);
+        if (now == 0 || (now != at->seen && StatOf(at->tid).startTime != at->startTime)) {
+          at = gPlaced.erase(at);
+          continue;
+        }
+        switch (coreclasses::LookAt(now, at->cpus, at->seen)) {
+        case coreclasses::Look::kOwn:
+          at->seen = now;
+          break;
+        case coreclasses::Look::kHeld:
+          break;
+        case coreclasses::Look::kMoved:
           moved = true;
+          found = now;
+          break;
         }
       }
       ++at;
@@ -264,7 +272,8 @@ namespace
   void CheckPlaced()
   {
     const std::lock_guard<std::mutex> lock(gPlacedLock);
-    if (!MovedLocked()) {
+    CpuSet found = 0;
+    if (!MovedLocked(found)) {
       return;
     }
     int placedAgain = 0;
@@ -286,8 +295,8 @@ namespace
       ++at;
     }
     if (refusal == 0) {
-      Report("cores: Android had set the threads' CPUs anew, as it does when it moves the process into another of its CPU "
-        "groups; the " + std::to_string(placedAgain) + " placed threads are back on their cores");
+      Report("cores: Android had put the threads on cpu" + CpuList(found) + ", as it does when it moves the process into "
+        "another of its CPU groups; the " + std::to_string(placedAgain) + " placed threads are back on their cores");
     } else {
       Report("cores: Android holds the process on cpu" + CpuList(held) + " for now (" + std::strerror(refusal) +
         "), as in the back; the threads go back on their cores once it lets them");
