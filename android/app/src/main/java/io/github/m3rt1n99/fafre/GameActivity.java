@@ -1,6 +1,8 @@
 package io.github.m3rt1n99.fafre;
 
 import android.app.AlertDialog;
+import android.app.GameManager;
+import android.app.GameState;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Color;
@@ -60,9 +62,9 @@ import java.util.Locale;
  * client starts the game, and a launcher's arguments before the display mode), the program's folders (HOME, TMPDIR)
  * and what a game on a phone needs around it: the whole screen, the picture's own size (PictureSize), the UI package
  * for fingers and the HUD's factor (android/TOUCH_UI.md), Back as Esc, the multicast lock that finds LAN games, the
- * audio focus that the game's sound follows. The program keeps running while the activity is in the back
- * (android/native/src/app/GameMainAndroid.cpp), without its sound. The touch scheme Griff and the bar are not on this
- * activity yet: android-client's GameActivity has them on the earlier host.
+ * audio focus that the game's sound follows, and Android's word of what the game does (GamePhase). The program keeps
+ * running while the activity is in the back (android/native/src/app/GameMainAndroid.cpp), without its sound. The touch
+ * scheme Griff and the bar are not on this activity yet: android-client's GameActivity has them on the earlier host.
  */
 public final class GameActivity extends SDLActivity {
     /**
@@ -106,12 +108,18 @@ public final class GameActivity extends SDLActivity {
     private AudioFocusRequest mAudioFocus;
     /** What the program holds of the audio focus, which an activity Android makes anew around the program goes on from. */
     private static final AudioFocus sAudioFocus = new AudioFocus();
-    /** While the activity is there: a network lobby or game that has begun since the last look has its service too. */
+    /** What Android was told last of what the game does, which such an activity goes on from as well. */
+    private static final GamePhase sPhase = new GamePhase();
+    /**
+     * While the activity is there: a network lobby or game that has begun since the last look has its service too, and
+     * Android hears what the game does now.
+     */
     private final Runnable mPoll = new Runnable() {
         @Override
         public void run() {
             NetworkGameService.startIfNeeded(GameActivity.this);
             showPreparation();
+            tellGameState();
             mHandler.postDelayed(this, 500);
         }
     };
@@ -305,6 +313,27 @@ public final class GameActivity extends SDLActivity {
             mLayout.addView(mPreparing, place);
         }
         mPreparing.setText(step + "\n\nBack cancels the start");
+    }
+
+    /**
+     * From Android 13 on, Android hears what the game does when that changes (GamePhase): it loads, is in its menus or
+     * plays. The report says each, or that a phone without Android's game service hears none.
+     */
+    private void tellGameState() {
+        if (Build.VERSION.SDK_INT < 33) {
+            return;
+        }
+        GamePhase.Phase phase = sPhase.next(GamePhase.firstFrame(), Game.gamePlaying(), Game.networkInUse());
+        if (phase == null) {
+            return;
+        }
+        GameManager games = getSystemService(GameManager.class);
+        if (games == null) {
+            Game.report("game state: " + phase.words + ", which Android has no game service to hear");
+            return;
+        }
+        games.setGameState(new GameState(phase.loading, phase.mode));
+        Game.report("game state: " + phase.words);
     }
 
     /**

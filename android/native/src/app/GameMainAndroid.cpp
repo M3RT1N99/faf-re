@@ -26,7 +26,8 @@
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
 // when the first frame went to the screen, and the program's exit code; and of the engine's log what a
 // tester's report needs from this phone: the GPU the renderer took, each swap chain, whether BC textures
-// are the GPU's or decoded on the CPU, and the output the sound plays through, or why it has none.
+// are the GPU's or decoded on the CPU, and the output the sound plays through, or why it has none. The
+// activity asks whether the first frame came (GamePhase.firstFrame): the game loads until then.
 
 #include <android/log.h>
 #include <jni.h>
@@ -237,7 +238,8 @@ namespace platform::android
   }
 
   // A frame with draws went to the screen (src/gal/VulkanSurfaceAndroid.cpp, at each such present): the first is the
-  // report's line (GameReport.FIRST_FRAME), and each ends the render thread's work for its performance hint.
+  // report's line (GameReport.FIRST_FRAME) and the end of the game's loading for Android (GamePhase), and each ends the
+  // render thread's work for its performance hint.
   void FirstFramePresented()
   {
     performance::FramePresented();
@@ -246,6 +248,12 @@ namespace platform::android
     }
   }
 } // namespace platform::android
+
+/// Whether the program's first frame went to the screen (the app's GamePhase.firstFrame, on the activity's thread).
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_GamePhase_firstFrame(JNIEnv*, jclass)
+{
+  return gFirstFrameReported.load() ? JNI_TRUE : JNI_FALSE;
+}
 
 extern "C" __attribute__((visibility("default"))) int FafGameMain(const int argc, char* argv[])
 {
