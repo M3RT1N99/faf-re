@@ -83,6 +83,20 @@ public class GameFilesTest {
         assertThrows(IOException.class, () -> GameFiles.withUiPackage("hook = {}\n"));
     }
 
+    /**
+     * The engine looks for its own Lua in the folder of the program its command line names (DISK_GetLaunchDir, with the
+     * patch of StartupHelpers.cpp), not beside the process's executable, which is the app runtime's.
+     */
+    @Test
+    public void theEnginesOwnLuaGoesBesideTheProgramTheCommandLineNames() throws GameStart.Failure {
+        File game = new File(folder.getRoot(), "parity/game/3840");
+        List<String> arguments = GameStart.arguments(game, GameFiles.gameInitFile(game), new File(folder.getRoot(), "engine.sclog"),
+            "1.6", "2", false, null, null);
+
+        assertEquals(new File(game, "bin/fafengine"), GameFiles.engineLua(game));
+        assertEquals(new File(arguments.get(0)).getParentFile(), GameFiles.engineLua(game).getParentFile());
+    }
+
     @Test
     public void aReplaysRunStaysWithoutTheUiPackage() throws IOException {
         Storage storage = new Storage(folder.getRoot());

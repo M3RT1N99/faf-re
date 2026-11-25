@@ -3,7 +3,8 @@
 // The native programs are not built here: the Android native build builds them (android/native:
 // cmake --build --preset android-arm64), and stageFafNative packages them as
 // lib<name>.so, the only files Android extracts into nativeLibraryDir, from where an app may
-// start a program. tests/sim_math/golden.txt and the native libraries' licences go into the assets.
+// start a program. tests/sim_math/golden.txt, the native libraries' licences and the engine's own
+// Lua (data/fafengine) go into the assets.
 
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 
@@ -153,9 +154,15 @@ val stageFafNative by tasks.registering(Sync::class) {
 }
 
 val stageFafAssets by tasks.registering(Sync::class) {
-    description = "Puts the sim-math golden values, the platforms' known differences and the licences into the assets."
+    description = "Puts the sim-math golden values, the platforms' known differences, the licences and the engine's own Lua " +
+        "into the assets."
     from(repoRoot.resolve("tests/sim_math")) {
         include("golden.txt", "known_android-*.txt")
+    }
+    // The engine's own Lua, the folder it mounts at /fafengine (data/fafengine, which a desktop build puts beside the
+    // program): GameFiles.gameInit puts it where the engine looks for it.
+    from(repoRoot.resolve("data/fafengine")) {
+        into("fafengine")
     }
     // The licences of what the native build makes from others' sources (DXC), the same for every
     // ABI: from the first ABI's build folder, next to its bin.

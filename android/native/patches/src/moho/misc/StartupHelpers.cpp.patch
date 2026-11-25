@@ -1,5 +1,5 @@
 diff --git a/src/moho/misc/StartupHelpers.cpp b/src/moho/misc/StartupHelpers.cpp
-index 8a30fc65a..9c2b82e2d 100644
+index 8a30fc65a..3c4ae477e 100644
 --- a/src/moho/misc/StartupHelpers.cpp
 +++ b/src/moho/misc/StartupHelpers.cpp
 @@ -397,6 +397,12 @@ namespace
@@ -15,7 +15,27 @@ index 8a30fc65a..9c2b82e2d 100644
      const HMODULE kernelModule = ::GetModuleHandleA("kernel32.dll");
      using SetPriorityClassFn = BOOL(WINAPI*)(HANDLE, DWORD);
      auto* const setPriorityClass = kernelModule != nullptr
-@@ -3223,14 +3229,16 @@ fa::string moho::FILE_Dir(
+@@ -730,12 +736,19 @@ namespace
+     fa::vector<moho::SVFSMountPoint>& mountPoints
+   )
+   {
++#if FAFRE_PLATFORM_ANDROID
++    // Android client build: the process's executable is the app runtime's, /system/bin/app_process64. The program's
++    // path is the one its command line names, as FAF's client starts the game, whose folder the engine takes as its
++    // launch folder (DISK_GetLaunchDir): the app puts the folder there.
++    const std::filesystem::path folder = moho::DISK_GetLaunchDir() / L"fafengine";
++#else
+     std::array<wchar_t, MAX_PATH> modulePath{};
+     const DWORD length = ::GetModuleFileNameW(nullptr, modulePath.data(), static_cast<DWORD>(modulePath.size()));
+     if (length == 0U || length >= modulePath.size()) {
+       return;
+     }
+     const std::filesystem::path folder = std::filesystem::path(modulePath.data()).parent_path() / L"fafengine";
++#endif
+     std::error_code error;
+     if (!std::filesystem::is_directory(folder, error)) {
+       return;
+@@ -3223,14 +3236,16 @@ fa::string moho::FILE_Dir(
    if (filename == nullptr || filename[0] == '\0') {
      ThrowStartupFileError("Moho::FILE_Dir", "Null argument.");
    }

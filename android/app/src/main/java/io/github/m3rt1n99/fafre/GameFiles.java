@@ -41,6 +41,12 @@ final class GameFiles {
     static final Set<String> REQUIRED = new HashSet<>(Arrays.asList("lua", "units"));
     /** The UI package (android/TOUCH_UI.md): in the APK's assets, beside the game's files, and mounted under this name. */
     static final String UI_PACKAGE = "fafre_ui";
+    /**
+     * The engine's own Lua (data/fafengine), which the engine mounts at /fafengine: in the APK's assets, and beside the
+     * program the command line names (GameStart.PROGRAM), where the engine looks for it (android/native/patches/README.md,
+     * StartupHelpers.cpp), as a desktop build puts it beside the program.
+     */
+    static final String ENGINE_LUA = "fafengine";
     /** fa_path.lua's ClientVersion, which FAF's init file logs as the client's: the app that starts the engine. */
     static final String CLIENT_VERSION = "faf-re-android-" + BuildConfig.VERSION_NAME;
 
@@ -351,14 +357,19 @@ final class GameFiles {
     }
 
     /**
-     * The init file of a game: a run's, and the UI package (android/TOUCH_UI.md) comes along, from the
-     * APK, so that an update reaches it. A replay's run stays without it, as it pins the simulation.
+     * The init file of a game: a run's, and the UI package (android/TOUCH_UI.md) and the engine's own Lua come along, from
+     * the APK, so that an update reaches them. A replay's run stays without them, as it pins the simulation.
      */
     static File gameInit(AssetManager assets, Storage storage, int version, File vault) throws IOException {
-        File folder = new File(storage.game(version), UI_PACKAGE);
-        Storage.deleteTree(folder);
-        copyAssets(assets, UI_PACKAGE, folder);
+        File game = storage.game(version);
+        replaceWithAssets(assets, UI_PACKAGE, new File(game, UI_PACKAGE));
+        replaceWithAssets(assets, ENGINE_LUA, engineLua(game));
         return gameInitFiles(storage, version, vault);
+    }
+
+    /** Where the engine's own Lua goes for a game of the version in {@code gameDir}: beside the program the command line names. */
+    static File engineLua(File gameDir) {
+        return new File(new File(gameDir, GameStart.PROGRAM).getParentFile(), ENGINE_LUA);
     }
 
     /** gameInit's files once the UI package is there: fa_path.lua (writeFaPath) and the init file that mounts the package. */
@@ -410,6 +421,12 @@ final class GameFiles {
         String mount = "MountDirectory(InitFileDir .. '/../" + UI_PACKAGE + "', '/" + UI_PACKAGE + "')\n"
             + "table.insert(hook, '/" + UI_PACKAGE + "')\n";
         return text.substring(0, vault.start()) + mount + text.substring(vault.start());
+    }
+
+    /** {@code target} as the APK's assets have {@code path}: nothing of what was there stays, as an update may drop a file. */
+    private static void replaceWithAssets(AssetManager assets, String path, File target) throws IOException {
+        Storage.deleteTree(target);
+        copyAssets(assets, path, target);
     }
 
     private static void copyAssets(AssetManager assets, String path, File target) throws IOException {
