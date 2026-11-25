@@ -222,6 +222,7 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/game/connectivity.lua` | `Dialog`, 640 lines, which hold nine players |
 | `lua/ui/dialogs/score.lua` | `Dialog`, 646 lines; its root is `dialog`, as setting the skin rebuilds the HUD before it makes its first control |
 | `lua/ui/dialogs/hotstats.lua` | Sets its local factor (above) |
+| `lua/ui/game/announcement/titleannouncement.lua`, `titletextannouncement.lua` | FAF puts an announcement's title 250 of its lines above the screen's middle (*Replay over.*, a player defeated, the pause, *Unit Cap Reached*), which at 1.6 on 768 lines is 400 of the picture's 384 to its top: the title stood above the screen, and of a title with text only the end of the text showed. It stands no further above the middle than FAF's least screen has it, 250 of its 768 lines (`fafre/scale.lua` `AboveMiddle`: its middle 134 of the picture's lines down, under the tabs), its text below it, and the content's bottom follows the text, which FAF takes once where the title stood before. On a screen of 768 of FAF's lines or more FAF's own place |
 
 ### The pointer
 

@@ -299,6 +299,17 @@ function FitByList(control, file, margin, even)
     end
 end
 
+--- `control`'s top as FAF's LayoutHelpers.AtVerticalCenterIn(control, parent, -offset) lays it out, `offset` of FAF's lines above
+--- `parent`'s middle, but on a screen of fewer than FAF's least, 768 of its lines, no further above it, as a share of the screen's
+--- height, than on that one: FAF's offsets from the middle are made for its least screen, and at the HUD's factor on a phone's 768
+--- lines 250 of them are 400 of the picture's, past the 384 to its top.
+function AboveMiddle(control, parent, offset)
+    control.Top:Set(function()
+        local above = math.min(offset * LayoutHelpers.GetPixelScaleFactor(), parent.Height() * offset / 768)
+        return math.floor(parent.Top() + (parent.Height() - control.Height()) * 0.5 - above)
+    end)
+end
+
 --- The picture's first column that the screen shows.
 function ShownLeft()
     local page = pages[table.getn(pages)]
