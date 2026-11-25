@@ -49,6 +49,7 @@ final class GameReport {
     private static final String EXITED = "the engine ended its process, exit code ";
     private static final String PROCESS_ENDED = "the process ended: ";
     private static final String START_FAILED = "FAIL: ";
+    private static final String NO_LIBRARY = "the game's library did not load";
     /** What the end adds of the engine's words (its log's) and Android's after its own, which can name a path or a player. */
     private static final String MORE = "; ";
     private static final Pattern RETURNED_CODE = Pattern.compile("^" + RETURNED + "(-?\\d+) after ");
@@ -190,6 +191,14 @@ final class GameReport {
     /** Whether the report says that the program ended or failed, with its process still there. */
     static boolean ended(String report) {
         return EXIT.matcher(report).find() || FATAL.matcher(report).find();
+    }
+
+    /**
+     * The END line of a game whose library did not load (GameActivity), which ran no program: the loader's error, which names
+     * the library's path, comes after the app's words, as the engine's do.
+     */
+    static String noLibrary(Throwable error) {
+        return END + NO_LIBRARY + MORE + error;
     }
 
     /** A line from the activity's side into the report. */

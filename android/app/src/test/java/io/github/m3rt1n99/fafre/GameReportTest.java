@@ -2,6 +2,7 @@ package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 
 import java.io.File;
 import java.io.IOException;
@@ -130,6 +131,17 @@ public class GameReportTest {
             GameReport.plainEnd("END: CRASHED: native crash, status 11, crash in /data/app/libfafgame.so\n"));
         assertEquals("the process ended: low memory, status 9", GameReport.plainEnd(
             "END: the process ended: low memory, status 9, at 2026-11-24T18:31:02.417Z, lmkd killed it\n"));
+    }
+
+    @Test
+    public void aLibraryThatDidNotLoadEndsTheReportAndItsPlainEndLeavesTheLoadersPathOut() {
+        String report = "game: started 2026-11-25T08:00:00Z\n" + GameReport.noLibrary(new UnsatisfiedLinkError(
+            "dlopen failed: library \"/data/app/~~x/lib/arm64/libfafgame.so\" not found")) + "\n";
+        assertEquals("the game's library did not load; java.lang.UnsatisfiedLinkError: dlopen failed: library "
+            + "\"/data/app/~~x/lib/arm64/libfafgame.so\" not found", GameReport.endLine(report));
+        assertEquals("the game's library did not load", GameReport.plainEnd(report));
+        assertFalse(GameReport.crashed(report));
+        assertNull(GameReport.exitCode(report));
     }
 
     @Test

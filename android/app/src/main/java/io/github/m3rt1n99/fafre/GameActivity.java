@@ -93,6 +93,8 @@ public final class GameActivity extends SDLActivity {
     private AlertDialog mQuestion;
     /** A launcher's start refused while the program runs, for which SDL set nothing up (refuseBesideProgram). */
     private boolean mBesideProgram;
+    /** The game's library did not load (NoLibrary): SDL set nothing up, and the process ends with the activity. */
+    private boolean mNoLibrary;
     /** The lines the user chose (PictureSize), which the picture has on any screen. */
     private int mLines;
     /** The program can run, or runs, in this activity: no problem stopped it, and SDL's library loaded. */
@@ -150,7 +152,16 @@ public final class GameActivity extends SDLActivity {
         }
         Hashtable<Integer, PointerIcon> cursors = mCursors;
         int lastCursor = mLastCursorID;
-        super.onCreate(state);
+        try {
+            super.onCreate(state);
+        } catch (NoLibrary failure) {
+            // Activity's onCreate has run, and SDL's stopped before it set anything up: no program can run in this process.
+            // The report ends now, and the process with the activity (onDestroy).
+            GameReport.append(this, GameReport.noLibrary(failure.getCause()));
+            mNoLibrary = true;
+            finish();
+            return;
+        }
         if (program != null) {
             // SDL's onCreate takes each activity for the program's first: it forgot the program's thread, which it would
             // start anew, and the cursors the program made. With its lifecycle's queue kept (patches/README.md,
@@ -174,7 +185,8 @@ public final class GameActivity extends SDLActivity {
             return;
         }
         if (mBrokenLibraries) {
-            // SDL's activity says why in a dialog of its own, and has no surface.
+            // The library loaded, but SDL's halves are of different releases: SDL's activity says so in a dialog of its own,
+            // and has no surface.
             return;
         }
         // The surface fills the screen whatever size its buffers have: laid out by their size, it would take only as much
@@ -228,17 +240,31 @@ public final class GameActivity extends SDLActivity {
         throw new IllegalStateException("SDL's onCreate went past loadLibraries beside the running program");
     }
 
-    /** SDL's onCreate loads the libraries before it sets anything up: an activity beside the running program stops it there. */
+    /**
+     * SDL's onCreate loads the libraries before it sets anything up: an activity beside the running program stops it there, and
+     * so does a library that does not load, before SDL's dialog of it, which waits for its Exit and leaves the process behind.
+     */
     @Override
     public void loadLibraries() {
         if (mBesideProgram) {
             throw new BesideProgram();
         }
-        super.loadLibraries();
+        try {
+            super.loadLibraries();
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            throw new NoLibrary(e);
+        }
     }
 
     /** What stops SDL's onCreate (loadLibraries): an Error, as SDL's onCreate takes the libraries' exceptions for their failure. */
     private static final class BesideProgram extends Error {
+    }
+
+    /** The same for a library that did not load, the loader's error its cause. */
+    private static final class NoLibrary extends Error {
+        NoLibrary(Throwable cause) {
+            super(cause);
+        }
     }
 
     /**
@@ -619,7 +645,7 @@ public final class GameActivity extends SDLActivity {
         super.onDestroy();
         // A game that could not start leaves no process behind: SDL's activity takes the next start in this
         // process for one made anew around a program, and would end it.
-        if (mFailure != null || sPreparing) {
+        if (mFailure != null || sPreparing || mNoLibrary) {
             System.exit(0);
         }
     }

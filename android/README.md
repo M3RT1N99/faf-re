@@ -171,7 +171,8 @@ the game data they imported. Everything lives in the app's external files folder
   app's files; when the process is gone, the app adds how it ended (the exit code, a fatal error's
   message, or what `ApplicationExitInfo` says, the tombstone of a native crash) and why the renderer
   could not start, from the engine's log, and after a signal that left no tombstone the end of the process's logcat
-  (`game-logcat.txt`). A new game keeps the last game's as `game-previous.txt`, `game-previous-tombstone.pb`
+  (`game-logcat.txt`). A game whose library does not load ends at once, with its process, and its report's end
+  says so, with the loader's error. A new game keeps the last game's as `game-previous.txt`, `game-previous-tombstone.pb`
   and `game-previous-logcat.txt`. A crash also leaves the engine's own report in the game's HOME
   (`faf_crash_latest.txt`).
 - **Touch controls**: a button on the game card chooses how fingers play a game, *mouse* (the default, above) or *Griff*
@@ -514,7 +515,8 @@ fetches nothing:
 **The result.** `RESULT_FIRST_USER` when the start ran no program, with `failure`, its code, and `message`, the reason
 in English that names none of the test app's cards; with `NO_ROOM` also `bytes_to_free`, a long, the bytes the player
 must free on the phone for the start to fit. `RESULT_CANCELED` when the program ran and ended: its end in front,
-which ends its process, or any other end of the process there, which takes the activity with it; `last_game` says how.
+which ends its process, or any other end of the process there, which takes the activity with it; also when the game's
+library did not load, which ends the process at once (`the game's library did not load`). `last_game` says how.
 
 | `failure` | Why |
 |---|---|
