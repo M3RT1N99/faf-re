@@ -225,23 +225,45 @@ final class ProcessExit {
         return number > 0 && number < SIGNALS.length ? SIGNALS[number] : null;
     }
 
+    /** Each of Android's reasons (ApplicationExitInfo.REASON_*, up to Android 16), as its documentation has it. */
     private static String reasonName(int reason) {
         switch (reason) {
-            case ApplicationExitInfo.REASON_CRASH_NATIVE:
-                return "native crash";
-            case ApplicationExitInfo.REASON_CRASH:
-                return "Java crash";
-            case ApplicationExitInfo.REASON_SIGNALED:
-                return "killed by a signal";
-            case ApplicationExitInfo.REASON_ANR:
-                return "not responding";
-            case ApplicationExitInfo.REASON_LOW_MEMORY:
-                return "low memory";
+            case ApplicationExitInfo.REASON_UNKNOWN:
+                return "reason unknown";
             case ApplicationExitInfo.REASON_EXIT_SELF:
                 return "exited";
+            case ApplicationExitInfo.REASON_SIGNALED:
+                return "killed by a signal";
+            case ApplicationExitInfo.REASON_LOW_MEMORY:
+                return "low memory";
+            case ApplicationExitInfo.REASON_CRASH:
+                return "Java crash";
+            case ApplicationExitInfo.REASON_CRASH_NATIVE:
+                return "native crash";
+            case ApplicationExitInfo.REASON_ANR:
+                return "not responding";
+            case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE:
+                return "failed to initialize";
+            case ApplicationExitInfo.REASON_PERMISSION_CHANGE:
+                return "a permission of the app changed";
+            case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE:
+                return "killed for excessive use of resources";
             case ApplicationExitInfo.REASON_USER_REQUESTED:
-            case ApplicationExitInfo.REASON_USER_STOPPED:
                 return "stopped by the user";
+            case ApplicationExitInfo.REASON_USER_STOPPED:
+                // Android's user, a profile of a phone with several: not the player.
+                return "its Android user was stopped";
+            case ApplicationExitInfo.REASON_DEPENDENCY_DIED:
+                return "a process it depends on died";
+            case ApplicationExitInfo.REASON_OTHER:
+                // Its description says which: "[TOO MANY CACHED PROCS]" for a process in the back past the limit of those.
+                return "killed by the system for another reason";
+            case ApplicationExitInfo.REASON_FREEZER:
+                return "killed while frozen";
+            case ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE:
+                return "the app was disabled, or a component of it changed state";
+            case ApplicationExitInfo.REASON_PACKAGE_UPDATED:
+                return "the app was updated";
             default:
                 return "exit reason " + reason;
         }

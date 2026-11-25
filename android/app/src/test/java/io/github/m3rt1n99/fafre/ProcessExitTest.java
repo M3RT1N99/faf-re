@@ -3,6 +3,7 @@ package io.github.m3rt1n99.fafre;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.app.ApplicationExitInfo;
@@ -12,12 +13,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -159,6 +164,35 @@ public class ProcessExitTest {
         ProcessExit.End end = new ProcessExit.End(ApplicationExitInfo.REASON_SIGNALED, 35, null, false, 77, 0);
         assertNull(end.signal());
         assertEquals("killed by a signal, status 35", end.describe());
+    }
+
+    /** Every reason the SDK has, found by its constants: one a later SDK adds fails here until it has its name. */
+    @Test
+    public void eachOfAndroidsReasonsHasANameOfItsOwn() throws IllegalAccessException {
+        Set<String> names = new HashSet<>();
+        int reasons = 0;
+        for (Field field : ApplicationExitInfo.class.getFields()) {
+            if (!field.getName().startsWith("REASON_") || field.getType() != int.class || !Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            ++reasons;
+            String line = new ProcessExit.End(field.getInt(null), 0, null, false, 77, 0).describe();
+            assertFalse(field.getName() + " has no name: " + line, line.startsWith("exit reason "));
+            assertTrue(field.getName() + "'s name is another's too: " + line, names.add(line));
+        }
+        assertEquals("REASON_UNKNOWN to REASON_PACKAGE_UPDATED (Android 14)", 17, reasons);
+        assertEquals("one Android has not said yet", "exit reason 99, status 0",
+            new ProcessExit.End(99, 0, null, false, 77, 0).describe());
+    }
+
+    /** Android's end of a replay in the back on the Galaxy S22 Ultra, before the game had a service for it. */
+    @Test
+    public void theSystemsOtherReasonHasItsDescription() {
+        ProcessExit.End end = new ProcessExit.End(ApplicationExitInfo.REASON_OTHER, 0, "[TOO MANY CACHED PROCS]", false, 77, DIED);
+        assertEquals("killed by the system for another reason, status 0, at 2026-11-24T18:31:02.417Z, [TOO MANY CACHED PROCS]",
+            end.describe());
+        assertEquals("its Android user was stopped, not the player", "its Android user was stopped, status 0",
+            new ProcessExit.End(ApplicationExitInfo.REASON_USER_STOPPED, 0, null, false, 77, 0).describe());
     }
 
     @Test
