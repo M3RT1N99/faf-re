@@ -1,11 +1,13 @@
 // faf_gal_tests (android/native/README.md, Tests): the patched gpg/gal/PipelineDefer.h (patches/README.md, the pipelines
 // a draw waits for). A deferred build is queued only once the pending list holds its slot, so that no job the worker has
 // outlives the device that waits for its list; a pipeline refused for want of memory is tried six times in all, over
-// 15.5 s, the last in place; a build's end says whether it may build later; the worker runs each job. Upstream's own
-// tests of the header (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
+// 15.5 s, the last in place; a build's end says whether it may build later; the worker runs each job, two at once at
+// least, and counts the builds it finished with their time. Upstream's own tests of the header
+// (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <functional>
@@ -15,8 +17,10 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "gpg/gal/PipelineDefer.h"
 
@@ -232,4 +236,59 @@ TEST(
   EXPECT_EQ(end, PipelineBuildEnd::kRefusedForNow);
   EXPECT_EQ(third.get(), 3);
   EXPECT_EQ(&gpg::gal::PipelineWorker<int>::Instance(), &worker) << "one worker for the process";
+}
+
+TEST(
+  AndroidPipelineDefer,
+  TwoBuildAtOnce
+)
+{
+  static_assert(gpg::gal::kMaxPendingPipelines > gpg::gal::kPipelineWorkerThreads, "a slot's build can wait for a thread");
+  // A worker of its own (a type no other test builds), whose two jobs each wait for the other: one thread would run the
+  // second only after the first gave up.
+  gpg::gal::PipelineWorker<short>& worker = gpg::gal::PipelineWorker<short>::Instance();
+  std::atomic<int> started{0};
+  const auto meet = [&started]() -> short {
+    ++started;
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (started.load() < 2 && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(1ms);
+    }
+    return static_cast<short>(started.load());
+  };
+  std::future<short> first = worker.Post(std::packaged_task<short()>(meet));
+  std::future<short> second = worker.Post(std::packaged_task<short()>(meet));
+  EXPECT_EQ(first.get(), 2) << "the second build ran while the first did";
+  EXPECT_EQ(second.get(), 2);
+}
+
+TEST(
+  AndroidPipelineDefer,
+  TheWorkerCountsTheBuildsItFinishedAndTheirTime
+)
+{
+  gpg::gal::PipelineWorker<long>& worker = gpg::gal::PipelineWorker<long>::Instance();
+  EXPECT_EQ(worker.TakeFinished().count, 0U) << "none built yet";
+  std::vector<std::future<long>> builds;
+  for (int index = 0; index < 3; ++index) {
+    builds.push_back(worker.Post(std::packaged_task<long()>([] {
+      std::this_thread::sleep_for(20ms);
+      return 1L;
+    })));
+  }
+  for (std::future<long>& build : builds) {
+    EXPECT_EQ(build.get(), 1L);
+  }
+  // A build counts a moment after its future is ready.
+  gpg::gal::PipelineBuildTimes finished{};
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (finished.count < 3U && std::chrono::steady_clock::now() < deadline) {
+    const gpg::gal::PipelineBuildTimes more = worker.TakeFinished();
+    finished.count += more.count;
+    finished.time += more.time;
+    std::this_thread::sleep_for(1ms);
+  }
+  EXPECT_EQ(finished.count, 3U);
+  EXPECT_GE(finished.time, 60ms) << "each from its start on a thread to its end";
+  EXPECT_EQ(worker.TakeFinished().count, 0U) << "each build is taken once";
 }

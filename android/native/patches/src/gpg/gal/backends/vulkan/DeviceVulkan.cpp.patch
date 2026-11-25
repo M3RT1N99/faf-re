@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index 215312f..4bb1528 100644
+index 215312f..1a60393 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -3,14 +3,21 @@
@@ -1187,7 +1187,7 @@ index 215312f..4bb1528 100644
      frame.used = 0U;
      for (VkDescriptorPool pool : frame.descriptorPools) {
        Vk().vkResetDescriptorPool(mDevice, pool, 0U);
-@@ -2948,15 +3582,23 @@ namespace gpg::gal
+@@ -2948,15 +3582,38 @@ namespace gpg::gal
      frame.gpuPool = 0U;
      AcquireNextImages();
      BeginCommandBuffer();
@@ -1196,22 +1196,35 @@ index 215312f..4bb1528 100644
 -      if (logged++ < 10) {
 -        gpg::Warnf(
 -          "Vulkan: %u draw(s) skipped in frame %u (pass without shaders or pipeline)", mSkippedDraws, mFrameNumber
--        );
--      }
--      mSkippedDraws = 0U;
 +    // Engine addition: the draws that waited for their pipeline (a worker's build, or the next try of one refused for
-+    // want of memory), in a line a second while there are any. What is skipped for good has its own line once: a
-+    // pipeline that failed (ReportPipelineBuild) and a pass without shaders (BindPass).
++    // want of memory), in a line a second while there are any, with how many of the worker's builds finished in that
++    // time and their mean time, which give its throughput. What is skipped for good has its own line once: a pipeline
++    // that failed (ReportPipelineBuild) and a pass without shaders (BindPass).
 +    const auto now = std::chrono::steady_clock::now();
++    PipelineWorker<VkPipeline>& worker = PipelineWorker<VkPipeline>::Instance();
 +    if (gWaitingDraws.count == 0U) {
 +      gWaitingDraws.since = now;
++      (void)worker.TakeFinished(); // the line's builds are those of its own time
 +    } else if (now - gWaitingDraws.since >= std::chrono::seconds(1)) {
++      const PipelineBuildTimes built = worker.TakeFinished();
++      char builds[64] = "none built";
++      if (built.count != 0U) {
++        std::snprintf(
++          builds,
++          sizeof(builds),
++          "%u built, %.0f ms on average",
++          built.count,
++          std::chrono::duration<double, std::milli>(built.time).count() / built.count
+         );
+       }
+-      mSkippedDraws = 0U;
 +      gpg::Logf(
-+        "Vulkan: %u draw(s) waited for their pipeline in %.1f s (%zu pending, %zu to be tried again)",
++        "Vulkan: %u draw(s) waited for their pipeline in %.1f s (%zu pending, %zu to be tried again; %s)",
 +        gWaitingDraws.count,
 +        std::chrono::duration<double>(now - gWaitingDraws.since).count(),
 +        mPendingPipelines.size(),
-+        gPipelineRetries.Size()
++        gPipelineRetries.Size(),
++        builds
 +      );
 +      gWaitingDraws = WaitingDraws{0U, now};
      }
@@ -1219,7 +1232,7 @@ index 215312f..4bb1528 100644
    }
  
    void DeviceVulkan::SetCursor(
-@@ -3395,6 +4037,24 @@ namespace gpg::gal
+@@ -3395,6 +4052,24 @@ namespace gpg::gal
      bound.valid = bound.vertexShader != nullptr && bound.vertexShader->succeeded &&
        (bound.pixelShader == nullptr || bound.pixelShader->succeeded) && (!tessellated || mTessellationSupported) &&
        (bound.hullShader == nullptr || (bound.hullShader->succeeded && bound.domainShader->succeeded));
@@ -1244,7 +1257,7 @@ index 215312f..4bb1528 100644
  
      ProgramState& state = StateFor(program);
      effects::ParameterStore& parameters = program.Parameters();
-@@ -3615,7 +4275,8 @@ namespace gpg::gal
+@@ -3615,7 +4290,8 @@ namespace gpg::gal
      const effects::SpirvInterface& vertexInterface = InterfaceOf(*vertex);
      const effects::SpirvInterface& pixelInterface = InterfaceOf(entry);
      std::map<std::uint32_t, std::uint32_t> locations;
@@ -1254,7 +1267,7 @@ index 215312f..4bb1528 100644
      for (const effects::SpirvInterfaceVariable& input : pixelInterface.inputs) {
        if (input.builtIn) {
          continue;
-@@ -3743,6 +4404,26 @@ namespace gpg::gal
+@@ -3743,6 +4419,26 @@ namespace gpg::gal
        mPipelineMemo.Store(inputs, found->second);
        return found->second;
      }
@@ -1281,7 +1294,7 @@ index 215312f..4bb1528 100644
      // Engine addition (ren_AsyncPipelines): one a worker is building is taken once it is done; until then the draw
      // is skipped.
      const bool defer = PipelinesMayDefer();
-@@ -3752,15 +4433,26 @@ namespace gpg::gal
+@@ -3752,15 +4448,26 @@ namespace gpg::gal
          mPipelineDeferred = true;
          return VK_NULL_HANDLE;
        }
@@ -1314,7 +1327,7 @@ index 215312f..4bb1528 100644
        mPipelineDeferred = true;
        return VK_NULL_HANDLE; // the workers are busy: asked again next frame
      }
-@@ -3877,7 +4569,8 @@ namespace gpg::gal
+@@ -3877,7 +4584,8 @@ namespace gpg::gal
      raster.depthBiasEnable =
        (rasterizer.depthBias != 0 || rasterizer.slopeScaledDepthBias != 0.0f) ? VK_TRUE : VK_FALSE;
      raster.depthBiasConstantFactor = static_cast<float>(rasterizer.depthBias);
@@ -1324,7 +1337,7 @@ index 215312f..4bb1528 100644
      raster.depthBiasSlopeFactor = rasterizer.slopeScaledDepthBias;
      raster.lineWidth = 1.0f;
      VkPipelineMultisampleStateCreateInfo multisample{};
-@@ -3951,7 +4644,7 @@ namespace gpg::gal
+@@ -3951,7 +4659,7 @@ namespace gpg::gal
      info.pColorBlendState = &colorBlend;
      info.pDynamicState = &dynamic;
      info.layout = EffectPipelineLayout();
@@ -1333,7 +1346,7 @@ index 215312f..4bb1528 100644
        // The job owns copies of every structure the create info points at (the shader modules are the device's and
        // outlive it: teardown collects pending jobs first). The pipeline cache synchronizes itself.
        struct Job
-@@ -4019,40 +4712,49 @@ namespace gpg::gal
+@@ -4019,40 +4727,49 @@ namespace gpg::gal
        const PFN_vkCreateGraphicsPipelines create = Vk().vkCreateGraphicsPipelines;
        const VkDevice device = mDevice;
        const VkPipelineCache cache = mPipelineCache;
@@ -1411,7 +1424,7 @@ index 215312f..4bb1528 100644
    }
  
    void DeviceVulkan::CollectPendingPipelines() noexcept
-@@ -4081,6 +4783,11 @@ namespace gpg::gal
+@@ -4081,6 +4798,11 @@ namespace gpg::gal
      if (mPass.hullShader != nullptr) {
        // A tessellated pass draws each triangle of a list as one 3-point patch.
        if (topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
@@ -1423,7 +1436,7 @@ index 215312f..4bb1528 100644
          ++mSkippedDraws;
          return false;
        }
-@@ -4142,8 +4849,13 @@ namespace gpg::gal
+@@ -4142,8 +4864,13 @@ namespace gpg::gal
      mPipelineDeferred = false;
      const VkPipeline pipeline = PipelineFor(mPass, topology);
      if (pipeline == VK_NULL_HANDLE) {

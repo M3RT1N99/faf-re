@@ -1,8 +1,8 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..6f3fb2b 100644
+index e97176b..8a1206b 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
-@@ -8,19 +8,46 @@
+@@ -8,19 +8,47 @@
  // shader variant (ray-traced shadows turned on) first came into view, a visible freeze. Only the world's per-frame
  // draws open the scope (meshes, the terrain and its decals): a draw that happens once (a thumbnail, a map bake)
  // keeps building its pipeline in place, since skipping it would lose it.
@@ -38,24 +38,32 @@ index e97176b..6f3fb2b 100644
 +   * frame. kPipelineWorkerThreads of them build at once (PipelineWorker).
 +   */
 +#if FAFRE_PLATFORM_ANDROID
-+  // A phone's driver refused mesh pipelines for want of memory while up to four built at once (Xclipse 920:
-+  // VK_ERROR_OUT_OF_HOST_MEMORY for the packed vertex formats of almost every unit), in a process that holds the BC
-+  // textures decoded: one builds at a time, and the next one waits in the queue.
-+  inline constexpr unsigned kMaxPendingPipelines = 2U;
-+  inline constexpr unsigned kPipelineWorkerThreads = 1U;
-+#else
++  // A phone's driver refused mesh pipelines for want of memory while up to four built at once, each on a thread of its
++  // own (Xclipse 920: VK_ERROR_OUT_OF_HOST_MEMORY for the packed vertex formats of almost every unit), in a process
++  // that holds the BC textures decoded. Such a refusal is tried again now (PipelineRetries), and with one build at a
++  // time the draws of a game's first 90 s waited with both slots taken: two build at once, and two more wait.
    inline constexpr unsigned kMaxPendingPipelines = 4U;
++  inline constexpr unsigned kPipelineWorkerThreads = 2U;
++#else
++  inline constexpr unsigned kMaxPendingPipelines = 4U;
 +  inline constexpr unsigned kPipelineWorkerThreads = kMaxPendingPipelines;
 +#endif
  
    /** How many PipelineDeferScope are open (render thread only). */
    inline int gPipelineDeferDepth = 0;
-@@ -45,29 +72,244 @@ namespace gpg::gal
+@@ -45,29 +73,267 @@ namespace gpg::gal
      return gAsyncPipelines && gPipelineDeferDepth > 0;
    }
  
 -  /** A finished build's pipeline; a null one when the build threw (it is then kept as a failure, like one the driver
 -   * refused), so a worker's exception never reaches the draw that takes it. */
++  /** Builds a worker's threads finished, and how long they ran in all (PipelineWorker::TakeFinished). */
++  struct PipelineBuildTimes
++  {
++    unsigned count = 0U;
++    std::chrono::steady_clock::duration time{};
++  };
++
 +  /**
 +   * The threads that build the deferred pipelines of `Handle` (kPipelineWorkerThreads), from the first build to the
 +   * process's end: each build is a job in their queue. A thread of its own per build (std::async) made a thread, its
@@ -86,6 +94,16 @@ index e97176b..6f3fb2b 100644
 +      }
 +      mWake.notify_one();
 +      return built;
++    }
++
++    /**
++     * The builds the threads finished since the last call, each from its start on a thread to its end, the queue's wait
++     * not in it; and from then on none. A build's future is ready a moment before it counts. Any thread.
++     */
++    [[nodiscard]] PipelineBuildTimes TakeFinished()
++    {
++      const std::lock_guard<std::mutex> lock(mMutex);
++      return std::exchange(mFinished, PipelineBuildTimes{});
 +    }
 +
 +  private:
@@ -122,7 +140,12 @@ index e97176b..6f3fb2b 100644
 +          build = std::move(mJobs.front());
 +          mJobs.pop_front();
 +        }
++        const auto start = std::chrono::steady_clock::now();
 +        build(); // what it throws goes into its future
++        const auto took = std::chrono::steady_clock::now() - start;
++        const std::lock_guard<std::mutex> lock(mMutex);
++        ++mFinished.count;
++        mFinished.time += took;
 +      }
 +    }
 +
@@ -130,6 +153,7 @@ index e97176b..6f3fb2b 100644
 +    std::condition_variable mWake;
 +    std::deque<std::packaged_task<Handle()>> mJobs;
 +    unsigned mThreads = 0U;
++    PipelineBuildTimes mFinished; // since TakeFinished
 +  };
 +
 +  /** What a deferred build the driver refused throws into its future (TakeBuiltPipeline). */
@@ -307,7 +331,7 @@ index e97176b..6f3fb2b 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +318,45 @@ namespace gpg::gal
+@@ -76,9 +342,45 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {
