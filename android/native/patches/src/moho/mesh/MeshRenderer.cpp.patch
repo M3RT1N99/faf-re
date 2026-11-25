@@ -1,5 +1,5 @@
 diff --git a/src/moho/mesh/MeshRenderer.cpp b/src/moho/mesh/MeshRenderer.cpp
-index 4869093..2c6d615 100644
+index 4869093..750c7b7 100644
 --- a/src/moho/mesh/MeshRenderer.cpp
 +++ b/src/moho/mesh/MeshRenderer.cpp
 @@ -1,6 +1,8 @@
@@ -70,7 +70,18 @@ index 4869093..2c6d615 100644
    } // namespace
  
    /**
-@@ -1786,6 +1840,11 @@ namespace moho
+@@ -1254,6 +1308,10 @@ namespace moho
+     if (meshMap.empty()) {
+       return;
+     }
++    // Android client build (ren_AsyncPipelines): the shadow pass draws these every frame, as Render's draws are, so a
++    // mesh's depth pipeline can wait a frame or two for the worker; built in place, each new one stopped the frame for
++    // the driver, which on the Galaxy S22 Ultra took 5 to 8 s for a build on the worker.
++    const gpg::gal::PipelineDeferScope deferPipelines;
+ 
+     // Bind only the depth-pass shader-constant lane: frame time, LOD basis, and
+     // the view/projection matrices. RenderDepth does NOT call ConfigureShader
+@@ -1786,6 +1844,11 @@ namespace moho
        }
      }
  
