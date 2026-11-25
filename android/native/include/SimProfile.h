@@ -11,6 +11,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
+#include <iterator>
 #include <string>
 #include <unordered_map>
 #include <utility>
