@@ -306,6 +306,13 @@ namespace
     return view != nullptr && !view->IsMiniMap();
   }
 
+  /// Whether the fingers move the camera here: while the game goes on, and after its end on the map, which a replay that is over,
+  /// or a game the player stays in, still shows to be looked over, as a PC's middle button and wheel move its camera then too.
+  [[nodiscard]] bool CameraAt(const int x, const int y)
+  {
+    return moho::UI_GamePlaying() || OnMap(static_cast<float>(x), static_cast<float>(y));
+  }
+
   /// Whether a press here comes to a Checkbox of FAF's, which acts on the press (grifftap::DragPressesNothing): the control
   /// under it or a parent whose Lua object has Checkbox's ToggleCheck (maui/checkbox.lua), its class's as FAF's Lua finds it.
   [[nodiscard]] bool PressComesToCheckbox(const float x, const float y)
@@ -3199,13 +3206,14 @@ namespace
     bool map = false;
     bool checkbox = false;
     try {
-      const bool playing = moho::UI_GamePlaying();
       // A box, a panel's drag or a pan would come between the undo's or the tick's clicks; and one of the app's pieces that
       // came over where the finger went down takes it.
-      if (playing && (ClicksRun() || Covered(drag.x, drag.y))) {
+      if (moho::UI_GamePlaying() && (ClicksRun() || Covered(drag.x, drag.y))) {
         return;
       }
-      map = playing && OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
+      // Also after the game's end, whose map is still looked over (CameraAt): its rests find nothing (RestTask), so there a drag
+      // pans, or boxes after a rest.
+      map = OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
       checkbox = !map && PressComesToCheckbox(static_cast<float>(drag.x), static_cast<float>(drag.y));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3261,14 +3269,20 @@ namespace
     }
   }
 
+  /// Whether griff.lua has the fingers' pinch (Pinch reached it), which their lift ends there.
+  bool gPinching = false;
+
   /// The camera keeps what lies at a place under the fingers (griff.lua): from here on, at the pinch's start or when one of two
-  /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them. Not while the
-  /// program's clicks run, which aim by the camera.
+  /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them. Where the fingers
+  /// move the camera (CameraAt), not while the program's clicks run, which aim by the camera.
   void Pinch(const char* const format, const Argument places)
   {
     try {
-      if (moho::UI_GamePlaying() && !ClicksRun()) {
-        CallGriff(format, Coordinate(places, 0), Coordinate(places, 1), Coordinate(places, 2));
+      const int x = Coordinate(places, 0);
+      const int y = Coordinate(places, 1);
+      if (CameraAt(x, y) && !ClicksRun()) {
+        CallGriff(format, x, y, Coordinate(places, 2));
+        gPinching = true;
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3285,10 +3299,14 @@ namespace
     Pinch("Pinch(%d, %d, %d)", places);
   }
 
+  /// The fingers' lift ends the pinch griff.lua has, also one that the game's end came in the middle of, while its session's UI is
+  /// there to end it; the camera glides on at the fingers' velocity.
   void PinchEndTask(const Argument places)
   {
     try {
-      if (moho::UI_GamePlaying()) {
+      const bool pinching = gPinching;
+      gPinching = false;
+      if (pinching && moho::WLD_GetActiveSession() != nullptr) {
         moho::CON_Execute(kPinchEnd);
         if (!ClicksRun()) {
           Glide(SignedCoordinate(places, 0), SignedCoordinate(places, 1));

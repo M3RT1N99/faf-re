@@ -195,6 +195,7 @@ the game data they imported. Everything lives in the app's external files folder
     the selection's orders marks it with FAF's Cancel icon, the ring red, and the lift deletes that order. A finger that
     rests on a unit shows what it is, and lifts with nothing done. Two fingers zoom where they are and move the map with
     them at once, and a quick tap of two fingers lets the selection go (or ends an order picked in the orders panel).
+    Once a game or a replay is over, a finger and two fingers still pan and zoom the map.
   - The handle is SCFA's selection brackets with the selection's count in FAF's font, beside the selection and clear of
     its units, or FAF's off-screen arrow at the screen's edge when the group is out of view or under a panel. A tap on it
     flies the camera to the group. A stroke from it lays a route, drawn as FAF's order line in the order's colour with

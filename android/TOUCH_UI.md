@@ -330,7 +330,10 @@ Attack-move is FAF's own (Griff v4): its orders panel's button (`orders.lua`: `A
 units with a fire state), which a tap or a route takes as any armed mode, and the tap ladder's double tap on the ground, as a hotkey;
 the rail has no copy of it. For a factory alone the ladder's attack-move stays the right click: FAF's `AttackMove` sim callback fails on
 structures, on every client. While FAF's own ghost waits (its build mode keys, hotbuild, a template), the fingers place it as in the mouse
-scheme, and with no game behind the UI any more (its end) a tap and a rest are the UI's clicks wherever they land. Griff keeps the game's
+scheme, and with no game behind the UI any more (its end) a tap and a rest are the UI's clicks wherever they land, but on the map a drag
+still pans and two fingers still zoom (`GriffAndroid.cpp` `CameraAt`): a replay that is over, or a game the player stays in after its end,
+is still looked over, as a PC's middle button and wheel move its camera then too. Until 0.16.2 its end left the map still, as each drag
+was a panel's and two fingers nothing. Griff keeps the game's
 cursor off the picture's edge pixel: FAF scrolls the view while its cursor is on the window's edge (`ui_ScreenEdgeScrollView`), where a
 mouse is pushed on purpose and a finger at the glass's edge would hold it, which took a stroke's route elsewhere than it was drawn.
 
