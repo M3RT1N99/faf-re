@@ -117,6 +117,37 @@ public class GameLogsTest {
     }
 
     @Test
+    public void theZipHasBothGamesProfilesAsTheyAreThoughAPlayerHasAWordOfThem() throws IOException {
+        File files = folder.newFolder("files");
+        Storage storage = new Storage(folder.newFolder("storage"));
+        Storage.mkdirs(GameReport.folder(storage));
+        String profile = "faf-re sim profile 1\n"
+            + "samples: 6 in 1 sims over 30 ticks, 0 dropped\n"
+            + "\n"
+            + "stacks: samples, then the leaf and its callers' calls as module+offset\n"
+            + "6 libm.so+0x40 libfafgame.so+0x2000\n"
+            + "\n"
+            + "symbols: the frames of modules without their files, by their dynamic symbols\n"
+            + "libm.so+0x40 samples+0x40\n";
+        Files.write(GameReport.profile(files).toPath(), profile.getBytes(StandardCharsets.UTF_8));
+        Files.write(GameReport.previousProfile(files).toPath(), "the game before's profile\n".getBytes(StandardCharsets.UTF_8));
+        // The engine's log names a player "samples", a word of the profile's.
+        Files.write(GameReport.log(storage).toPath(), "info: Initialize Armies brain nickname is samples\n"
+            .getBytes(StandardCharsets.UTF_8));
+        File work = folder.newFolder("work");
+
+        Map<String, File> texts = GameLogs.texts(files, storage, work);
+        assertEquals(Arrays.asList(GameReport.PROFILE, GameReport.PREVIOUS_PROFILE, "game/engine.sclog"),
+            Arrays.asList(texts.keySet().toArray()));
+        File zip = new File(folder.getRoot(), "logs.zip");
+        GameLogs.write("app: x\n", texts, APP, zip);
+        Map<String, String> entries = entries(zip);
+        assertEquals(profile, entries.get("profile.txt"));
+        assertEquals("the game before's profile\n", entries.get("profile-previous.txt"));
+        assertEquals("info: Initialize Armies brain nickname is player1\n", entries.get("game/engine.sclog"));
+    }
+
+    @Test
     public void aZipOfNoTextsHasTheReportAlone() throws IOException {
         File zip = new File(folder.getRoot(), "logs.zip");
         GameLogs.write("app: x\n", new LinkedHashMap<>(), APP, zip);

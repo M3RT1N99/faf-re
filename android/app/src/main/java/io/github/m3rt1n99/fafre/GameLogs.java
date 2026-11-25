@@ -27,10 +27,11 @@ import java.util.zip.ZipOutputStream;
 /**
  * The game's recent logs for the FAF client's problem report (StatusProvider's call game_logs, android/README.md, The logs):
  * a zip in the app's cache of what Share results takes of the game, the last game's report, the engine's log and newest
- * crash report and a native crash's tombstone, or the end of the logcat of a process a signal ended without one, and the
- * game's before it, after report.txt (the app's version, the engine's commit, Android's version and the device's model). It
- * goes into public issues, so its texts are scrubbed together (LogScrubber), and a tombstone comes as its summary
- * (Tombstone). A zip stays until the next one, which takes its grant.
+ * crash report, a native crash's tombstone, or the end of the logcat of a process a signal ended without one, and the sim
+ * thread's profile, and the game's before it, after report.txt (the app's version, the engine's commit, Android's version
+ * and the device's model). It goes into public issues, so its texts are scrubbed together (LogScrubber) but for the
+ * profiles, which hold nothing of a player, and a tombstone comes as its summary (Tombstone). A zip stays until the next
+ * one, which takes its grant.
  */
 final class GameLogs {
     /** The zips' folder in the app's cache, and their path in ResultsProvider's URIs. */
@@ -100,9 +101,11 @@ final class GameLogs {
         copy(texts, work, "game.txt", GameReport.file(files));
         summary(texts, work, "game-tombstone.txt", GameReport.tombstone(files));
         copy(texts, work, GameReport.LOGCAT, GameReport.logcat(files));
+        copy(texts, work, GameReport.PROFILE, GameReport.profile(files));
         copy(texts, work, GameReport.PREVIOUS, GameReport.previous(files));
         summary(texts, work, "game-previous-tombstone.txt", GameReport.previousTombstone(files));
         copy(texts, work, GameReport.PREVIOUS_LOGCAT, GameReport.previousLogcat(files));
+        copy(texts, work, GameReport.PREVIOUS_PROFILE, GameReport.previousProfile(files));
         if (storage != null) {
             copy(texts, work, "game/engine.sclog", GameReport.log(storage));
             copy(texts, work, "game/" + GameReport.crashReport(storage).getName(), GameReport.crashReport(storage));
@@ -117,13 +120,26 @@ final class GameLogs {
     }
 
     /**
+     * Whether the text {@code name} of the zip goes in as it is: the sim thread's profiles, which hold nothing of a player or
+     * a host (counts, modules' names, offsets and system symbols), and whose words a player's stand-in could break for
+     * android/tools/sim_profile.py.
+     */
+    static boolean asIs(String name) {
+        return name.equals(GameReport.PROFILE) || name.equals(GameReport.PREVIOUS_PROFILE);
+    }
+
+    /**
      * The zip of {@code texts}, each its name there and its file, after report.txt: the texts scrubbed together, the players'
-     * names learned from all of them first, and each line written as the scrubber gives it.
+     * names learned from all of them first, and each line written as the scrubber gives it; a text that goes in as it is
+     * ({@link #asIs}) is neither.
      */
     static void write(String report, Map<String, File> texts, String packageName, File zip) throws IOException {
         LogScrubber scrubber = new LogScrubber(packageName);
-        for (File text : texts.values()) {
-            try (BufferedReader in = reader(text)) {
+        for (Map.Entry<String, File> text : texts.entrySet()) {
+            if (asIs(text.getKey())) {
+                continue;
+            }
+            try (BufferedReader in = reader(text.getValue())) {
                 for (String line = in.readLine(); line != null; line = in.readLine()) {
                     scrubber.learn(line);
                 }
@@ -138,9 +154,10 @@ final class GameLogs {
             out.closeEntry();
             for (Map.Entry<String, File> text : texts.entrySet()) {
                 out.putNextEntry(new ZipEntry(text.getKey()));
+                boolean asIs = asIs(text.getKey());
                 try (BufferedReader in = reader(text.getValue())) {
                     for (String line = in.readLine(); line != null; line = in.readLine()) {
-                        writer.write(scrubber.scrub(line));
+                        writer.write(asIs ? line : scrubber.scrub(line));
                         writer.write('\n');
                     }
                 }

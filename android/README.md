@@ -387,10 +387,11 @@ the game data they imported. Everything lives in the app's external files folder
     names, stay on the phone instead of going to the engine author's server.
 - **Share results** zips `summary.json`, the math output, the log, the game's report, tombstone, log and crash report
   (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the end of its process's logcat
-  where a signal ended it without a tombstone (`game-logcat.txt`), the last game's (`game-previous.txt`,
-  `game-previous-tombstone.pb`, `game-previous-logcat.txt`) and each replay's `headless.out`,
-  `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks symbolized. The FAF client gets the
-  game's part of it scrubbed, the tombstones as text, for its problem report (the launcher's contract, The logs).
+  where a signal ended it without a tombstone (`game-logcat.txt`), the sim thread's profile (`profile.txt`), the last
+  game's (`game-previous.txt`, `game-previous-tombstone.pb`, `game-previous-logcat.txt`, `profile-previous.txt`) and each
+  replay's `headless.out`, `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks
+  symbolized, and `tools/sim_profile.py` a profile (`native/README.md`, The sim's profile). The FAF client gets the game's
+  part of it scrubbed, the tombstones as text, for its problem report (the launcher's contract, The logs).
 
 The default replays (26930624 and 26902315), *Use the core set* and *Use the extended set* (the core
 set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all
@@ -814,12 +815,14 @@ next call, which deletes it and takes its grants back: the client reads or copie
 | `game.txt`, `game-previous.txt` | The last game's report, with its end once the game's process is gone, and the one before |
 | `game-tombstone.txt`, `game-previous-tombstone.txt` | A native crash's tombstone of either game as text (`Tombstone`): the signal and its fault address, the cause, the abort message, each thread's stack (library and offset, function) and the libraries' build ids, for `tools/tombstone.py`'s way of symbolizing a build's frames; not the tombstone's memory, registers, open files, log and command line |
 | `game-logcat.txt`, `game-previous-logcat.txt` | For either game whose process a signal ended without a tombstone: the last 500 lines of its process's logcat, main and crash buffers (`ProcessExit.keepLogcat`), libc's `Fatal signal` line and the abort message among them, after a line that names the command, or why it could not be read |
+| `profile.txt`, `profile-previous.txt` | The sim thread's profile of either game (`native/README.md`, The sim's profile): the samples by module and offset, the modules' names and the system libraries' symbols, for `tools/sim_profile.py` |
 | `game/engine.sclog` | The engine's log of the last game |
 | `game/faf_crash_latest.txt` | The engine's newest crash report, which can be an earlier game's (its `time` says when) |
 | `probe.txt` | The device check's last report (contract 2: *The device check*, above) |
 
 The zip goes into public issues, so its texts are scrubbed (`LogScrubber`) as one zip's: what names a player, their account
-or the network becomes a stand-in, the same one throughout the zip.
+or the network becomes a stand-in, the same one throughout the zip. The profiles, which hold nothing of a player, go in as
+they are, so that a player's stand-in cannot break a word of theirs.
 
 - **Where these are**, on the emulator's games and by the engine's and FAF's sources: the command line in `game.txt` has the
   app's paths and a launcher's switches, the player's name and game in `/savereplay gpgnet://.../<game id>/<name>.SCFAreplay`,

@@ -32,10 +32,16 @@ final class GameReport {
      * name in the app's files and in the logs' zip.
      */
     static final String LOGCAT = "game-logcat.txt";
-    /** The last game's report, tombstone and logcat, by these names in the app's files and in the zips. */
+    /**
+     * The sim thread's profile, which the game writes beside its report (android/native/src/app/ProfilerAndroid.cpp) for
+     * android/tools/sim_profile.py, by this name in the app's files and in the zips.
+     */
+    static final String PROFILE = "profile.txt";
+    /** The last game's report, tombstone, logcat and profile, by these names in the app's files and in the zips. */
     static final String PREVIOUS = "game-previous.txt";
     static final String PREVIOUS_TOMBSTONE = "game-previous-tombstone.pb";
     static final String PREVIOUS_LOGCAT = "game-previous-logcat.txt";
+    static final String PREVIOUS_PROFILE = "profile-previous.txt";
     static final String PROCESS = ":game";
     /** The report's last line begins with this: how the game ended. */
     static final String END = "END: ";
@@ -125,6 +131,14 @@ final class GameReport {
         return new File(files, PREVIOUS_LOGCAT);
     }
 
+    static File profile(File files) {
+        return new File(files, PROFILE);
+    }
+
+    static File previousProfile(File files) {
+        return new File(files, PREVIOUS_PROFILE);
+    }
+
     /** The game's folder in the app's storage: its HOME, its vault and the engine's log. */
     static File folder(Storage storage) {
         return new File(storage.root, "game");
@@ -166,11 +180,12 @@ final class GameReport {
         append(context, STARTED + Instant.now());
     }
 
-    /** The report, tombstone and logcat in the app's files {@code files} become the previous game's. */
+    /** The report, tombstone, logcat and profile in the app's files {@code files} become the previous game's. */
     static void keepAsPrevious(File files) {
         replace(file(files), previous(files));
         replace(tombstone(files), previousTombstone(files));
         replace(logcat(files), previousLogcat(files));
+        replace(profile(files), previousProfile(files));
     }
 
     /** `from` becomes `to`; without a `from`, `to` holds nothing of an earlier game either. */

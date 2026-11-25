@@ -160,13 +160,15 @@ final class Results {
 
     /**
      * The game's files in the app's files {@code files} that the zip takes beside its report, by their names there, those
-     * that are there: a native crash's tombstone, or the end of the logcat of a process a signal ended without one, and the
-     * last game's report, tombstone and logcat (GameReport), as the FAF client's logs have them (GameLogs.texts).
+     * that are there: a native crash's tombstone, or the end of the logcat of a process a signal ended without one, the sim
+     * thread's profile, and the last game's report, tombstone, logcat and profile (GameReport), as the FAF client's logs
+     * have them (GameLogs.texts).
      */
     static Map<String, File> gameFiles(File files) {
         Map<String, File> found = new LinkedHashMap<>();
-        for (File file : new File[] {GameReport.tombstone(files), GameReport.logcat(files), GameReport.previous(files),
-                GameReport.previousTombstone(files), GameReport.previousLogcat(files)}) {
+        for (File file : new File[] {GameReport.tombstone(files), GameReport.logcat(files), GameReport.profile(files),
+                GameReport.previous(files), GameReport.previousTombstone(files), GameReport.previousLogcat(files),
+                GameReport.previousProfile(files)}) {
             if (file.isFile()) {
                 found.put(file.getName(), file);
             }

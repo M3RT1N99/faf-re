@@ -17,8 +17,8 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * What the results zip a tester sends takes of the game's files beside its report (Results.gameFiles): a native crash's
- * tombstone or the logcat of a process a signal ended without one, and the last game's report, tombstone and logcat, as
- * the FAF client's logs have them.
+ * tombstone or the logcat of a process a signal ended without one, the sim thread's profile, and the last game's report,
+ * tombstone, logcat and profile, as the FAF client's logs have them.
  */
 public class ResultsTest {
     @Rule
@@ -29,15 +29,16 @@ public class ResultsTest {
     }
 
     @Test
-    public void theZipHasTheLogcatOfAGameASignalEndedWithoutATombstoneAndTheLastGamesFiles() throws IOException {
-        for (String name : new String[] {GameReport.LOGCAT, GameReport.PREVIOUS, GameReport.PREVIOUS_TOMBSTONE,
-                GameReport.PREVIOUS_LOGCAT}) {
+    public void theZipHasTheLogcatOfAGameASignalEndedWithoutATombstoneTheProfileAndTheLastGamesFiles() throws IOException {
+        for (String name : new String[] {GameReport.LOGCAT, GameReport.PROFILE, GameReport.PREVIOUS,
+                GameReport.PREVIOUS_TOMBSTONE, GameReport.PREVIOUS_LOGCAT, GameReport.PREVIOUS_PROFILE}) {
             write(name);
         }
         Map<String, File> files = Results.gameFiles(folder.getRoot());
-        assertEquals(Arrays.asList(GameReport.LOGCAT, GameReport.PREVIOUS, GameReport.PREVIOUS_TOMBSTONE,
-            GameReport.PREVIOUS_LOGCAT), new ArrayList<>(files.keySet()));
+        assertEquals(Arrays.asList(GameReport.LOGCAT, GameReport.PROFILE, GameReport.PREVIOUS, GameReport.PREVIOUS_TOMBSTONE,
+            GameReport.PREVIOUS_LOGCAT, GameReport.PREVIOUS_PROFILE), new ArrayList<>(files.keySet()));
         assertEquals(new File(folder.getRoot(), GameReport.LOGCAT), files.get(GameReport.LOGCAT));
+        assertEquals(new File(folder.getRoot(), "profile.txt"), files.get(GameReport.PROFILE));
     }
 
     @Test

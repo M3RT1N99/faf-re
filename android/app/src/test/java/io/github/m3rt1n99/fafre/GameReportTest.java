@@ -145,17 +145,19 @@ public class GameReportTest {
     }
 
     @Test
-    public void aNewGameKeepsTheLastOnesReportTombstoneAndLogcatAsThePreviousOnes() throws IOException {
+    public void aNewGameKeepsTheLastOnesReportTombstoneLogcatAndProfileAsThePreviousOnes() throws IOException {
         File files = folder.getRoot();
         write(new File(files, "game.txt"), "END: CRASHED: killed by a signal, status 6 (SIGABRT)");
         write(new File(files, GameReport.TOMBSTONE), "tombstone");
         write(new File(files, GameReport.LOGCAT), "logcat");
+        write(new File(files, GameReport.PROFILE), "faf-re sim profile 1");
         write(new File(files, GameReport.PREVIOUS_LOGCAT), "the game before's logcat");
         GameReport.keepAsPrevious(files);
         assertEquals("END: CRASHED: killed by a signal, status 6 (SIGABRT)", read(new File(files, GameReport.PREVIOUS)));
         assertEquals("tombstone", read(new File(files, GameReport.PREVIOUS_TOMBSTONE)));
         assertEquals("logcat", read(new File(files, GameReport.PREVIOUS_LOGCAT)));
-        for (String now : new String[] {"game.txt", GameReport.TOMBSTONE, GameReport.LOGCAT}) {
+        assertEquals("faf-re sim profile 1", read(new File(files, GameReport.PREVIOUS_PROFILE)));
+        for (String now : new String[] {"game.txt", GameReport.TOMBSTONE, GameReport.LOGCAT, GameReport.PROFILE}) {
             assertFalse(now, new File(files, now).exists());
         }
 
