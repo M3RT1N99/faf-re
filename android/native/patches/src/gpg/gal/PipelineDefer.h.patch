@@ -1,0 +1,332 @@
+diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
+index e97176b..4cd73d2 100644
+--- a/src/gpg/gal/PipelineDefer.h
++++ b/src/gpg/gal/PipelineDefer.h
+@@ -8,19 +8,46 @@
+ // shader variant (ray-traced shadows turned on) first came into view, a visible freeze. Only the world's per-frame
+ // draws open the scope (meshes, the terrain and its decals): a draw that happens once (a thumbnail, a map bake)
+ // keeps building its pipeline in place, since skipping it would lose it.
++//
++// The builds run on one worker that lives as long as the process (PipelineWorker), and a pipeline the driver refused
++// for want of memory is tried again later (PipelineRetries).
+ 
+ #include <chrono>
++#include <condition_variable>
++#include <cstddef>
++#include <deque>
+ #include <future>
++#include <mutex>
++#include <new>
+ #include <string>
++#include <system_error>
++#include <thread>
+ #include <unordered_map>
++#include <utility>
++
++#if FAFRE_PLATFORM_LINUX
++#include <pthread.h>
++#endif
+ 
+ namespace gpg::gal
+ {
+   /** `ren_AsyncPipelines`: 1 (the default) builds missing mesh pipelines on worker threads, 0 in place. */
+   inline bool gAsyncPipelines = true;
+ 
+-  /** Pipelines building at once at most; a draw that finds them all busy is skipped and asks again next frame. */
++  /**
++   * Pipelines pending at most, building or queued; a draw that finds them all busy is skipped and asks again next frame.
++   * kPipelineWorkerThreads of them build at once (PipelineWorker).
++   */
++#if FAFRE_PLATFORM_ANDROID
++  // A phone's driver refused mesh pipelines for want of memory while up to four built at once (Xclipse 920:
++  // VK_ERROR_OUT_OF_HOST_MEMORY for the packed vertex formats of almost every unit), in a process that holds the BC
++  // textures decoded: one builds at a time, and the next one waits in the queue.
++  inline constexpr unsigned kMaxPendingPipelines = 2U;
++  inline constexpr unsigned kPipelineWorkerThreads = 1U;
++#else
+   inline constexpr unsigned kMaxPendingPipelines = 4U;
++  inline constexpr unsigned kPipelineWorkerThreads = kMaxPendingPipelines;
++#endif
+ 
+   /** How many PipelineDeferScope are open (render thread only). */
+   inline int gPipelineDeferDepth = 0;
+@@ -45,29 +72,243 @@ namespace gpg::gal
+     return gAsyncPipelines && gPipelineDeferDepth > 0;
+   }
+ 
+-  /** A finished build's pipeline; a null one when the build threw (it is then kept as a failure, like one the driver
+-   * refused), so a worker's exception never reaches the draw that takes it. */
++  /**
++   * The threads that build the deferred pipelines of `Handle` (kPipelineWorkerThreads), from the first build to the
++   * process's end: each build is a job in their queue. A thread of its own per build (std::async) made a thread, its
++   * stack and the driver's state for a thread anew each time. The worker is never destroyed: no job outlives the device
++   * it builds for, as a device takes its pending builds before it goes, and at the program's end the threads wait for
++   * jobs that do not come.
++   */
++  template <class Handle>
++  class PipelineWorker
++  {
++  public:
++    [[nodiscard]] static PipelineWorker& Instance()
++    {
++      static PipelineWorker* const worker = new PipelineWorker();
++      return *worker;
++    }
++
++    /** Queues `build`; its future is ready once a thread has run it. std::system_error when no thread can start. */
++    [[nodiscard]] std::future<Handle> Post(
++      std::packaged_task<Handle()> build
++    )
++    {
++      std::future<Handle> built = build.get_future();
++      {
++        const std::lock_guard<std::mutex> lock(mMutex);
++        StartThreads();
++        mJobs.push_back(std::move(build));
++      }
++      mWake.notify_one();
++      return built;
++    }
++
++  private:
++    PipelineWorker() = default;
++
++    /** The threads not running yet: one the system refuses now is asked for again with the next job. */
++    void StartThreads()
++    {
++      while (mThreads < kPipelineWorkerThreads) {
++        try {
++          std::thread(&PipelineWorker::Run, this).detach();
++        } catch (const std::system_error&) {
++          if (mThreads == 0U) {
++            throw;
++          }
++          return;
++        }
++        ++mThreads;
++      }
++    }
++
++    [[noreturn]] void Run()
++    {
++#if FAFRE_PLATFORM_LINUX
++      (void)::pthread_setname_np(::pthread_self(), "faf-pipelines"); // as a tombstone names it
++#endif
++      for (;;) {
++        std::packaged_task<Handle()> build;
++        {
++          std::unique_lock<std::mutex> lock(mMutex);
++          mWake.wait(lock, [this] { return !mJobs.empty(); });
++          build = std::move(mJobs.front());
++          mJobs.pop_front();
++        }
++        build(); // what it throws goes into its future
++      }
++    }
++
++    std::mutex mMutex;
++    std::condition_variable mWake;
++    std::deque<std::packaged_task<Handle()>> mJobs;
++    unsigned mThreads = 0U;
++  };
++
++  /** What a deferred build the driver refused throws into its future (TakeBuiltPipeline). */
++  struct PipelineRefused
++  {
++    bool forNow = false; // for want of memory: tried again later (PipelineRetries)
++  };
++
++  /** How a deferred build ended. */
++  enum class PipelineBuildEnd
++  {
++    kBuilt,
++    kRefusedForNow, // for want of memory (PipelineRefused::forNow, std::bad_alloc): it may build later
++    kRefused,
++  };
++
++  /** Tries in all of a pipeline the driver refuses for want of memory, the last in place (PipelineRetries). */
++  inline constexpr unsigned kPipelineTries = 6U;
++  /** The wait before its second try; each later wait is twice the one before (0.5 s to 8 s, 15.5 s in all). */
++  inline constexpr std::chrono::milliseconds kPipelineRetrySpacing{500};
++
++  /**
++   * The pipelines the driver refused for want of memory (out of host or device memory, which a moment later may be
++   * there), by key: each is tried again kPipelineTries times in all, at kPipelineRetrySpacing and then twice as long
++   * each time, and its last try is made in place, so that it has an answer. A draw that needs one meanwhile waits, as
++   * for a worker's build. Any other refusal, and the last try's, the backend keeps as a failure. Render thread only.
++   */
++  class PipelineRetries
++  {
++  public:
++    using Clock = std::chrono::steady_clock;
++
++    enum class Turn
++    {
++      kFirst,   // never refused: built as any other
++      kWaiting, // refused, and its next try is not due yet
++      kAgain,   // refused, and its next try is due
++      kLast,    // refused, and its last try is due: in place
++    };
++
++    [[nodiscard]] Turn TurnOf(
++      const std::string& key,
++      const Clock::time_point now
++    ) const
++    {
++      const auto entry = mEntries.find(key);
++      if (entry == mEntries.end()) {
++        return Turn::kFirst;
++      }
++      if (now < entry->second.next) {
++        return Turn::kWaiting;
++      }
++      return entry->second.refusals + 1U >= kPipelineTries ? Turn::kLast : Turn::kAgain;
++    }
++
++    /** The tries of `key` refused so far: 0 for one never refused. */
++    [[nodiscard]] unsigned Refusals(
++      const std::string& key
++    ) const
++    {
++      const auto entry = mEntries.find(key);
++      return entry != mEntries.end() ? entry->second.refusals : 0U;
++    }
++
++    /**
++     * A try of `key` refused for want of memory at `now`: true when another try follows, false after the last one, which
++     * forgets the key.
++     */
++    bool Refused(
++      const std::string& key,
++      const Clock::time_point now
++    )
++    {
++      Entry& entry = mEntries[key];
++      ++entry.refusals;
++      if (entry.refusals >= kPipelineTries) {
++        mEntries.erase(key);
++        return false;
++      }
++      entry.next = now + Spacing(entry.refusals);
++      return true;
++    }
++
++    /** `key` built, or failed for good: true when it had been refused before. */
++    bool Forget(
++      const std::string& key
++    )
++    {
++      return mEntries.erase(key) != 0U;
++    }
++
++    [[nodiscard]] bool Has(
++      const std::string& key
++    ) const
++    {
++      return mEntries.find(key) != mEntries.end();
++    }
++
++    [[nodiscard]] std::size_t Size() const noexcept
++    {
++      return mEntries.size();
++    }
++
++    void Clear() noexcept
++    {
++      mEntries.clear();
++    }
++
++    /** The wait after a pipeline's `refusals`-th refusal (1 the first). */
++    [[nodiscard]] static Clock::duration Spacing(
++      const unsigned refusals
++    ) noexcept
++    {
++      return kPipelineRetrySpacing * (1U << (refusals - 1U));
++    }
++
++  private:
++    struct Entry
++    {
++      unsigned refusals = 0U;
++      Clock::time_point next{};
++    };
++    std::unordered_map<std::string, Entry> mEntries;
++  };
++
++  /** The render thread's pipelines waiting for another try; a device that goes clears it. */
++  inline PipelineRetries gPipelineRetries;
++
++  /**
++   * A finished build's pipeline; a null one when the build threw, so a worker's exception never reaches the draw that
++   * takes it. `end` says how it ended: a refusal for want of memory, or a build that ran out of memory itself
++   * (std::bad_alloc), may build later; anything else that threw is kept as a failure, like one the driver refused.
++   */
+   template <class Handle>
+   [[nodiscard]] Handle TakeBuiltPipeline(
+-    std::future<Handle>& build
++    std::future<Handle>& build,
++    PipelineBuildEnd* const end = nullptr
+   ) noexcept
+   {
++    PipelineBuildEnd how = PipelineBuildEnd::kRefused;
++    Handle built{};
+     try {
+-      return build.get();
++      built = build.get();
++      how = PipelineBuildEnd::kBuilt;
++    } catch (const PipelineRefused& refused) {
++      how = refused.forNow ? PipelineBuildEnd::kRefusedForNow : PipelineBuildEnd::kRefused;
++    } catch (const std::bad_alloc&) {
++      how = PipelineBuildEnd::kRefusedForNow;
+     } catch (...) {
+-      return Handle{};
+     }
++    if (end != nullptr) {
++      *end = how;
++    }
++    return built;
+   }
+ 
+   /**
+-   * Moves every finished build from `pending` into `built`. A build stays in `pending` until a draw asks for its key
+-   * again, and one asked for once (an effect seen for a moment, a variant switched off again) would otherwise hold
+-   * one of the kMaxPendingPipelines slots for the rest of the session.
++   * Hands every finished build in `pending` to `settle(key, pipeline, end)` and drops it from `pending`. A build stays
++   * in `pending` until a draw asks for its key again, and one asked for once (an effect seen for a moment, a variant
++   * switched off again) would otherwise hold one of the kMaxPendingPipelines slots for the rest of the session.
+    */
+-  template <class Handle>
+-  void CollectFinishedPipelines(
++  template <class Handle, class Settle>
++  void SettleFinishedPipelines(
+     std::unordered_map<std::string, std::future<Handle>>& pending,
+-    std::unordered_map<std::string, Handle>& built
++    Settle&& settle
+   )
+   {
+     for (auto entry = pending.begin(); entry != pending.end();) {
+@@ -76,9 +317,23 @@ namespace gpg::gal
+         continue;
+       }
+       if (entry->second.valid()) {
+-        built.emplace(entry->first, TakeBuiltPipeline(entry->second));
++        PipelineBuildEnd end = PipelineBuildEnd::kRefused;
++        Handle built = TakeBuiltPipeline(entry->second, &end);
++        settle(entry->first, std::move(built), end);
+       }
+       entry = pending.erase(entry);
+     }
+   }
++
++  /** Moves every finished build from `pending` into `built`, a failure as a null pipeline (SettleFinishedPipelines). */
++  template <class Handle>
++  void CollectFinishedPipelines(
++    std::unordered_map<std::string, std::future<Handle>>& pending,
++    std::unordered_map<std::string, Handle>& built
++  )
++  {
++    SettleFinishedPipelines(pending, [&built](const std::string& key, Handle pipeline, PipelineBuildEnd) {
++      built.emplace(key, std::move(pipeline));
++    });
++  }
+ } // namespace gpg::gal
