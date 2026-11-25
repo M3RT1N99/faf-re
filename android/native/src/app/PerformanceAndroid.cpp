@@ -114,6 +114,18 @@ namespace
     }
   }
 
+  /// Why Android made no session for `thread`, as far as it tells: the phone's power HAL has none, which a preferred update
+  /// rate of -1 says, as it is Android's own test (HintManagerService); or Android refused this one, for which the NDK's call
+  /// gives no reason, and from Android 16 the system log's perf_hint line has Android's.
+  [[nodiscard]] std::string NoSession(const char* const thread)
+  {
+    if (const std::int64_t rate = adpf::PreferredUpdateRateNanos(); rate >= 0) {
+      return std::string("Android refused a session for ") + thread + ", though its power HAL has them (preferred update rate "
+        + Milliseconds(rate) + "; from Android 16 the system log's perf_hint line says why)";
+    }
+    return std::string("Android made no session for ") + thread + ": the phone's power HAL has none (preferred update rate -1)";
+  }
+
   /// One thread's hint session, made, told and closed on that thread alone.
   class HintSession
   {
@@ -132,7 +144,7 @@ namespace
       }
       mSession = adpf::CreateSession(gettid(), targetNanos);
       if (mSession == nullptr) {
-        TurnOff(std::string("Android made no session for ") + mThread);
+        TurnOff(NoSession(mThread));
         return;
       }
       mTarget = targetNanos;

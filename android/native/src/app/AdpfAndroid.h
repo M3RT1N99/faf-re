@@ -15,8 +15,13 @@ namespace adpf
 {
   /// Whether Android has a hint manager for the process: from Android 13 (API 33), with its service up.
   [[nodiscard]] bool HasHintManager() noexcept;
+  /// How often Android would have a session's work told (APerformanceHint_getPreferredUpdateRateNanos): -1 where the
+  /// phone's power HAL has no hint sessions, which is Android's own test of their support (HintManagerService), and
+  /// without a hint manager.
+  [[nodiscard]] std::int64_t PreferredUpdateRateNanos() noexcept;
   /// A hint session for the thread `thread` of this process, `targetNanos` a cycle of its work; null below Android 13 and
-  /// where Android makes none, as on a phone or an emulator whose power HAL has no hint sessions.
+  /// where Android makes none, as on a phone or an emulator whose power HAL has no hint sessions. The NDK gives no reason
+  /// for a null one (no errno); from Android 16 the system log's perf_hint line has Android's.
   [[nodiscard]] APerformanceHintSession* CreateSession(pid_t thread, std::int64_t targetNanos) noexcept;
   /// 0, or Android's errno: EPIPE once its service cannot be reached.
   [[nodiscard]] int UpdateTarget(APerformanceHintSession* session, std::int64_t targetNanos) noexcept;

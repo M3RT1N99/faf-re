@@ -31,6 +31,16 @@ namespace adpf
     return HintManager() != nullptr;
   }
 
+  std::int64_t PreferredUpdateRateNanos() noexcept
+  {
+    if (__builtin_available(android 33, *)) {
+      if (APerformanceHintManager* const manager = HintManager()) {
+        return APerformanceHint_getPreferredUpdateRateNanos(manager);
+      }
+    }
+    return -1;
+  }
+
   APerformanceHintSession* CreateSession(const pid_t thread, const std::int64_t targetNanos) noexcept
   {
     if (__builtin_available(android 33, *)) {
