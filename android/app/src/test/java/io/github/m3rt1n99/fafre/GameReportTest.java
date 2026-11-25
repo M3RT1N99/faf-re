@@ -1,20 +1,31 @@
 package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 /**
  * What the report's END line quotes of the engine's log (GameReport.engineSummary): the Vulkan renderer's failure or a
- * warning from the run's end alone, the log's last entries, and nothing from before them.
+ * warning from the run's end alone, the log's last entries, and nothing from before them. And what a new game makes of
+ * the last one's files (GameReport.keepAsPrevious).
  */
 public class GameReportTest {
+    @Rule
+    public final TemporaryFolder folder = new TemporaryFolder();
+
     /** The log's start on a phone: Direct3D 12 tried first, Vulkan up, a probe of the first frames. */
     private static final List<String> START = Arrays.asList(
         "info: graphics_api option: (unset)",
@@ -119,5 +130,34 @@ public class GameReportTest {
             GameReport.plainEnd("END: CRASHED: native crash, status 11, crash in /data/app/libfafgame.so\n"));
         assertEquals("the process ended: low memory, status 9", GameReport.plainEnd(
             "END: the process ended: low memory, status 9, at 2026-11-24T18:31:02.417Z, lmkd killed it\n"));
+    }
+
+    @Test
+    public void aNewGameKeepsTheLastOnesReportTombstoneAndLogcatAsThePreviousOnes() throws IOException {
+        File files = folder.getRoot();
+        write(new File(files, "game.txt"), "END: CRASHED: killed by a signal, status 6 (SIGABRT)");
+        write(new File(files, GameReport.TOMBSTONE), "tombstone");
+        write(new File(files, GameReport.LOGCAT), "logcat");
+        write(new File(files, GameReport.PREVIOUS_LOGCAT), "the game before's logcat");
+        GameReport.keepAsPrevious(files);
+        assertEquals("END: CRASHED: killed by a signal, status 6 (SIGABRT)", read(new File(files, GameReport.PREVIOUS)));
+        assertEquals("tombstone", read(new File(files, GameReport.PREVIOUS_TOMBSTONE)));
+        assertEquals("logcat", read(new File(files, GameReport.PREVIOUS_LOGCAT)));
+        for (String now : new String[] {"game.txt", GameReport.TOMBSTONE, GameReport.LOGCAT}) {
+            assertFalse(now, new File(files, now).exists());
+        }
+
+        // A game without a logcat leaves none of the game before it.
+        write(new File(files, "game.txt"), "END: the program returned 0 after 84.4 s");
+        GameReport.keepAsPrevious(files);
+        assertFalse(new File(files, GameReport.PREVIOUS_LOGCAT).exists());
+    }
+
+    private static void write(File file, String text) throws IOException {
+        Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String read(File file) throws IOException {
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 }

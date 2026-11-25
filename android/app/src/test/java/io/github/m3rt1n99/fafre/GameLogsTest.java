@@ -89,6 +89,34 @@ public class GameLogsTest {
     }
 
     @Test
+    public void theZipHasTheLogcatOfAGameASignalEndedAndOfTheOneBeforeItScrubbedAsTheOtherTexts() throws IOException {
+        File files = folder.newFolder("files");
+        Storage storage = new Storage(folder.newFolder("storage"));
+        Storage.mkdirs(GameReport.folder(storage));
+        Files.write(new File(files, "game.txt").toPath(),
+            "END: CRASHED: killed by a signal, status 6 (SIGABRT), at 2026-11-24T18:31:02.417Z\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(GameReport.logcat(files).toPath(), ("logcat -d -b main -b crash -v threadtime --pid=4242: its last 500 lines\n"
+            + "11-24 18:31:02.417  4242  4299 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 4299 (Kestrel's sim)\n"
+            + "11-24 18:31:02.420  4242  4299 F libc    : /data/app/~~a==/" + APP + "-b==/lib/arm64/libfafgame.so\n")
+            .getBytes(StandardCharsets.UTF_8));
+        Files.write(GameReport.previousLogcat(files).toPath(), "the game before's\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(GameReport.log(storage).toPath(), "info: Initialize Armies brain nickname is Kestrel\n"
+            .getBytes(StandardCharsets.UTF_8));
+        File work = folder.newFolder("work");
+
+        Map<String, File> texts = GameLogs.texts(files, storage, work);
+        assertEquals(Arrays.asList("game.txt", GameReport.LOGCAT, GameReport.PREVIOUS_LOGCAT, "game/engine.sclog"),
+            Arrays.asList(texts.keySet().toArray()));
+        File zip = new File(folder.getRoot(), "logs.zip");
+        GameLogs.write("app: x\n", texts, APP, zip);
+        assertEquals("logcat -d -b main -b crash -v threadtime --pid=4242: its last 500 lines\n"
+            + "11-24 18:31:02.417  4242  4299 F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 4299 (player1's sim)\n"
+            + "11-24 18:31:02.420  4242  4299 F libc    : <apk>/lib/arm64/libfafgame.so\n", entries(zip).get(GameReport.LOGCAT));
+        assertEquals("the game before's\n", entries(zip).get(GameReport.PREVIOUS_LOGCAT));
+        assertEquals("a copy, as a game that runs goes on writing its own", work, texts.get(GameReport.LOGCAT).getParentFile());
+    }
+
+    @Test
     public void aZipOfNoTextsHasTheReportAlone() throws IOException {
         File zip = new File(folder.getRoot(), "logs.zip");
         GameLogs.write("app: x\n", new LinkedHashMap<>(), APP, zip);

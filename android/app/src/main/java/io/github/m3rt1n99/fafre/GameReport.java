@@ -21,15 +21,21 @@ import java.util.regex.Pattern;
  * (android/native/src/host/GameHost.cpp), and the engine's own log. When the process is gone, the
  * report gets how it ended: the program's exit code, which the host writes when the program
  * returns, or what Android says of the process (the engine ends its process itself when it cannot
- * start, as on Windows), with what the engine's log says of it. The last game's report and
- * tombstone stay beside the new game's.
+ * start, as on Windows), with what the engine's log says of it. The last game's report,
+ * tombstone and logcat stay beside the new game's.
  */
 final class GameReport {
     /** The tombstone's name in the app's files and in the results zip. */
     static final String TOMBSTONE = "game-tombstone.pb";
-    /** The last game's report and tombstone, by these names in the app's files and in the results zip. */
+    /**
+     * The end of the logcat of a game's process that a signal ended without a tombstone (ProcessExit.keepLogcat), by this
+     * name in the app's files and in the logs' zip.
+     */
+    static final String LOGCAT = "game-logcat.txt";
+    /** The last game's report, tombstone and logcat, by these names in the app's files and in the zips. */
     static final String PREVIOUS = "game-previous.txt";
     static final String PREVIOUS_TOMBSTONE = "game-previous-tombstone.pb";
+    static final String PREVIOUS_LOGCAT = "game-previous-logcat.txt";
     static final String PROCESS = ":game";
     /** The report's last line begins with this: how the game ended. */
     static final String END = "END: ";
@@ -74,19 +80,48 @@ final class GameReport {
     }
 
     static File file(Context context) {
-        return new File(context.getFilesDir(), "game.txt");
+        return file(context.getFilesDir());
+    }
+
+    /** The report in the app's files {@code files}, as the files below. */
+    static File file(File files) {
+        return new File(files, "game.txt");
     }
 
     static File tombstone(Context context) {
-        return new File(context.getFilesDir(), TOMBSTONE);
+        return tombstone(context.getFilesDir());
+    }
+
+    static File tombstone(File files) {
+        return new File(files, TOMBSTONE);
+    }
+
+    static File logcat(Context context) {
+        return logcat(context.getFilesDir());
+    }
+
+    static File logcat(File files) {
+        return new File(files, LOGCAT);
     }
 
     static File previous(Context context) {
-        return new File(context.getFilesDir(), PREVIOUS);
+        return previous(context.getFilesDir());
+    }
+
+    static File previous(File files) {
+        return new File(files, PREVIOUS);
     }
 
     static File previousTombstone(Context context) {
-        return new File(context.getFilesDir(), PREVIOUS_TOMBSTONE);
+        return previousTombstone(context.getFilesDir());
+    }
+
+    static File previousTombstone(File files) {
+        return new File(files, PREVIOUS_TOMBSTONE);
+    }
+
+    static File previousLogcat(File files) {
+        return new File(files, PREVIOUS_LOGCAT);
     }
 
     /** The game's folder in the app's storage: its HOME, its vault and the engine's log. */
@@ -108,7 +143,7 @@ final class GameReport {
     }
 
     /**
-     * A new game (its own process): no report and no tombstone yet, and the last game's are the
+     * A new game (its own process): no report, tombstone or logcat yet, and the last game's are the
      * previous one's. A game whose process died in the back has nobody's word on how it ended yet.
      */
     static void begin(Context context) {
@@ -125,10 +160,16 @@ final class GameReport {
             } catch (IOException e) {
                 // It stays as it is.
             }
-            replace(file, previous(context));
-            replace(tombstone(context), previousTombstone(context));
+            keepAsPrevious(context.getFilesDir());
         }
         append(context, STARTED + Instant.now());
+    }
+
+    /** The report, tombstone and logcat in the app's files {@code files} become the previous game's. */
+    static void keepAsPrevious(File files) {
+        replace(file(files), previous(files));
+        replace(tombstone(files), previousTombstone(files));
+        replace(logcat(files), previousLogcat(files));
     }
 
     /** `from` becomes `to`; without a `from`, `to` holds nothing of an earlier game either. */
@@ -297,8 +338,8 @@ final class GameReport {
 
     /** How the game ended, for a report whose process is gone; `since` is the report's last write. */
     private static String end(Context context, String report, long since) {
-        // Before all else: a crash leaves its tombstone also after a fatal's line.
-        ProcessExit.End end = ProcessExit.last(context, PROCESS, since, tombstone(context));
+        // Before all else: a crash leaves its tombstone, or its logcat, also after a fatal's line.
+        ProcessExit.End end = ProcessExit.last(context, PROCESS, since, tombstone(context), logcat(context));
         // Without the file's name: a report and its tombstone change names together (begin).
         String saved = end != null && end.tombstone ? " (tombstone in the results)" : "";
         Matcher fatal = FATAL.matcher(report);

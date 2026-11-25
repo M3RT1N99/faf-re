@@ -27,9 +27,10 @@ import java.util.zip.ZipOutputStream;
 /**
  * The game's recent logs for the FAF client's problem report (StatusProvider's call game_logs, android/README.md, The logs):
  * a zip in the app's cache of what Share results takes of the game, the last game's report, the engine's log and newest
- * crash report and a native crash's tombstone, and the game's before it, after report.txt (the app's version, the engine's
- * commit, Android's version and the device's model). It goes into public issues, so its texts are scrubbed together
- * (LogScrubber), and a tombstone comes as its summary (Tombstone). A zip stays until the next one, which takes its grant.
+ * crash report and a native crash's tombstone, or the end of the logcat of a process a signal ended without one, and the
+ * game's before it, after report.txt (the app's version, the engine's commit, Android's version and the device's model). It
+ * goes into public issues, so its texts are scrubbed together (LogScrubber), and a tombstone comes as its summary
+ * (Tombstone). A zip stays until the next one, which takes its grant.
  */
 final class GameLogs {
     /** The zips' folder in the app's cache, and their path in ResultsProvider's URIs. */
@@ -63,7 +64,7 @@ final class GameLogs {
                 Storage.deleteTree(file);
             }
         }
-        // The report's end, once the game's process is gone, and with it a native crash's tombstone.
+        // The report's end, once the game's process is gone, and with it a native crash's tombstone or the logcat's end.
         GameReport.current(context);
         Storage storage = null;
         try {
@@ -71,18 +72,9 @@ final class GameLogs {
         } catch (IOException e) {
             // No shared storage: the zip has what the app's own folder holds.
         }
-        // Copies: the scrubber reads each text twice, and a game that runs goes on writing its own.
         File work = Storage.mkdirs(new File(folder, "work"));
         try {
-            Map<String, File> texts = new LinkedHashMap<>();
-            copy(texts, work, "game.txt", GameReport.file(context));
-            summary(texts, work, "game-tombstone.txt", GameReport.tombstone(context));
-            copy(texts, work, GameReport.PREVIOUS, GameReport.previous(context));
-            summary(texts, work, "game-previous-tombstone.txt", GameReport.previousTombstone(context));
-            if (storage != null) {
-                copy(texts, work, "game/engine.sclog", GameReport.log(storage));
-                copy(texts, work, "game/" + GameReport.crashReport(storage).getName(), GameReport.crashReport(storage));
-            }
+            Map<String, File> texts = texts(context.getFilesDir(), storage, work);
             String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(new Date());
             File zip = new File(folder, "faf-re-game-logs-" + stamp + ".zip");
             File part = new File(work, zip.getName());
@@ -96,6 +88,26 @@ final class GameLogs {
         } finally {
             Storage.deleteTree(work);
         }
+    }
+
+    /**
+     * The zip's texts by their names there, of the app's files {@code files} and the game's folder in {@code storage} (null
+     * without shared storage): copies in {@code work}, as the scrubber reads each text twice, and a game that runs goes on
+     * writing its own.
+     */
+    static Map<String, File> texts(File files, Storage storage, File work) throws IOException {
+        Map<String, File> texts = new LinkedHashMap<>();
+        copy(texts, work, "game.txt", GameReport.file(files));
+        summary(texts, work, "game-tombstone.txt", GameReport.tombstone(files));
+        copy(texts, work, GameReport.LOGCAT, GameReport.logcat(files));
+        copy(texts, work, GameReport.PREVIOUS, GameReport.previous(files));
+        summary(texts, work, "game-previous-tombstone.txt", GameReport.previousTombstone(files));
+        copy(texts, work, GameReport.PREVIOUS_LOGCAT, GameReport.previousLogcat(files));
+        if (storage != null) {
+            copy(texts, work, "game/engine.sclog", GameReport.log(storage));
+            copy(texts, work, "game/" + GameReport.crashReport(storage).getName(), GameReport.crashReport(storage));
+        }
+        return texts;
     }
 
     /** report.txt: the app's version, the engine's commit, Android's version and the device's model, and SCRUBBED. No account. */
