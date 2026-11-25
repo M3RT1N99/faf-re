@@ -1,5 +1,5 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..e7eddf9 100644
+index e4f93ae..a9d1bc5 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
 @@ -57,12 +57,19 @@ namespace moho
@@ -23,7 +23,17 @@ index e4f93ae..e7eddf9 100644
        &replay_KeyframeEvery
      );
  
-@@ -586,6 +593,25 @@ namespace moho
+@@ -149,6 +156,9 @@ namespace moho
+     Clock::time_point sLastProgress{};
+     std::int32_t sLastProgressTick = 0;
+ 
++    // Engine addition: whether the session the frames play is a replay's (REPLAY_SessionIsReplay).
++    std::atomic<bool> sSessionIsReplay{false};
++
+     bool sLaunchPending = false;
+     bool sRestartWanted = false;
+     bool sRestarting = false;
+@@ -586,6 +596,25 @@ namespace moho
      void StartKeyframePreparation()
      {
        sPrepareStartDue = false;
@@ -49,7 +59,30 @@ index e4f93ae..e7eddf9 100644
        if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
          return;
        }
-@@ -1163,6 +1189,14 @@ namespace moho
+@@ -1131,11 +1160,22 @@ namespace moho
+     return progress;
+   }
+ 
++  /**
++   * Engine addition: whether the session the frames play is a replay's, as the last one saw it (REPLAY_MainFrame), until
++   * the session's teardown. On any thread, unlike the session: for a host that asks from its own, as the Android app does
++   * to keep a replay's process in the back while one plays.
++   */
++  bool REPLAY_SessionIsReplay() noexcept
++  {
++    return sSessionIsReplay.load();
++  }
++
+   void REPLAY_MainFrame(
+     ISTIDriver& driver,
+     CWldSession& session
+   )
+   {
++    sSessionIsReplay.store(session.IsReplay);
+     if (!session.IsReplay || sReplayPath.empty()) {
+       return;
+     }
+@@ -1163,6 +1203,14 @@ namespace moho
        return;
      }
  
@@ -64,7 +97,7 @@ index e4f93ae..e7eddf9 100644
      if (replay_KeyframeEvery <= 0 || sKeyframePending || sRestarting) {
        return;
      }
-@@ -1179,9 +1213,13 @@ namespace moho
+@@ -1179,9 +1227,13 @@ namespace moho
      }
      // Or will be: a save stops the sim, which shows.
  #if !FAFRE_PLATFORM_WINDOWS
@@ -81,3 +114,12 @@ index e4f93ae..e7eddf9 100644
      }
  #else
      if (
+@@ -1233,6 +1285,8 @@ namespace moho
+ 
+   void REPLAY_OnTeardown()
+   {
++    // Each teardown ends the session the frames played, also the one before a replay's own starts.
++    sSessionIsReplay.store(false);
+     // The teardown before this replay's session starts, not the end of the replay.
+     if (sLaunchPending) {
+       return;

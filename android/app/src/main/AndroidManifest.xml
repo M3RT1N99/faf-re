@@ -13,7 +13,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- GameActivity's multicast lock: Wi-Fi hands a phone the broadcasts that find LAN games only under it. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <!-- TestService: downloads and test runs keep going with the screen off or the app in the background. NetworkGameService: so does a network game. -->
+    <!-- TestService: downloads and test runs keep going with the screen off or the app in the background. NetworkGameService: so does a network game, and a replay keeps its process in the background. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -115,7 +115,9 @@
             android:foregroundServiceType="dataSync" />
 
         <!-- specialUse: dataSync is limited to 6 hours in 24 on Android 15, and no other type fits a game that plays with
-             others over the network. Google Play would review the subtype; this app is not there. -->
+             others over the network, nor a replay kept in the back: mediaPlayback is for what the user still hears or sees
+             there, and a replay's sound pauses in the back. One type for both, so its permission holds for each start.
+             Google Play would review the subtype; this app is not there. -->
         <service
             android:name=".NetworkGameService"
             android:process=":game"
@@ -123,7 +125,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="A running network game of the player, whose other players wait for it in lockstep." />
+                android:value="A running network game of the player, whose other players wait for it in lockstep; or a replay the player watches, kept until they come back to it." />
         </service>
 
         <!-- Hands out the app's zips, read-only, by grant: the results zip to the app the user shares it with, and the game's

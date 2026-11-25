@@ -59,6 +59,9 @@ final class Game {
     /** Whether a game goes on behind the game's UI, as opposed to the menus and the score screen. */
     static native boolean gamePlaying();
 
+    /** Whether the session the game plays is a replay's, as its last frame saw it; with gamePlaying, a replay that plays. */
+    static native boolean replaySession();
+
     /** A line of the game's report, which also goes to the system log. */
     static native void report(String line);
 }

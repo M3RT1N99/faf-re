@@ -18,6 +18,8 @@ namespace moho
   [[nodiscard]] int NET_OpenUDPConnectors() noexcept;
   // The patched CUIWorldViewEvents.cpp's: whether a game goes on behind the game's UI.
   [[nodiscard]] bool UI_GamePlaying() noexcept;
+  // The patched ReplayTimeline.cpp's: whether the session the frames play is a replay's.
+  [[nodiscard]] bool REPLAY_SessionIsReplay() noexcept;
 } // namespace moho
 
 /// The activity came to the front or went to the back.
@@ -62,6 +64,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_network
 extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_gamePlaying(JNIEnv*, jclass)
 {
   return moho::UI_GamePlaying() ? JNI_TRUE : JNI_FALSE;
+}
+
+/// Whether the session the frames play is a replay's, as the last one saw it, until its teardown: with gamePlaying, a replay
+/// that plays, whose process NetworkGameService keeps in the back.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_replaySession(JNIEnv*, jclass)
+{
+  return moho::REPLAY_SessionIsReplay() ? JNI_TRUE : JNI_FALSE;
 }
 
 /// A line of the game's report from the app's side.

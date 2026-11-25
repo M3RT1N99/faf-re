@@ -348,6 +348,12 @@ the game data they imported. Everything lives in the app's external files folder
     - Android allows the start only from the front. A refusal leaves `network game: no foreground service: <why>` in
       `game.txt`, the game goes on, and the app asks again the next time the activity comes to the front; until then Home
       stops the game for everybody, as above.
+    - A replay that plays has the same service (`Game.replaySession` with `Game.gamePlaying`): without it Android ends the
+      process of a game in the back soon, as a Galaxy S22 Ultra did 25 s after Home (exit reason 13, `[TOO MANY CACHED
+      PROCS]`). It holds no lock, as nobody waits for a replay: in the back the replay plays on while the phone is awake.
+      Its notification says *A replay is running*, its lines in `game.txt` begin with `replay:`, and it goes when the
+      replay's game ends or its session goes, and after 30 minutes in the back. Not while a replay loads, which the engine
+      has no word of yet.
     - On SDL's activity (stage 2b of [CLIENT_PLAN.md](CLIENT_PLAN.md)) the service is the same; checked there in a LAN game
       of two emulators with an easy AI, with no desync: Home on one side for a minute, the other side's activity
       destroyed for a minute, the service from the lobby on, its end a few seconds after *End Game* and within a second
