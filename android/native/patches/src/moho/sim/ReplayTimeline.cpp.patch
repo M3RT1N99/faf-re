@@ -1,5 +1,5 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..a9d1bc5 100644
+index e4f93ae..258b993 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
 @@ -57,12 +57,19 @@ namespace moho
@@ -59,7 +59,18 @@ index e4f93ae..a9d1bc5 100644
        if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
          return;
        }
-@@ -1131,11 +1160,22 @@ namespace moho
+@@ -1021,7 +1050,10 @@ namespace moho
+ 
+     ForgetKeyframes();
+     RemoveLeftoverKeyframes();
++#if !FAFRE_PLATFORM_ANDROID
++    // Android saves none (REPLAY_MainFrame): its one line of them is StartKeyframePreparation's.
+     gpg::Logf("Replay timeline: keyframes go in %s", KeyframeRoot().string().c_str());
++#endif
+     EndSeek();
+     sReplayPath = path;
+     sTotalBeats = gVcrReplayBeats;
+@@ -1131,11 +1163,22 @@ namespace moho
      return progress;
    }
  
@@ -82,7 +93,7 @@ index e4f93ae..a9d1bc5 100644
      if (!session.IsReplay || sReplayPath.empty()) {
        return;
      }
-@@ -1163,6 +1203,14 @@ namespace moho
+@@ -1163,6 +1206,14 @@ namespace moho
        return;
      }
  
@@ -97,7 +108,7 @@ index e4f93ae..a9d1bc5 100644
      if (replay_KeyframeEvery <= 0 || sKeyframePending || sRestarting) {
        return;
      }
-@@ -1179,9 +1227,13 @@ namespace moho
+@@ -1179,9 +1230,13 @@ namespace moho
      }
      // Or will be: a save stops the sim, which shows.
  #if !FAFRE_PLATFORM_WINDOWS
@@ -114,7 +125,7 @@ index e4f93ae..a9d1bc5 100644
      }
  #else
      if (
-@@ -1233,6 +1285,8 @@ namespace moho
+@@ -1233,6 +1288,8 @@ namespace moho
  
    void REPLAY_OnTeardown()
    {
