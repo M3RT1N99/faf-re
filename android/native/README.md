@@ -155,6 +155,14 @@ which is AAudio on Android. Movie sound is an SDL3 audio stream (`platform/posix
 pause in the back and while another app has the audio focus (`src/app/SoundAndroid.cpp`): SDL pauses its output
 on Android only where it holds the program in the back, which this build turns off.
 
+A replay's move to another time (the timeline's fast-forward, `moho::gReplayFastForward`) is the engine's own, here as
+on the PC: while it lasts `CScApp::Main` skips the sound's frames (`SND_Frame`, XACT's work, and the user sound
+manager's `Frame`), the camera manager's frame and `REN_Frame`, which only sets the render clock and the frame's
+figures, and the frame after the move's end (at its target, a cancel or a stall) runs them again. The frames are drawn
+meanwhile: the controls' `OnFrame` (`UpdateFrameRate`) and the paint (`CD3DDevice::Refresh`) run each frame, so the UI
+shows, with the timeline's strip of the move's progress and its *Cancel*, and so does the world, its camera and its
+render clock held where the move began. SDL's output is not paused for a move.
+
 FFmpeg is the engine's submodule, unchanged, built by `ffmpeg/CMakeLists.txt` with the NDK's clang
 from what its configure writes for each ABI, checked in under `ffmpeg/<abi>/`. `ffmpeg/generate.sh`
 writes those (Git Bash, minutes per ABI) with the components of `dependencies/ffmpeg/faf/generate.sh`;
