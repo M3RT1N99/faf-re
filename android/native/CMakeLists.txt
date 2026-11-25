@@ -423,6 +423,7 @@ target_link_options(faf_movie_tests PRIVATE -Wl,--gc-sections)
 add_executable(faf_griff_tests
   tests/griff/Main.cpp
   tests/griff/CameraClearTests.cpp
+  tests/griff/GriffCameraTests.cpp
   tests/griff/GriffDraftTests.cpp
   tests/griff/GriffGroupsTests.cpp
   tests/griff/GriffPlaceTests.cpp

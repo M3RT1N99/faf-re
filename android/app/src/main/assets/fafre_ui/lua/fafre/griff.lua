@@ -115,11 +115,20 @@ end
 
 -- --- The camera ---------------------------------------------------------------------------------------------------------
 
---- The camera as Griff's gestures move it (the mockup's camUpdate). `seen`: the camera the last frame drew, which UnProject
---- shows until the next; `glide`: after a pan, the map's velocity on the screen in the picture's pixels a second, slowing
---- by e^-6t until under `stop`; `placed`: where the glide put the focus, to tell another's move; `flight`: where it flies to
---- the group; `pinch`: what the fingers keep under them.
-local motion = {seen = false, glide = false, placed = false, flight = false, pinch = false}
+--- The camera as Griff's gestures move it (the mockup's camUpdate). `seen`: each view's camera as the last frame drew it,
+--- which UnProject shows until the next; `glide`: after a pan, the map's velocity on the screen in the picture's pixels a
+--- second, slowing by e^-6t until under `stop`, and the view it glides; `placed`: where the glide put the focus, to tell
+--- another's move; `flight`: where the main view flies to the group; `pinch`: what the fingers keep under them, and on which
+--- view.
+local motion = {seen = {}, glide = false, placed = false, flight = false, pinch = false}
+
+--- FAF's map views by the program's numbers (include/GriffCamera.h): the main one, whose camera is WorldCamera, the left one
+--- where FAF splits the screen (worldview.lua CreateMainWorldView); and the right one there, whose camera is WorldCamera2. A
+--- finger's pan, its glide and a pinch move the camera of the view the program says they are on, as a PC's middle button and
+--- wheel move the one under the mouse; the flight to the group and the program's looks move the main one, whose map has the
+--- handle and the draft.
+local MainView, RightView = 1, 2
+local Views = {MainView, RightView}
 
 local function Valid(place)
     return place and place[1] == place[1] and place[3] == place[3]
@@ -129,6 +138,20 @@ local function Camera()
     return GetCamera('WorldCamera')
 end
 
+--- The view the program names, `which`, and its camera; nothing where FAF shows no such view, as the right one outside the
+--- split screen.
+local function ViewOf(which)
+    local view, camera
+    if which == RightView then
+        view, camera = WorldView.viewRight, GetCamera('WorldCamera2')
+    else
+        view, camera = WorldView.viewLeft, Camera()
+    end
+    if view and camera then
+        return view, camera
+    end
+end
+
 --- A finger on the map, or a new gesture of the camera: what moved it moves it no more.
 function StopCamera()
     motion.glide = false
@@ -136,14 +159,14 @@ function StopCamera()
     motion.flight = false
 end
 
---- After a pan the map glides on at this velocity in the picture's pixels a second (the finger's), on the system's clock:
---- a paused game glides too.
-function Glide(x, y, stop)
+--- After a pan the map of the view `which` glides on at this velocity in the picture's pixels a second (the finger's), on the
+--- system's clock: a paused game glides too.
+function Glide(x, y, stop, which)
     StopCamera()
-    motion.glide = {x = x, y = y, stop = math.max(stop, 1)}
+    motion.glide = {x = x, y = y, stop = math.max(stop, 1), which = which}
 end
 
-local function GlideStep(view, settings, delta)
+local function GlideStep(view, camera, settings, delta)
     local glide = motion.glide
     local focus = settings.Focus
     -- Moved since by another, a key or the minimap, or held by the map's edge (FAF keeps its camera over the map): over.
@@ -171,7 +194,6 @@ local function GlideStep(view, settings, delta)
         return
     end
     settings.Focus = Vector(focus[1] + there[1] - here[1], focus[2] + there[2] - here[2], focus[3] + there[3] - here[3])
-    local camera = Camera()
     camera:RestoreSettings(settings)
     motion.placed = camera:SaveSettings().Focus
     local kept = math.exp(-6 * delta)
@@ -183,7 +205,7 @@ end
 
 --- The flight to the group (the mockup's camFly): 1 - e^-14t of the way each frame, there within a pixel; or where the map's
 --- edge holds the camera.
-local function FlightStep(view, settings, delta)
+local function FlightStep(view, camera, settings, delta)
     local target = motion.flight
     local focus = settings.Focus
     local part = 1 - math.exp(-14 * delta)
@@ -196,7 +218,6 @@ local function FlightStep(view, settings, delta)
         motion.flight = false
     end
     settings.Focus = Vector(x, y, z)
-    local camera = Camera()
     camera:RestoreSettings(settings)
     -- Held by the map's edge, as FAF keeps its camera over the map: FAF moved it less than half the step asked. A step under a
     -- pixel says nothing of that, as from a frame's tiny delta, and so near the group the pixel's snap ends the flight.
@@ -207,58 +228,67 @@ local function FlightStep(view, settings, delta)
     end
 end
 
---- Each frame of the UI, after the camera's: the camera it drew, which UnProject shows until the next, for the pinch's moves.
---- None without a view or a camera: a pinch then does nothing rather than work from an old camera.
+--- Each frame of the UI, after the camera's: each view's camera as it drew, which UnProject shows until the next, for the
+--- pinch's moves. None for a view FAF does not show: a pinch there does nothing rather than work from an old camera.
 local function See()
-    motion.seen = false
-    local view = WorldView.viewLeft
-    local camera = Camera()
-    if view and camera then
-        local settings = camera:SaveSettings()
-        motion.seen = {focus = settings.Focus, zoom = settings.Zoom}
+    motion.seen = {}
+    for _, which in Views do
+        local view, camera = ViewOf(which)
+        if view then
+            local settings = camera:SaveSettings()
+            motion.seen[which] = {focus = settings.Focus, zoom = settings.Zoom}
+        end
     end
 end
 
---- Each frame of the UI, after the camera's: the glide's or the flight's next step.
+--- Each frame of the UI, after the camera's: the glide's or the flight's next step. One whose view FAF no longer shows, as
+--- the right one after the split screen, is over.
 local function Drive(delta)
-    local view = WorldView.viewLeft
-    local camera = Camera()
-    if not view or not camera then
+    local glide = motion.glide
+    if not glide and not motion.flight then
+        return
+    end
+    local view, camera = ViewOf(glide and glide.which or MainView)
+    if not view then
+        StopCamera()
         return
     end
     local settings = camera:SaveSettings()
-    if motion.glide then
-        GlideStep(view, settings, delta)
-    elseif motion.flight then
-        FlightStep(view, settings, delta)
+    if glide then
+        GlideStep(view, camera, settings, delta)
+    else
+        FlightStep(view, camera, settings, delta)
     end
 end
 
---- Two fingers, or the one left of them, keep what lies under them at this place (the picture's pixels): its world point,
---- the zoom as it is and how far apart the two are (0 for one).
-function PinchStart(x, y, distance)
+--- Two fingers, or the one left of them, keep what lies under them at this place (the picture's pixels) of the view `which`:
+--- its world point, the zoom as it is and how far apart the two are (0 for one). The one left of them goes on with the
+--- view's zoom as the pinch last set it.
+function PinchStart(x, y, distance, which)
     StopCamera()
-    local view = WorldView.viewLeft
-    local camera = Camera()
+    local view, camera = ViewOf(which)
     local anchor = view and UnProject(view, {x, y})
-    if not camera or not Valid(anchor) then
+    if not Valid(anchor) then
         motion.pinch = false
         return
     end
-    local zoom = motion.pinch and motion.pinch.last or (motion.seen and motion.seen.zoom) or camera:SaveSettings().Zoom
-    motion.pinch = {anchor = anchor, zoom = zoom, distance = distance, last = zoom}
+    local pinch, seen = motion.pinch, motion.seen[which]
+    local zoom = pinch and pinch.which == which and pinch.last or seen and seen.zoom or camera:SaveSettings().Zoom
+    motion.pinch = {which = which, anchor = anchor, zoom = zoom, distance = distance, last = zoom}
 end
 
 --- The fingers are here now, `distance` apart (0: one finger): the zoom by how far apart they are from where they began, and
 --- the focus such that the world point they began on is under them again. Measured on the camera the last frame drew (its
 --- focus and zoom, and UnProject's picture), so that it holds however many moves come in a frame: a move of the focus moves
---- what is under a place by as much, and a zoom about the focus by its factor.
+--- what is under a place by as much, and a zoom about the focus by its factor. On the pinch's view.
 function Pinch(x, y, distance)
     local pinch = motion.pinch
-    local view = WorldView.viewLeft
-    local camera = Camera()
-    local seen = motion.seen
-    if not pinch or not view or not camera or not seen then
+    if not pinch then
+        return
+    end
+    local view, camera = ViewOf(pinch.which)
+    local seen = motion.seen[pinch.which]
+    if not view or not seen then
         return
     end
     local zoom = pinch.zoom
@@ -783,7 +813,7 @@ function Start(parent)
             local ok, problem = pcall(See)
             if not ok then
                 WARN('fafre_ui: griff: camera seen: ' .. tostring(problem))
-                motion.seen = false
+                motion.seen = {}
                 seeing = false
             end
         end

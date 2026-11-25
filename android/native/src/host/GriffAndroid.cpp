@@ -29,6 +29,7 @@
 #include <exception>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -38,6 +39,7 @@
 #include <Windows.h>
 
 #include <CameraClear.h>
+#include <GriffCamera.h>
 #include <GriffDraft.h>
 #include <GriffGroups.h>
 #include <GriffPlace.h>
@@ -313,6 +315,15 @@ namespace
     return moho::UI_GamePlaying() || OnMap(static_cast<float>(x), static_cast<float>(y));
   }
 
+  /// The view whose camera the fingers move from here (include/GriffCamera.h): the right one of FAF's split screen where the
+  /// place is on it, else the main one, also on the minimap and on a panel over the map.
+  [[nodiscard]] griffcamera::View CameraViewAt(const int x, const int y)
+  {
+    moho::CUIWorldView* const view = WorldViewAt(static_cast<float>(x), static_cast<float>(y));
+    const moho::CameraImpl* const camera = view != nullptr ? view->GetCamera() : nullptr;
+    return griffcamera::ViewOfCamera(camera != nullptr ? camera->mName.c_str() : "");
+  }
+
   /// Whether a press here comes to a Checkbox of FAF's, which acts on the press (grifftap::DragPressesNothing): the control
   /// under it or a parent whose Lua object has Checkbox's ToggleCheck (maui/checkbox.lua), its class's as FAF's Lua finds it.
   [[nodiscard]] bool PressComesToCheckbox(const float x, const float y)
@@ -352,11 +363,11 @@ namespace
     return CommandModeArmed();
   }
 
-  /// Runs a function of griff.lua, `format` with up to three numbers, as its console command.
-  void CallGriff(const char* const format, const int first, const int second, const int third)
+  /// Runs a function of griff.lua, `format` with up to four numbers, as its console command.
+  void CallGriff(const char* const format, const int first, const int second, const int third, const int fourth = 0)
   {
-    char call[64];
-    std::snprintf(call, sizeof call, format, first, second, third);
+    char call[96];
+    std::snprintf(call, sizeof call, format, first, second, third, fourth);
     char command[160];
     std::snprintf(command, sizeof command, "%s%s", kGriffLua, call);
     moho::CON_Execute(command);
@@ -2899,12 +2910,16 @@ namespace
   Drag gDrag = Drag::kNone;
   /// The watch over a formation's order, which its lift gives.
   int gFormationWatch = 0;
+  /// The views whose cameras a pan and a pinch move, and their glides.
+  griffcamera::Fingers gCameraFingers;
 
-  /// The camera glides on at this velocity, in the picture's pixels a second (griff.lua Glide), or stays where it is.
-  void Glide(const int velocityX, const int velocityY)
+  /// The camera of `view` glides on at this velocity, in the picture's pixels a second (griff.lua Glide), or stays where it is.
+  void Glide(const int velocityX, const int velocityY, const griffcamera::View view)
   {
     if (velocityX != 0 || velocityY != 0) {
-      CallGriff("Glide(%d, %d, %d)", velocityX, velocityY, static_cast<int>(gGlideStop.load() + 0.5f));
+      CallGriff(
+        "Glide(%d, %d, %d, %d)", velocityX, velocityY, static_cast<int>(gGlideStop.load() + 0.5f), static_cast<int>(view)
+      );
     }
   }
 
@@ -2916,7 +2931,7 @@ namespace
       case Drag::kPan:
         host::TouchButton(host::kButtonMiddle, FALSE, x, y);
         if ((velocityX != 0 || velocityY != 0) && !ClicksRun()) {
-          Glide(velocityX, velocityY);
+          Glide(velocityX, velocityY, gCameraFingers.Panned());
         }
         break;
       case Drag::kBox:
@@ -3206,6 +3221,8 @@ namespace
     ForgetRest();
     bool map = false;
     bool checkbox = false;
+    // The view a pan's press comes to, whose camera the engine's drag moves.
+    griffcamera::View panned = griffcamera::View::kMain;
     try {
       // A box, a panel's drag or a pan would come between the undo's or the tick's clicks; and one of the app's pieces that
       // came over where the finger went down takes it.
@@ -3216,6 +3233,9 @@ namespace
       // pans, or boxes after a rest.
       map = OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
       checkbox = !map && PressComesToCheckbox(static_cast<float>(drag.x), static_cast<float>(drag.y));
+      if (map) {
+        panned = CameraViewAt(drag.nowX, drag.nowY);
+      }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
@@ -3245,6 +3265,7 @@ namespace
       host::TouchButton(host::kButtonLeft, TRUE, drag.x, drag.y);
     } else {
       gDrag = Drag::kPan;
+      gCameraFingers.Pan(panned);
       host::TouchButton(host::kButtonMiddle, TRUE, drag.nowX, drag.nowY);
       Say(kSaidPan, drag.number, 0);
     }
@@ -3270,20 +3291,18 @@ namespace
     }
   }
 
-  /// Whether griff.lua has the fingers' pinch (Pinch reached it), which their lift ends there.
-  bool gPinching = false;
-
   /// The camera keeps what lies at a place under the fingers (griff.lua): from here on, at the pinch's start or when one of two
   /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them. Where the fingers
-  /// move the camera (CameraAt), not while the program's clicks run, which aim by the camera.
+  /// move the camera (CameraAt), not while the program's clicks run, which aim by the camera. The camera is the one of the view
+  /// under the pinch where it reached griff.lua first (gCameraFingers), which its start names and griff.lua keeps for its moves.
   void Pinch(const char* const format, const Argument places)
   {
     try {
       const int x = Coordinate(places, 0);
       const int y = Coordinate(places, 1);
       if (CameraAt(x, y) && !ClicksRun()) {
-        CallGriff(format, x, y, Coordinate(places, 2));
-        gPinching = true;
+        const griffcamera::View view = gCameraFingers.Pinch([x, y] { return CameraViewAt(x, y); });
+        CallGriff(format, x, y, Coordinate(places, 2), static_cast<int>(view));
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -3292,7 +3311,7 @@ namespace
 
   void PinchStartTask(const Argument places)
   {
-    Pinch("PinchStart(%d, %d, %d)", places);
+    Pinch("PinchStart(%d, %d, %d, %d)", places);
   }
 
   void PinchTask(const Argument places)
@@ -3300,17 +3319,16 @@ namespace
     Pinch("Pinch(%d, %d, %d)", places);
   }
 
-  /// The fingers' lift ends the pinch griff.lua has, also one that the game's end came in the middle of, while its session's UI is
-  /// there to end it; the camera glides on at the fingers' velocity.
+  /// The fingers' lift ends the pinch griff.lua has (one that reached it), also one that the game's end came in the middle of,
+  /// while its session's UI is there to end it; the camera of its view glides on at the fingers' velocity.
   void PinchEndTask(const Argument places)
   {
     try {
-      const bool pinching = gPinching;
-      gPinching = false;
-      if (pinching && moho::WLD_GetActiveSession() != nullptr) {
+      const std::optional<griffcamera::View> view = gCameraFingers.Lift();
+      if (view && moho::WLD_GetActiveSession() != nullptr) {
         moho::CON_Execute(kPinchEnd);
         if (!ClicksRun()) {
-          Glide(SignedCoordinate(places, 0), SignedCoordinate(places, 1));
+          Glide(SignedCoordinate(places, 0), SignedCoordinate(places, 1), *view);
         }
       }
     } catch (const std::exception& exception) {

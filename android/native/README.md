@@ -257,7 +257,8 @@ checks, and `GamePhaseTest` pins the game's phases; what the sessions do to the 
 ## Tests
 
 `faf_griff_tests` (`tests/griff`) checks the rules of the touch scheme Griff (`include/Griff*.h`: the
-draft and its skirts, the groups, the handle's place, the reach of a tap, the undo), the camera's clamp
+draft and its skirts, the groups, the handle's place, the reach of a tap, the undo, the camera a gesture
+moves in FAF's split screen), the camera's clamp
 past the map's edges (`include/CameraClear.h`), the choice of the small control a finger's tap meant
 (`include/TapTarget.h`), the sharing out of a finger's drag between a list and the page
 (`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), and the

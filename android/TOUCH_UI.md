@@ -337,6 +337,16 @@ was a panel's and two fingers nothing. Griff keeps the game's
 cursor off the picture's edge pixel: FAF scrolls the view while its cursor is on the window's edge (`ui_ScreenEdgeScrollView`), where a
 mouse is pushed on purpose and a finger at the glass's edge would hold it, which took a stroke's route elsewhere than it was drawn.
 
+FAF's split screen (the map's options or the minimap's: a second map view on the right, its camera `WorldCamera2`; `worldview.lua`
+`CreateMainWorldView`) takes the fingers on either view, as a PC's middle button and wheel move the camera of the view under the mouse:
+a pan, its glide and two fingers move the camera of the view they are on (`include/GriffCamera.h`, tested). A pan's is the view its
+press came to, whose camera FAF's middle-button drag moves, and its glide goes on there; a pinch's the view under it where it began,
+also while the finger left of it goes on, wherever that finger is now, and so does its glide; a finger again beside it pinches anew. Two
+fingers on the minimap or on a panel over the map move the main view's, as in FAF's one view, and so do the flight to the group, the
+tick's and the undo's looks: the handle and the draft are the main map's. A glide whose view FAF has put away, as the right one when the screen is
+one view again, is over. Until 0.16.3 `griff.lua` moved the main view's camera alone (`WorldCamera`): two fingers on the right view
+moved the left one, and so did the glide after a pan there.
+
 A hint says a word where FAF prints its own messages (Griff v4, no Android toast): `textdisplay.lua` `PrintToScreen`, as userInit.lua's
 `PrintText` prints a word, in FAF's font at its size 14, white, in the screen's middle, fading as FAF's do, after 2 s (`griffhud.lua`
 `Hint`, by Game's HINT_, which `GriffAndroid.cpp`, the activity and the control groups' hook name): Cancelled for a stroke given up, the
