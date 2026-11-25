@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index 215312f..c77c806 100644
+index 215312f..e806db8 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -3,14 +3,21 @@
@@ -1333,7 +1333,7 @@ index 215312f..c77c806 100644
        // The job owns copies of every structure the create info points at (the shader modules are the device's and
        // outlive it: teardown collects pending jobs first). The pipeline cache synchronizes itself.
        struct Job
-@@ -4019,40 +4712,46 @@ namespace gpg::gal
+@@ -4019,40 +4712,47 @@ namespace gpg::gal
        const PFN_vkCreateGraphicsPipelines create = Vk().vkCreateGraphicsPipelines;
        const VkDevice device = mDevice;
        const VkPipelineCache cache = mPipelineCache;
@@ -1366,12 +1366,13 @@ index 215312f..c77c806 100644
 +        mPendingPipelines.emplace(std::move(key.Key()), std::move(built));
 +        mPipelineDeferred = true;
 +        return VK_NULL_HANDLE;
-+      } catch (const std::system_error& error) {
-+        // No thread to build on: in place, below.
++      } catch (const std::exception& error) {
++        // No thread to build on (std::system_error), or no memory to queue the build (std::bad_alloc): in place, below,
++        // where a refusal for want of memory is tried again later.
 +        static bool logged = false;
 +        if (!logged) {
 +          logged = true;
-+          gpg::Warnf("Vulkan: the pipeline worker cannot start (%s); pipelines are built in place", error.what());
++          gpg::Warnf("Vulkan: the pipeline worker cannot take a build (%s); it is built in place", error.what());
          }
 -        return built;
 -      })
@@ -1409,7 +1410,7 @@ index 215312f..c77c806 100644
    }
  
    void DeviceVulkan::CollectPendingPipelines() noexcept
-@@ -4081,6 +4780,11 @@ namespace gpg::gal
+@@ -4081,6 +4781,11 @@ namespace gpg::gal
      if (mPass.hullShader != nullptr) {
        // A tessellated pass draws each triangle of a list as one 3-point patch.
        if (topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
@@ -1421,7 +1422,7 @@ index 215312f..c77c806 100644
          ++mSkippedDraws;
          return false;
        }
-@@ -4142,8 +4846,13 @@ namespace gpg::gal
+@@ -4142,8 +4847,13 @@ namespace gpg::gal
      mPipelineDeferred = false;
      const VkPipeline pipeline = PipelineFor(mPass, topology);
      if (pipeline == VK_NULL_HANDLE) {
