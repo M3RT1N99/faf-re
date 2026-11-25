@@ -1,0 +1,142 @@
+diff --git a/src/moho/sim/WldSessionControl.cpp b/src/moho/sim/WldSessionControl.cpp
+index 673b157..1a59230 100644
+--- a/src/moho/sim/WldSessionControl.cpp
++++ b/src/moho/sim/WldSessionControl.cpp
+@@ -8,7 +8,11 @@
+ #endif
+ 
+ #include <chrono>
++#include <cstdio>
++#include <thread>
+ 
++#include "gpg/gal/PipelineDefer.h"
++#include "moho/console/CConCommand.h"
+ #include "moho/render/GpuPathSettings.h"
+ #include "moho/render/SkyDome.h"
+ #include "moho/sim/CWldSessionLoaderImpl.h"
+@@ -27,6 +31,85 @@ namespace moho
+ 
+       return dynamic_cast<IWldUIProvider*>(sWldUIProvider);
+     }
++
++    /**
++     * Android client build (gpg/gal/PipelineDefer.h, PipelineStartHold): the longest the session's start waits, its
++     * loading screen on the screen, for the pipelines its first frames draw; 0 holds nothing. The Galaxy S22 Ultra's
++     * driver took 5 to 8 s for each build, and the draws of a game's first 40 s waited for theirs: units that were not
++     * there, the commander among them. The desktop's builds take a fraction of a second, and it keeps its start.
++     */
++    float wld_PipelineHoldSeconds =
++#if FAFRE_PLATFORM_ANDROID
++      90.0f;
++#else
++      0.0f;
++#endif
++    TConVar<float> gTConVar_wld_PipelineHoldSeconds(
++      "wld_PipelineHoldSeconds",
++      "Most seconds the session's start waits on its loading screen for the pipelines its meshes, map and units draw "
++      "with, after which the game starts anyway (0 = no wait). Read as the game interface is made.",
++      &wld_PipelineHoldSeconds
++    );
++
++    /** A held start lets the cores go to the builds between its frames, none of which is shown. */
++    constexpr std::chrono::milliseconds kPipelineHoldPause{50};
++
++    /** Holds the session's start for its pipelines (wld_PipelineHoldSeconds); false when nothing is held. */
++    [[nodiscard]] bool BeginPipelineHold()
++    {
++      // At most an hour: the setting is the player's, and a duration from a float has to fit.
++      const float seconds = wld_PipelineHoldSeconds;
++      if (!(seconds > 0.0f)) {
++        return false;
++      }
++      const std::chrono::duration<double> limit(seconds < 3600.0f ? seconds : 3600.0f);
++      if (!gpg::gal::gPipelineStartHold.Begin(
++            std::chrono::steady_clock::now(), std::chrono::duration_cast<std::chrono::steady_clock::duration>(limit)
++          )) {
++        return false;
++      }
++      gpg::Logf(
++        "Session: the start waits on its loading screen for the pipelines of its meshes, map and units, %.0f s at most",
++        limit.count()
++      );
++      return true;
++    }
++
++    /** Whether a held start goes on now; its end has a line with how long it waited and what was built meanwhile. */
++    [[nodiscard]] bool PipelineHoldIsOver()
++    {
++      using gpg::gal::PipelineStartHold;
++      PipelineStartHold& hold = gpg::gal::gPipelineStartHold;
++      const auto now = std::chrono::steady_clock::now();
++      const PipelineStartHold::State state = hold.Update(now);
++      if (state == PipelineStartHold::State::kHolding) {
++        std::this_thread::sleep_for(kPipelineHoldPause);
++        return false;
++      }
++      const gpg::gal::PipelineHoldFrame& last = hold.LastFrame();
++      char cache[96] = "";
++      if (last.built.told != 0U) {
++        std::snprintf(
++          cache, sizeof(cache), "; the pipeline cache had %u of the %u the driver told of", last.built.fromCache,
++          last.built.told
++        );
++      }
++      const double held = std::chrono::duration<double>(hold.Held(now)).count();
++      if (state == PipelineStartHold::State::kSettled) {
++        gpg::Logf("Session: the start waited %.1f s for its pipelines: %u built%s", held, last.built.count, cache);
++      } else {
++        gpg::Logf(
++          "Session: the start waited its limit of %.0f s for its pipelines (wld_PipelineHoldSeconds), and goes on with "
++          "%zu still building and %zu to be tried again: %u built%s",
++          std::chrono::duration<double>(hold.Limit()).count(),
++          last.pending,
++          last.retries,
++          last.built.count,
++          cache
++        );
++      }
++      return true;
++    }
+   } // namespace
+ 
+   // gActiveWldSession: moho/sim/WldSessionState.cpp (WldSessionState.h).
+@@ -894,13 +977,17 @@ namespace moho
+ 
+       (void)WLD_DispatchOnTeardownCallbacksCoreFromGlobalList();
+ 
++      // Android client build (wld_PipelineHoldSeconds): the frames from here on draw the game, which nobody sees until
++      // its pipelines are built; the screen keeps the loading screen's last frame. The ready waits for the hold.
++      const bool held = BeginPipelineHold();
++
+       // Declare this client ready. `CClientManagerImpl::Cleanup` is the only
+       // writer of `mWeAreReady`, which `DoBeat` needs before it will ever set
+       // `mEveryoneIsReady` - so without this the session sits in Waiting
+       // forever showing "waiting for other players", local game or not.
+       // Engine addition (wld_ReadyAfterFirstFrame): not until the first frame of the interface just
+       // built has been drawn (WLD_DoPostInitializing); the binary declared it here.
+-      if (wld_ReadyAfterFirstFrame != 0) {
++      if (wld_ReadyAfterFirstFrame != 0 || held) {
+         gReadyAfterFirstFrame = true;
+       } else if (CClientManagerImpl* const clientManager = simDriver->GetClientManager(); clientManager != nullptr) {
+         clientManager->Cleanup();
+@@ -936,6 +1023,11 @@ namespace moho
+       simDriver->Dispatch();
+       CClientManagerImpl* const clientManager = simDriver->GetClientManager();
+ 
++      // Android client build (wld_PipelineHoldSeconds): not ready while the start waits for its pipelines.
++      if (gpg::gal::gPipelineStartHold.Holding() && !PipelineHoldIsOver()) {
++        return;
++      }
++
+       // Engine addition: the frame that built the game interface has been drawn, with the UI's
+       // first update (`OnFirstUpdate`) and the world's first render, which take a few hundred ms
+       // more. Ready now, so the session's shared start (wld_PreciseSharedStart) is when the last
+@@ -1279,6 +1371,8 @@ namespace moho
+ 
+   void WLD_Teardown()
+   {
++    // Android client build: a session left while its start is held shows its frames again (wld_PipelineHoldSeconds).
++    gpg::gal::gPipelineStartHold.End();
+     DropEarlySim();      // engine addition (wld_StartSimEarly): a load given up before its session
+     REPLAY_OnTeardown(); // engine addition (replay timeline)
+     sReplaySimSwap = EReplaySimSwap::None;

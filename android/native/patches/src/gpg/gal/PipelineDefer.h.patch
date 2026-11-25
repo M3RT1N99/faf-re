@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..172a7ad 100644
+index e97176b..85f8474 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
 @@ -8,19 +8,48 @@
@@ -8,8 +8,8 @@ index e97176b..172a7ad 100644
  // keeps building its pipeline in place, since skipping it would lose it.
 +//
 +// The builds run on one worker that lives as long as the process (PipelineWorker), a pipeline the driver refused for
-+// want of memory is tried again later (PipelineRetries), and the pipeline cache's growth goes to disk as it comes
-+// (PipelineCacheSaves).
++// want of memory is tried again later (PipelineRetries), the pipeline cache's growth goes to disk as it comes
++// (PipelineCacheSaves), and a session's start can wait on its loading screen for its pipelines (PipelineStartHold).
  
  #include <chrono>
 +#include <condition_variable>
@@ -43,16 +43,16 @@ index e97176b..172a7ad 100644
 +  // own (Xclipse 920: VK_ERROR_OUT_OF_HOST_MEMORY for the packed vertex formats of almost every unit), in a process
 +  // that holds the BC textures decoded. Such a refusal is tried again now (PipelineRetries), and with one build at a
 +  // time the draws of a game's first 90 s waited with both slots taken: two build at once, and two more wait.
-   inline constexpr unsigned kMaxPendingPipelines = 4U;
++  inline constexpr unsigned kMaxPendingPipelines = 4U;
 +  inline constexpr unsigned kPipelineWorkerThreads = 2U;
 +#else
-+  inline constexpr unsigned kMaxPendingPipelines = 4U;
+   inline constexpr unsigned kMaxPendingPipelines = 4U;
 +  inline constexpr unsigned kPipelineWorkerThreads = kMaxPendingPipelines;
 +#endif
  
    /** How many PipelineDeferScope are open (render thread only). */
    inline int gPipelineDeferDepth = 0;
-@@ -45,29 +74,299 @@ namespace gpg::gal
+@@ -45,29 +74,333 @@ namespace gpg::gal
      return gAsyncPipelines && gPipelineDeferDepth > 0;
    }
  
@@ -68,6 +68,31 @@ index e97176b..172a7ad 100644
 +    unsigned told = 0U;
 +    unsigned fromCache = 0U;
 +    std::chrono::steady_clock::duration driverTime{};
++
++    /** These, of a worker's totals (PipelineWorker::Total), less `earlier`'s: the builds finished since. */
++    [[nodiscard]] PipelineBuildTimes Since(
++      const PipelineBuildTimes& earlier
++    ) const noexcept
++    {
++      return PipelineBuildTimes{
++        count - earlier.count,
++        time - earlier.time,
++        told - earlier.told,
++        fromCache - earlier.fromCache,
++        driverTime - earlier.driverTime,
++      };
++    }
++
++    void Add(
++      const PipelineBuildTimes& more
++    ) noexcept
++    {
++      count += more.count;
++      time += more.time;
++      told += more.told;
++      fromCache += more.fromCache;
++      driverTime += more.driverTime;
++    }
 +  };
 +
 +  /**
@@ -110,6 +135,13 @@ index e97176b..172a7ad 100644
 +    {
 +      const std::lock_guard<std::mutex> lock(mMutex);
 +      return std::exchange(mFinished, PipelineBuildTimes{});
++    }
++
++    /** All the builds the threads finished, as TakeFinished counts them, since the process began. Any thread. */
++    [[nodiscard]] PipelineBuildTimes Total()
++    {
++      const std::lock_guard<std::mutex> lock(mMutex);
++      return mTotal;
 +    }
 +
 +    /**
@@ -171,14 +203,15 @@ index e97176b..172a7ad 100644
 +        const auto start = std::chrono::steady_clock::now();
 +        build(); // what it throws goes into its future
 +        const auto took = std::chrono::steady_clock::now() - start;
-+        const std::lock_guard<std::mutex> lock(mMutex);
-+        ++mFinished.count;
-+        mFinished.time += took;
++        PipelineBuildTimes finished{1U, took};
 +        if (tTelling.told) {
-+          ++mFinished.told;
-+          mFinished.fromCache += tTelling.fromCache ? 1U : 0U;
-+          mFinished.driverTime += tTelling.driverTime;
++          finished.told = 1U;
++          finished.fromCache = tTelling.fromCache ? 1U : 0U;
++          finished.driverTime = tTelling.driverTime;
 +        }
++        const std::lock_guard<std::mutex> lock(mMutex);
++        mFinished.Add(finished);
++        mTotal.Add(finished);
 +      }
 +    }
 +
@@ -187,6 +220,7 @@ index e97176b..172a7ad 100644
 +    std::deque<std::packaged_task<Handle()>> mJobs;
 +    unsigned mThreads = 0U;
 +    PipelineBuildTimes mFinished; // since TakeFinished
++    PipelineBuildTimes mTotal;    // since the process began
 +  };
 +
 +  /** What a deferred build the driver refused throws into its future (TakeBuiltPipeline). */
@@ -364,7 +398,7 @@ index e97176b..172a7ad 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +375,87 @@ namespace gpg::gal
+@@ -76,9 +409,217 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {
@@ -415,9 +449,10 @@ index e97176b..172a7ad 100644
 +  inline constexpr std::chrono::seconds kPipelineCacheSaveEvery{10};
 +
 +  /**
-+   * When the pipeline cache's growth goes to disk (PipelineCacheFile), so that a run that is ended instead of left keeps
-+   * its builds: as soon as a batch of builds is over, none pending, and while builds go on, once kPipelineCacheSaveEvery
-+   * has passed since the last save. Its save on the program's way to the back is gSavePipelineCache. Render thread.
++   * When the pipeline cache's growth goes to disk (PipelineCacheFile), so that a run that is ended instead of left
++   * keeps its builds: as soon as a batch of builds is over, none pending, and while builds go on, once
++   * kPipelineCacheSaveEvery has passed since the last save. Its save on the program's way to the back is
++   * gSavePipelineCache. Render thread.
 +   */
 +  class PipelineCacheSaves
 +  {
@@ -452,4 +487,133 @@ index e97176b..172a7ad 100644
 +   * without a word: the save at the device's end would not come. Main thread.
 +   */
 +  inline void (*gSavePipelineCache)() = nullptr;
++
++  /** Frames in a row that waited for nothing, after which the held start goes on (PipelineStartHold). */
++  inline constexpr unsigned kPipelineHoldSettledFrames = 3U;
++
++  /** What the device says of a frame it drew while the start was held (PipelineStartHold::FrameDrawn). */
++  struct PipelineHoldFrame
++  {
++    unsigned waited = 0U;     // draws that waited for their pipeline
++    std::size_t pending = 0U; // builds pending once the frame's finished ones were taken
++    std::size_t retries = 0U; // pipelines waiting for another try (PipelineRetries)
++    PipelineBuildTimes built; // the worker's builds since the first frame of the hold
++  };
++
++  /**
++   * The session's start held until the pipelines its first frames draw are built, so that the first frame of play has
++   * its units: its loading screen stays on the screen meanwhile (wld_PipelineHoldSeconds). Each frame drawn while held
++   * draws every mesh of the session too, wherever it is, at each of its LODs (MeshRenderer::Batch), and is not shown;
++   * the device says what it waited for (FrameDrawn). The hold ends once kPipelineHoldSettledFrames frames in a row
++   * waited for nothing, no draw for its pipeline, no build pending and none to be tried again, or at its limit, after
++   * which the game starts anyway. It holds only where a backend reports its frames (SetReporting). Render thread.
++   */
++  class PipelineStartHold
++  {
++  public:
++    using Clock = std::chrono::steady_clock;
++
++    enum class State
++    {
++      kOff,      // nothing held: the frames are shown
++      kHolding,
++      kSettled,  // the frames waited for nothing: the start goes on
++      kTimedOut, // the limit came first: the start goes on
++    };
++
++    /** A backend's device reports the frames it draws while held, from its creation to its end. */
++    void SetReporting(
++      const bool reporting
++    ) noexcept
++    {
++      mReporting = reporting;
++    }
++
++    /** Holds the start from `now` for `limit` at most; false, holding nothing, without a reporting backend or limit. */
++    bool Begin(
++      const Clock::time_point now,
++      const Clock::duration limit
++    ) noexcept
++    {
++      if (!mReporting || limit <= Clock::duration::zero()) {
++        mState = State::kOff;
++        return false;
++      }
++      mState = State::kHolding;
++      mBegan = now;
++      mLimit = limit;
++      mSettledFrames = 0U;
++      mLast = PipelineHoldFrame{};
++      return true;
++    }
++
++    [[nodiscard]] bool Holding() const noexcept
++    {
++      return mState == State::kHolding;
++    }
++
++    /** The device, for each frame it drew while held, once it took the frame's finished builds. */
++    void FrameDrawn(
++      const PipelineHoldFrame& frame
++    ) noexcept
++    {
++      if (mState != State::kHolding) {
++        return;
++      }
++      mLast = frame;
++      const bool settled = frame.waited == 0U && frame.pending == 0U && frame.retries == 0U;
++      mSettledFrames = settled ? mSettledFrames + 1U : 0U;
++    }
++
++    /** The session, once a frame: kHolding while it waits, then kSettled or kTimedOut, which stay until Begin. */
++    State Update(
++      const Clock::time_point now
++    ) noexcept
++    {
++      if (mState == State::kHolding) {
++        if (mSettledFrames >= kPipelineHoldSettledFrames) {
++          mState = State::kSettled;
++        } else if (now - mBegan >= mLimit) {
++          mState = State::kTimedOut;
++        }
++      }
++      return mState;
++    }
++
++    /** A session that ends while held (its teardown): the frames are shown again. */
++    void End() noexcept
++    {
++      mState = State::kOff;
++    }
++
++    /** How long the start has been held at `now`. */
++    [[nodiscard]] Clock::duration Held(
++      const Clock::time_point now
++    ) const noexcept
++    {
++      return now - mBegan;
++    }
++
++    [[nodiscard]] Clock::duration Limit() const noexcept
++    {
++      return mLimit;
++    }
++
++    /** What the last frame drawn while held waited for, and the builds since the hold began. */
++    [[nodiscard]] const PipelineHoldFrame& LastFrame() const noexcept
++    {
++      return mLast;
++    }
++
++  private:
++    bool mReporting = false;
++    State mState = State::kOff;
++    Clock::time_point mBegan{};
++    Clock::duration mLimit{};
++    unsigned mSettledFrames = 0U;
++    PipelineHoldFrame mLast;
++  };
++
++  /** The render thread's held start: the session begins and ends it, the device and the mesh renderer follow it. */
++  inline PipelineStartHold gPipelineStartHold;
  } // namespace gpg::gal

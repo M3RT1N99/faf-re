@@ -48,7 +48,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
-| `faf_gal_tests` | The patched `PipelineDefer.h`: the deferred pipelines' slots, their retries and the worker (`tests/gal`), with upstream's tests of the header, linked statically |
+| `faf_gal_tests` | The patched `PipelineDefer.h`: the deferred pipelines' slots, their retries, the worker, the pipeline cache's saves and the start held for its pipelines (`tests/gal`), with upstream's tests of the header, linked statically |
 
 The client's objects are compiled with the simulation's settings (`faf_sim_settings`) and the engine's
 directory-wide definitions (`FAF_RETAIL_LAYOUT`, which decides the legacy containers' layout), as they
@@ -386,7 +386,9 @@ waits for): a deferred build is queued only once the pending list holds its slot
 slot; a pipeline refused for want of memory is tried six times in all over 15.5 s, the last in place; a build's end
 says whether it may build later; the worker runs each job, two of them at once, and what one throws reaches its future;
 it counts the builds it finished, with their time and what their driver said of them; the pipeline cache is saved once a
-batch of builds is over, and every 10 s while builds go on. Upstream's own tests of the header
+batch of builds is over, and every 10 s while builds go on; a session's start is held for its pipelines only where a
+backend reports its frames, and goes on after three frames in a row that waited for nothing, or at its limit. Upstream's
+own tests of the header
 (`../../tests/gal/PipelineDeferTests.cpp`) run on the patched copy beside them. Header-only and linked statically, so
 the x86_64 build runs on a Linux host as well (WSL here), and the app's workflow runs the arm64 build on an arm64
 runner:

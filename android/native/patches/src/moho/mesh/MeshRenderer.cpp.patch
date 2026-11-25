@@ -1,0 +1,84 @@
+diff --git a/src/moho/mesh/MeshRenderer.cpp b/src/moho/mesh/MeshRenderer.cpp
+index 4869093..2c6d615 100644
+--- a/src/moho/mesh/MeshRenderer.cpp
++++ b/src/moho/mesh/MeshRenderer.cpp
+@@ -1,6 +1,8 @@
+ #include "moho/mesh/MeshPrivate.h"
+ 
++#include <cstdint>
+ #include <string_view>
++#include <unordered_set>
+ 
+ #include "gpg/gal/PipelineDefer.h"
+ #include "moho/console/CConCommand.h"
+@@ -953,6 +955,58 @@ namespace moho
+       }
+       return material.mShaderIndex;
+     }
++
++    /**
++     * Android client build (wld_PipelineHoldSeconds, gpg/gal/PipelineDefer.h's PipelineStartHold): while the
++     * session's start waits for its pipelines, a Batch adds one instance of every mesh of the session, wherever it is,
++     * to the bucket of each of its LODs that has none, so that each pass asks for the pipelines it would draw that mesh
++     * with: the map's props and wrecks, and the armies' units, the commanders not shown yet among them. A mesh's
++     * pipelines are its LODs' techniques with its vertex format, the same for each of its instances, so one of them is
++     * enough. Clutter stays with its camera, as in Batch. The frame is not shown. Answers how many instances it added.
++     */
++    std::uint32_t AddEveryMeshOnce(
++      TDatList<MeshInstance, void>& instances,
++      MeshBatchBucketTree& buckets,
++      const GeomCamera3& camera
++    )
++    {
++      // A session has thousands of instances (each tree is one), of a few dozen meshes.
++      static std::unordered_set<std::uintptr_t> sSeen;
++      sSeen.clear();
++      std::uint32_t added = 0U;
++      for (MeshInstance* const instance : instances.owners()) {
++        Mesh* const mesh = instance->mesh.get();
++        if (mesh == nullptr || (instance->visibilityCamera != nullptr && instance->visibilityCamera != &camera)) {
++          continue;
++        }
++        // A mesh draws with another vertex format as a unit's skinned instance than as a prop's static one.
++        const std::uintptr_t seen = reinterpret_cast<std::uintptr_t>(mesh) | (instance->isStaticPose != 0u ? 1U : 0U);
++        if (!sSeen.insert(seen).second) {
++          continue;
++        }
++        bool updated = false;
++        for (MeshLOD* const lod : mesh->lods) {
++          if (lod == nullptr) {
++            continue;
++          }
++          MeshBatchKey key;
++          key.mIsStaticPose = instance->isStaticPose;
++          key.mLod = lod;
++          key.mSortKey = mesh->GetSortOrder();
++          MeshBatchInstanceVector* const bucket = MeshBatchBucketTreeFindOrCreateInstances(key, buckets);
++          if (bucket == nullptr || !bucket->empty()) {
++            continue;
++          }
++          if (!updated) {
++            instance->UpdateInterpolatedFields();
++            updated = true;
++          }
++          bucket->push_back(instance);
++          ++added;
++        }
++      }
++      return added;
++    }
+   } // namespace
+ 
+   /**
+@@ -1786,6 +1840,11 @@ namespace moho
+       }
+     }
+ 
++    // Android client build: while the session's start waits for its pipelines, every mesh of it (AddEveryMeshOnce).
++    if (gpg::gal::gPipelineStartHold.Holding()) {
++      instanceListStateFlags += AddEveryMeshOnce(instances, meshes, camera);
++    }
++
+     // FAF: the bones of this map's skinned instances, written once for every
+     // pass that is about to draw it.
+     PrepareBonePalettes();

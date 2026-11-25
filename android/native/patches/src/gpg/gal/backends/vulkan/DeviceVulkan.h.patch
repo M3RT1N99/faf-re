@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-index 39ce886..e60ae16 100644
+index 39ce886..bf0d98e 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 @@ -210,6 +210,7 @@ namespace gpg::gal
@@ -65,3 +65,28 @@ index 39ce886..e60ae16 100644
      bool mMemoryBudget = false;          // VK_EXT_memory_budget enabled
      std::string mDriverName;             // VkPhysicalDeviceDriverProperties driverName + driverInfo
      VkFormat mDepthStencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;
+@@ -453,6 +472,13 @@ namespace gpg::gal
+     // Engine addition (ren_AsyncPipelines, gpg/gal/PipelineDefer.h): pipelines building on worker threads, by key.
+     std::unordered_map<std::string, std::future<VkPipeline>> mPendingPipelines;
+     void CollectPendingPipelines() noexcept;
++    /**
++     * Android client build: keeps a build's end in mPipelines, a refusal as a null pipeline, but for one refused for
++     * want of memory before its last try: that one is tried again later (PipelineRetries), and true says so.
++     */
++    bool KeepBuilt(const std::string& key, VkPipeline built, PipelineBuildEnd end);
++    /** Android client build: takes a held frame's finished builds and tells the held start what it waited for. */
++    void ReportHeldFrame();
+     /** Everything mPipelines' string key is built from; see PipelineMemo. */
+     struct PipelineInputs
+     {
+@@ -636,5 +662,10 @@ namespace gpg::gal
+     std::uint32_t mSkippedDraws = 0;
+     std::uint32_t mDeferredDraws = 0; // draws waiting for a worker's pipeline (ren_AsyncPipelines), all session
+     bool mPipelineDeferred = false;   // PipelineFor's last null was a deferral
++    // Android client build (PipelineStartHold): the frame being drawn is the held start's, and is not shown; its draws
++    // that waited for their pipeline; the worker's totals when the hold's first frame began.
++    bool mFrameHeld = false;
++    std::uint32_t mFrameWaitedDraws = 0;
++    PipelineBuildTimes mHeldFrom;
+   };
+ } // namespace gpg::gal

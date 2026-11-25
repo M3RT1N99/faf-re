@@ -3,8 +3,10 @@
 // outlives the device that waits for its list; a pipeline refused for want of memory is tried six times in all, over
 // 15.5 s, the last in place; a build's end says whether it may build later; the worker runs each job, two at once at
 // least, and counts the builds it finished with their time and what their driver said of them; the pipeline cache is
-// saved once a batch of builds is over, and every 10 s while builds go on. Upstream's own tests of the header
-// (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
+// saved once a batch of builds is over, and every 10 s while builds go on; a session's start is held only where a
+// backend reports its frames, and goes on after three frames in a row that waited for nothing, or at its limit.
+// Upstream's own tests of the header (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched
+// header.
 
 #include <gtest/gtest.h>
 
@@ -371,4 +373,147 @@ TEST(
   EXPECT_FALSE(saves.Due(start + 15s, true, true)) << "counted from the last save";
   EXPECT_TRUE(saves.Due(start + 20s, true, true));
   EXPECT_FALSE(saves.Due(start + 30s, false, true)) << "nothing grew";
+}
+
+namespace
+{
+  using gpg::gal::PipelineHoldFrame;
+  using gpg::gal::PipelineStartHold;
+
+  PipelineHoldFrame Waited(
+    const unsigned waited,
+    const std::size_t pending,
+    const std::size_t retries = 0U
+  )
+  {
+    PipelineHoldFrame frame;
+    frame.waited = waited;
+    frame.pending = pending;
+    frame.retries = retries;
+    return frame;
+  }
+} // namespace
+
+TEST(
+  AndroidPipelineDefer,
+  TheStartIsHeldOnlyWhereABackendReportsItsFrames
+)
+{
+  PipelineStartHold hold;
+  const PipelineStartHold::Clock::time_point start{};
+  EXPECT_FALSE(hold.Begin(start, 90s)) << "no device says what its frames waited for: the hold would never end early";
+  EXPECT_FALSE(hold.Holding());
+  hold.SetReporting(true);
+  EXPECT_FALSE(hold.Begin(start, 0s)) << "wld_PipelineHoldSeconds 0 holds nothing";
+  EXPECT_FALSE(hold.Holding());
+  EXPECT_EQ(hold.Update(start), PipelineStartHold::State::kOff);
+  EXPECT_TRUE(hold.Begin(start, 90s));
+  EXPECT_TRUE(hold.Holding());
+  EXPECT_EQ(hold.Update(start + 1s), PipelineStartHold::State::kHolding);
+}
+
+TEST(
+  AndroidPipelineDefer,
+  TheHeldStartGoesOnAfterThreeFramesInARowThatWaitedForNothing
+)
+{
+  ASSERT_EQ(gpg::gal::kPipelineHoldSettledFrames, 3U);
+  PipelineStartHold hold;
+  hold.SetReporting(true);
+  const PipelineStartHold::Clock::time_point start{};
+  ASSERT_TRUE(hold.Begin(start, 90s));
+  hold.FrameDrawn(Waited(120U, 4U)); // the first frame asks for every pipeline
+  EXPECT_EQ(hold.Update(start + 6s), PipelineStartHold::State::kHolding);
+  hold.FrameDrawn(Waited(0U, 0U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  EXPECT_EQ(hold.Update(start + 7s), PipelineStartHold::State::kHolding) << "two frames are not yet three";
+  hold.FrameDrawn(Waited(0U, 1U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  EXPECT_EQ(hold.Update(start + 8s), PipelineStartHold::State::kHolding) << "a pending build counts again";
+  hold.FrameDrawn(Waited(0U, 0U, 1U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  EXPECT_EQ(hold.Update(start + 9s), PipelineStartHold::State::kHolding) << "so does one to be tried again";
+  PipelineHoldFrame last = Waited(0U, 0U);
+  last.built.count = 23U;
+  hold.FrameDrawn(last);
+  EXPECT_EQ(hold.Update(start + 10s), PipelineStartHold::State::kSettled);
+  EXPECT_FALSE(hold.Holding()) << "the frames are shown again";
+  EXPECT_EQ(hold.LastFrame().built.count, 23U);
+  EXPECT_EQ(hold.Held(start + 10s), 10s);
+  hold.FrameDrawn(Waited(5U, 2U)); // a frame drawn before the device heard of the end
+  EXPECT_EQ(hold.Update(start + 11s), PipelineStartHold::State::kSettled) << "the end stays until the next Begin";
+  EXPECT_EQ(hold.LastFrame().built.count, 23U);
+}
+
+TEST(
+  AndroidPipelineDefer,
+  TheHeldStartGoesOnAtItsLimit
+)
+{
+  PipelineStartHold hold;
+  hold.SetReporting(true);
+  const PipelineStartHold::Clock::time_point start{};
+  ASSERT_TRUE(hold.Begin(start, 90s));
+  hold.FrameDrawn(Waited(40U, 4U));
+  EXPECT_EQ(hold.Update(start + 90s - 1ns), PipelineStartHold::State::kHolding);
+  EXPECT_EQ(hold.Update(start + 90s), PipelineStartHold::State::kTimedOut) << "the game starts anyway";
+  EXPECT_FALSE(hold.Holding());
+  EXPECT_EQ(hold.LastFrame().pending, 4U) << "the line says what was still building";
+  EXPECT_EQ(hold.Limit(), 90s);
+}
+
+TEST(
+  AndroidPipelineDefer,
+  ASessionLeftWhileItsStartIsHeldShowsItsFramesAgain
+)
+{
+  PipelineStartHold hold;
+  hold.SetReporting(true);
+  const PipelineStartHold::Clock::time_point start{};
+  ASSERT_TRUE(hold.Begin(start, 90s));
+  hold.End();
+  EXPECT_FALSE(hold.Holding());
+  EXPECT_EQ(hold.Update(start + 1s), PipelineStartHold::State::kOff);
+  ASSERT_TRUE(hold.Begin(start + 5s, 90s)) << "the next session holds anew";
+  hold.FrameDrawn(Waited(0U, 0U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  EXPECT_EQ(hold.Update(start + 6s), PipelineStartHold::State::kHolding) << "the earlier session's frames do not count";
+}
+
+TEST(
+  AndroidPipelineDefer,
+  TheWorkerCountsAllItsBuildsAndTheHoldsTheOnesSinceItBegan
+)
+{
+  gpg::gal::PipelineWorker<signed char>& worker = gpg::gal::PipelineWorker<signed char>::Instance();
+  const auto finish = [&worker](const int builds) {
+    std::vector<std::future<signed char>> posted;
+    for (int index = 0; index < builds; ++index) {
+      posted.push_back(worker.Post(std::packaged_task<signed char()>([] {
+        gpg::gal::PipelineWorker<signed char>::Told(true, 2ms);
+        return static_cast<signed char>(1);
+      })));
+    }
+    for (std::future<signed char>& build : posted) {
+      (void)build.get();
+    }
+  };
+  const auto totalReaches = [&worker](const unsigned count) {
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (worker.Total().count < count && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(1ms);
+    }
+    return worker.Total();
+  };
+  finish(2);
+  const gpg::gal::PipelineBuildTimes before = totalReaches(2U);
+  EXPECT_EQ(before.count, 2U);
+  (void)worker.TakeFinished(); // the line a second takes its own
+  finish(3);
+  const gpg::gal::PipelineBuildTimes since = totalReaches(5U).Since(before);
+  EXPECT_EQ(since.count, 3U) << "the line's TakeFinished does not take from the total";
+  EXPECT_EQ(since.told, 3U);
+  EXPECT_EQ(since.driverTime, 6ms);
 }
