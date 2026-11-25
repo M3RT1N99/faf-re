@@ -1,13 +1,15 @@
 // The NDK's ADPF calls behind their API levels (AdpfAndroid.h). Compiled with the NDK's weak API references
-// (__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__ and -Werror=unguarded-availability, CMakeLists.txt's faf_adpf): a call newer than
-// Android 8.0 links as a weak reference into libandroid.so, which the phone's linker leaves null where its Android lacks the
-// call, and the compiler takes each only behind __builtin_available.
+// (__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__ and -Werror=unguarded-availability, CMakeLists.txt's faf_adpf): a call
+// newer than Android 8.0 links as a weak reference into libandroid.so, which the phone's linker leaves null where its
+// Android lacks the call, and the compiler takes each only behind __builtin_available.
 
 #include "AdpfAndroid.h"
 
 #include <android/performance_hint.h>
+#include <android/thermal.h>
 
 #include <cerrno>
+#include <limits>
 
 namespace
 {
@@ -61,5 +63,17 @@ namespace adpf
     if (__builtin_available(android 33, *)) {
       APerformanceHint_closeSession(session);
     }
+  }
+
+  float ThermalHeadroom() noexcept
+  {
+    if (__builtin_available(android 31, *)) {
+      // Android's, one for the process, which is never released. Null where its thermal service is not up.
+      static AThermalManager* const manager = AThermal_acquireManager();
+      if (manager != nullptr) {
+        return AThermal_getThermalHeadroom(manager, 0);
+      }
+    }
+    return std::numeric_limits<float>::quiet_NaN();
   }
 } // namespace adpf

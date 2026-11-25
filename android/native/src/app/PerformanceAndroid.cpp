@@ -1,6 +1,6 @@
-// Android's performance hints for the game's two busy threads (ADPF; android/native/README.md, Performance hints and the
-// heat): the app tells Android how long each takes for its work, against what it should take, and Android sets their cores
-// and clocks to fit.
+// Android's performance hints for the game's two busy threads, and the phone's heat (ADPF; android/native/README.md,
+// Performance hints and the heat): the app tells Android how long each thread takes for its work, against what it should
+// take, and Android sets their cores and clocks to fit; Android tells the app how near the phone is to throttling.
 //
 // - The render thread, the program's own (the engine's main thread: the UI, the sim's sync and the drawing), has a session
 //   whose target is the display's frame time. Its work for a frame runs from the head's frame start (moho::
@@ -8,27 +8,37 @@
 //   the start of the next paint, and the backend waits for the GPU and for the swap chain's next image only after it
 //   (DeviceVulkan::Present), so the wait for the display is not in the work.
 // - The sim's thread, a new one for each game and for each sim a replay's seek makes at a keyframe, has one whose target is
-//   a beat at the game's speed: 100 ms at +0, as the engine paces the beats (WLD_GetSimRate). The engine marks only a beat's start (moho::gSimBeforeBeat, SimTick.cpp), and
-//   the thread waits for the next beat between two, so a beat's work is the thread's CPU time from one start to the next:
-//   the beat and its sync, without the wait. What a beat waits for the sim's workers is not in it either.
+//   a beat at the game's speed: 100 ms at +0, as the engine paces the beats (WLD_GetSimRate). The engine marks only a
+//   beat's start (moho::gSimBeforeBeat, SimTick.cpp), and the thread waits for the next beat between two, so a beat's work
+//   is the thread's CPU time from one start to the next: the beat and its sync, without the wait. What a beat waits for the
+//   sim's workers is not in it either.
+// - The thermal headroom, how much of the phone's thermal envelope is in use (1.0: Android throttles the phone), is read
+//   every 2 s on a thread of its own, as each reading is a call into Android's thermal service. The report has the first
+//   reading, and each time the headroom passes 0.8 and 1.0 or comes back under them; ThermalHeadroom has the last, for a
+//   policy that lowers the game's settings. Nothing lowers them yet.
 //
-// Android has hint sessions from 13 (API 33). Below it, and where Android makes no session (an emulator's power HAL may have
-// none), the game asks for none, with one line in the report. A session is Android's object for one thread, unsafe to share:
-// each is made, told and closed on its own thread.
+// Android has hint sessions from 13 (API 33) and the headroom from 12 (API 31). Below, and where Android makes no session
+// (an emulator's power HAL may have none), the game asks for none, with one line in the report. A session is Android's
+// object for one thread, unsafe to share: each is made, told and closed on its own thread.
 
 #include "PerformanceAndroid.h"
 
 #include <android/api-level.h>
+#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
+#include <limits>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include <SDL3/SDL_video.h>
 
@@ -258,13 +268,10 @@ namespace
     gSim.session.ReportWork(cpu - gSim.cpuAtBeat);
     gSim.cpuAtBeat = cpu;
   }
-} // namespace
 
-namespace performance
-{
-  void Install()
+  void InstallHints(const int api)
   {
-    if (const int api = android_get_device_api_level(); api < 33) {
+    if (api < 33) {
       Report("performance hints: none below Android 13 (API 33), this phone has API " + std::to_string(api));
       return;
     }
@@ -279,6 +286,113 @@ namespace performance
       return;
     }
     moho::gViewportBeforeFrame = &BeforeFrame;
+  }
+
+  /// How often the headroom is read: Android's follows slow sensors, the skin's, and may answer NaN when asked much
+  /// more often than once a second (android/thermal.h).
+  constexpr auto kHeatPoll = std::chrono::seconds(2);
+  /// The headroom's marks in the report: from 0.8 the phone nears throttling, from 1.0 Android throttles it. A mark
+  /// passed is left only kHeatHysteresis under it, so that a reading that wavers about a mark writes no line each time.
+  constexpr float kHeatMarks[] = {0.8f, 1.0f};
+  constexpr int kHeatMarkCount = static_cast<int>(std::size(kHeatMarks));
+  constexpr float kHeatHysteresis = 0.05f;
+
+  /// How many marks the headroom is past after the reading `headroom`, with `level` passed before it. A reading that is no
+  /// number (NaN: Android has none now) leaves the level as it is.
+  constexpr int HeatLevel(const int level, const float headroom)
+  {
+    if (!(headroom >= 0.0f)) {
+      return level;
+    }
+    int next = 0;
+    for (int mark = 0; mark < kHeatMarkCount; ++mark) {
+      if (headroom >= kHeatMarks[mark] || (level > mark && headroom >= kHeatMarks[mark] - kHeatHysteresis)) {
+        next = mark + 1;
+      }
+    }
+    return next;
+  }
+
+  // The self-check of the marks, which the build runs.
+  static_assert(HeatLevel(0, 0.79f) == 0 && HeatLevel(0, 0.8f) == 1 && HeatLevel(0, 1.0f) == 2, "the marks");
+  static_assert(HeatLevel(1, 0.76f) == 1 && HeatLevel(1, 0.74f) == 0, "a mark is left 0.05 under it");
+  static_assert(HeatLevel(2, 0.96f) == 2 && HeatLevel(2, 0.77f) == 1 && HeatLevel(2, 0.3f) == 0, "the marks left");
+  static_assert(HeatLevel(0, 1.3f) == 2 && HeatLevel(1, 1.0f) == 2, "past both, also at once");
+  static_assert(HeatLevel(1, std::numeric_limits<float>::quiet_NaN()) == 1, "no reading leaves the level");
+
+  /// The report's line of a reading that took the level from `from` to `to`, or of the first, from 0.
+  [[nodiscard]] std::string HeatLine(const float headroom, const int from, const int to)
+  {
+    char line[96];
+    if (to > from) {
+      std::snprintf(line, sizeof line, "thermal: headroom %.2f, past %.1f%s", headroom, kHeatMarks[to - 1],
+        to == kHeatMarkCount ? ", where Android throttles the phone" : "");
+    } else if (to < from) {
+      std::snprintf(line, sizeof line, "thermal: headroom %.2f, back under %.1f", headroom, kHeatMarks[to]);
+    } else {
+      std::snprintf(line, sizeof line, "thermal: headroom %.2f", headroom);
+    }
+    return line;
+  }
+
+  /// How many readings that are no number come before the report says that Android gives none: its thermal service may not
+  /// have a sample yet for the first.
+  constexpr int kHeatMissesBeforeNone = 3;
+
+  /// The last headroom Android gave, NaN before it gave one.
+  std::atomic<float> gHeadroom{std::numeric_limits<float>::quiet_NaN()};
+
+  /// The headroom's watch, for as long as the process runs.
+  void* WatchHeat(void*)
+  {
+    int level = 0;
+    bool known = false;
+    int misses = 0;
+    for (;;) {
+      if (const float headroom = adpf::ThermalHeadroom(); headroom >= 0.0f) {
+        gHeadroom.store(headroom);
+        const int next = HeatLevel(level, headroom);
+        if (!known || next != level) {
+          Report(HeatLine(headroom, level, next));
+        }
+        known = true;
+        level = next;
+      } else if (!known && ++misses == kHeatMissesBeforeNone) {
+        // A phone without the sensors; a reading that comes later still has its line.
+        Report("thermal: Android gives no headroom");
+      }
+      std::this_thread::sleep_for(kHeatPoll);
+    }
+  }
+
+  void StartHeatWatch(const int api)
+  {
+    if (api < 31) {
+      Report("thermal: no headroom below Android 12 (API 31), this phone has API " + std::to_string(api));
+      return;
+    }
+    pthread_t thread{};
+    if (const int error = pthread_create(&thread, nullptr, &WatchHeat, nullptr); error != 0) {
+      Report("thermal: the headroom's watch did not start (" + std::string(std::strerror(error)) + ")");
+      return;
+    }
+    (void)pthread_setname_np(thread, "faf-thermal");
+    (void)pthread_detach(thread);
+  }
+} // namespace
+
+namespace performance
+{
+  void Install()
+  {
+    const int api = android_get_device_api_level();
+    InstallHints(api);
+    StartHeatWatch(api);
+  }
+
+  float ThermalHeadroom() noexcept
+  {
+    return gHeadroom.load();
   }
 
   void FramePresented()

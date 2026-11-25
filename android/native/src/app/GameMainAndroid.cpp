@@ -21,7 +21,7 @@
 // - The process ends with the program, as a Windows program's does: the engine is one program per
 //   process, and SDL's activity would outlive it.
 // - Android's performance hints for the render thread and the sim's (PerformanceAndroid.cpp), which time the engine's
-//   frames and beats through its hooks.
+//   frames and beats through its hooks, and the watch of the phone's thermal headroom.
 //
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
 // when the first frame went to the screen, and the program's exit code; and of the engine's log what a
