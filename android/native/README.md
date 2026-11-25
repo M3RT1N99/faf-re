@@ -383,10 +383,11 @@ window layer of the test's own (`platform/Window.h`) in place of SDL's, and is l
 `faf_gal_tests` (`tests/gal`) pins the patched `gpg/gal/PipelineDefer.h` (`patches/README.md`, the pipelines a draw
 waits for): a deferred build is queued only once the pending list holds its slot, also when there is no memory for the
 slot; a pipeline refused for want of memory is tried six times in all over 15.5 s, the last in place; a build's end
-says whether it may build later; the worker runs each job, and what one throws reaches its future. Upstream's own tests
-of the header (`../../tests/gal/PipelineDeferTests.cpp`) run on the patched copy beside them. Header-only and linked
-statically, so the x86_64 build runs on a Linux host as well (WSL here), and the app's workflow runs the arm64 build on
-an arm64 runner:
+says whether it may build later; the worker runs each job, two of them at once, and what one throws reaches its future;
+it counts the builds it finished, with their time. Upstream's own tests of the header
+(`../../tests/gal/PipelineDeferTests.cpp`) run on the patched copy beside them. Header-only and linked statically, so
+the x86_64 build runs on a Linux host as well (WSL here), and the app's workflow runs the arm64 build on an arm64
+runner:
 
 ```sh
 adb push build/android-x64/bin/faf_gal_tests /data/local/tmp/
