@@ -43,6 +43,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `fafgame` | `libfafgame.so`: all of the above, which the app's game activity loads (card 5 of the app) |
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 | `faf_touch` | The touch layer (`src/touch`): fingers made into a mouse's input, in a game (the touch scheme Griff among it) and in the menus' pages, platform-neutral C++ |
+| `faf_adpf` | The NDK's calls for Android's performance hints and thermal headroom (`src/app/AdpfAndroid.cpp`), newer than Android 8.0, as weak references (see Performance hints and the heat) |
 | `faf_griff_tests` | The touch scheme Griff's rules and the touch layer's gestures (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
@@ -64,6 +65,7 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 | `src/app/ScreenKeyboardAndroid.cpp` | The phone's keyboard for FAF's text fields: SDL's, shown when a finger's press lands on a text field (the lobby's chat, a profile's name, the console's line; the host's presses too, `FingerPressed`) or FAF's Menu tab asks for it; it asks for plain keys (`TYPE_NULL`), which a keyboard that sends keys for them types as a keyboard does (one that commits text instead, as AOSP's does for most characters, still closes the console that its grave accent opens: `patches/README.md`, Shell.cpp), Back hides it before Back is Esc again, Enter goes to the game and then hides it. It watches SDL's events through the window layer's hook for the developer windows, which Android, with its one window, never makes |
 | `src/app/SoundAndroid.cpp` | The game's sound follows the activity and Android's audio focus, which the activity asks for: SDL's own pause of its output (`AAUDIO_PauseDevices`, `OPENSLES_PauseDevices`: the stream under the game's sound and a movie's, and with their patch the streams SDL builds while it lasts) in the back and while another app has the focus, on SDL's main thread; the report says when it pauses and when it plays again |
 | `src/app/GameJniAndroid.cpp` | The natives of the app's `Game` class on SDL's activity: the activity's front and its audio focus; for `NetworkGameService` whether a UDP connector has its socket open (`NET_OpenUDPConnectors`, the patched `CNetUDPConnector.cpp`) or a peer link of the game's own is up (`NET_PeerTransportsActive`, see The network) and whether a game is playing (`UI_GamePlaying`); the app's lines in the report |
+| `src/app/PerformanceAndroid.cpp`, `AdpfAndroid.cpp` | Android's performance hint sessions for the render thread and the sim's, which time the engine's frames and beats through its hooks, and the watch of the phone's thermal headroom with its lines in the report (see Performance hints and the heat); `AdpfAndroid.cpp` has the NDK's calls, each behind its API level |
 | `src/host/HostSdl.cpp` | The host on SDL's activity: the tasks the activity gives the game's thread wait with one wake each in SDL's queue and run where it comes, and the input they give goes to the engine as its window events, next (`include/HostQueue.h`, `patches/README.md`'s `WindowSdl.cpp`), with Windows' double click |
 | `src/host/GriffAndroid.cpp`, `GriffShown.cpp` | The touch scheme Griff's half in the engine (`../TOUCH_UI.md`): its tasks on the program's thread (taps, rests, strokes, the draft, the groups, the undo) and its globals for FAF's Lua (`FafreGriff*`), which `fafre/griff.lua` and the hooks read |
 | `src/host/MenuFingers.cpp` | What FAF's UI and the touch layer tell each other about the fingers in the menus: the page, whose the fingers are, the HUD's factor, what to bring into view (`FafreSetPage`, `FafreSetFingers`, `FafreSetHud`, `FafreShowLines`), a list's share of a finger's drag, and FAF's Menu tab's Keyboard (`FafreKeyboard`) on SDL's keyboard; the layer hears what is new in a task of its own (`menufingers::SetListener`) |
@@ -198,6 +200,58 @@ left after what the stream's buffer holds of it ended the connection (`Communica
 are shorter, an ICE server list or a peer's ICE message for the game's own links (`/nativenet`) need not be. The
 patched stream counts them (`patches/README.md`, `CNetTCPBuf.cpp`), and an argument of any length arrives whole
 (`tests/net` up to 64 KB, the game with `gpgnet_host.py --ice-msg` below), a live replay's long message too.
+
+### Performance hints and the heat
+
+Android's performance framework (ADPF) lets a game tell Android how long its busy threads take for their work, against
+what they should take, so that Android sets their cores and clocks to fit, where it would go by their load alone; it tells
+the game how near the phone is to throttling; and it hears what the game does. `src/app/PerformanceAndroid.cpp` has the
+first two, on the NDK's calls in `src/app/AdpfAndroid.cpp`, and the activity has the third (`GamePhase`). None of them
+changes a setting of the game's.
+
+- **The render thread** (the engine's main thread: the UI, the sim's sync and the drawing) has a hint session from Android
+  13 (API 33), whose target is the display's frame time as SDL's desktop mode has it (the activity's
+  `Display.getRefreshRate` at the surface's last change), looked at again each second. A frame's work runs from the
+  head's frame start (`moho::gViewportBeforeFrame`) to its present: the surface's `WindowSurfacePresented`, which the
+  patched `DeviceVulkan.cpp` calls at each present of a frame with draws. `CD3DDevice::Paint` presents a frame at the
+  next paint's start, and the backend waits for the GPU and the swap chain's next image after that, so the wait for the
+  display is not in the work. Where the game cannot keep the display's rate, its frames stay over the target, and Android
+  gives the thread what it can.
+- **The sim's thread** has a session from Android 13 whose target is a beat at the game's speed: 100 ms at +0, ten times
+  as fast at +10, from the client manager's rate, which the render thread reads once a second, as FAF's UI does. The
+  engine marks only a beat's start (`moho::gSimBeforeBeat`), and the thread waits between beats, so a beat's work is the
+  thread's CPU time from one start to the next: the beat and its sync, without the wait, and without what a beat waits
+  for the sim's workers. Each sim has a thread of its own, a game's and each one a replay's seek makes at a keyframe, and
+  each gets a session.
+- **The thermal headroom**, from Android 12 (API 31), is how much of the phone's thermal envelope is in use: at 1.0
+  Android throttles the phone (its thermal status SEVERE). A thread of its own reads it every 2 s: each reading is a call
+  into Android's thermal service, and its figure follows slow sensors, the skin's. The report has the first reading, and
+  each time it passes 0.8 and 1.0 or comes back under them; a mark counts as left only 0.05 under it, so that a reading
+  that wavers about one writes no line each time. `performance::ThermalHeadroom()` has the last reading, for a policy that
+  lowers the game's settings as the phone heats up.
+- **The game's state** (`GameManager.setGameState`, Android 13): the activity's poll tells Android each change of what the
+  game does, from what the app knows of the program. It loads until the program's first frame is on the screen, the
+  start's preparation among that; then it is in its menus (a lobby and the score screen among them), or a game goes on
+  behind its UI, one that cannot be interrupted where its network is in use, as the others play on. In its performance
+  game mode Android boosts a game that loads, for a few seconds at most, and the phone's game tools see the rest. A
+  game's own load after the menus is not told: the app has no word of it yet.
+
+The report's lines (`game.txt`):
+
+| Line | When |
+|---|---|
+| `performance hints: the render thread's session, 8.333 ms a frame (the display's 120 Hz)` | At the first frame |
+| `performance hints: the sim thread's session, 100 ms a beat (speed +0)` | At the first sim's first beat; the later sims' sessions have no line |
+| `performance hints: none below Android 13 (API 33), this phone has API 31`; `Android has no hint manager here`; `Android made no session for the render thread; the game asks for no more`; `the sim thread's session failed (Broken pipe); ...` | Once, where the game asks for no session or no more: an emulator's power HAL may make none |
+| `thermal: headroom 0.43`; `headroom 0.81, past 0.8`; `headroom 1.02, past 1.0, where Android throttles the phone`; `headroom 0.93, back under 1.0` | The first reading, and each mark passed or left |
+| `thermal: no headroom below Android 12 (API 31), this phone has API 30`; `thermal: Android gives no headroom` | Once; the second after three readings that are no number, a later reading still has its line |
+| `game state: loading`, `the menus`, `a game`, `a network game` | Each change, from Android 13 |
+
+The NDK's calls newer than Android 8.0, which this build is for, are weak references behind `__builtin_available` (the
+NDK's `ANDROID_WEAK_API_DEFS`) in `faf_adpf` alone: the engine's files keep the NDK's strict check that they call nothing
+newer, and their forced headers would meet the newer declarations that the weak mode shows. The library still loads on
+Android 8.0, where the calls are null. The targets' arithmetic and the marks' rule have `static_assert`s, which the build
+checks, and `GamePhaseTest` pins the game's phases; what the sessions do to the frame times and the heat needs a phone.
 
 ## Tests
 
