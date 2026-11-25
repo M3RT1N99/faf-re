@@ -1,8 +1,21 @@
 diff --git a/src/moho/misc/StartupHelpers.cpp b/src/moho/misc/StartupHelpers.cpp
-index 8a30fc65a..a65585817 100644
+index 8a30fc65a..9c2b82e2d 100644
 --- a/src/moho/misc/StartupHelpers.cpp
 +++ b/src/moho/misc/StartupHelpers.cpp
-@@ -3223,14 +3223,16 @@ fa::string moho::FILE_Dir(
+@@ -397,6 +397,12 @@ namespace
+       lua_pushboolean(state, 1);
+       return 1;
+     }
++#if FAFRE_PLATFORM_ANDROID
++    // Android client build: an app has no priority class to set, and Android puts the app in front in its top-app group
++    // itself. Nothing failed, which FAF's init would log as a failure that may impact the framerate.
++    lua_pushboolean(state, 1);
++    return 1;
++#endif
+     const HMODULE kernelModule = ::GetModuleHandleA("kernel32.dll");
+     using SetPriorityClassFn = BOOL(WINAPI*)(HANDLE, DWORD);
+     auto* const setPriorityClass = kernelModule != nullptr
+@@ -3223,14 +3229,16 @@ fa::string moho::FILE_Dir(
    if (filename == nullptr || filename[0] == '\0') {
      ThrowStartupFileError("Moho::FILE_Dir", "Null argument.");
    }
