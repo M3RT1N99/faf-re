@@ -1,6 +1,6 @@
 // The device's classes of cores and where the game's threads go by them (include/CoreClasses.h): the rating sysfs gives each
 // CPU, the classes, the plan for the sim's thread and the others, its line in the report, what /proc says of a thread, and
-// the sim's speed lines.
+// the sim's speed lines and a replay move's.
 
 #include <cstdint>
 #include <limits>
@@ -289,4 +289,52 @@ WXT_TEST(ASpeedLineHasTheTicksASecondAndWhereTheSimsThreadRan)
   plain.headroom = std::numeric_limits<float>::quiet_NaN();
   WXT_CHECK_EQ(coreclasses::SpeedLine(plain, one.classes),
     "sim: 10.0 ticks a second over 30 s (ticks 0 to 302); its thread on a CPU 50% of the time");
+}
+
+WXT_TEST(AMovesLinesSayItsWayItsTicksAndTheSimsShareOfItsTimeAlone)
+{
+  // The Galaxy S22 Ultra's move back: a new sim from the replay's start, 786 ticks after its load.
+  coreclasses::Move back;
+  back.restarts = true;
+  back.fromTick = 6228;
+  back.targetTick = 786;
+  back.startTick = 0;
+  WXT_CHECK_EQ(coreclasses::MoveBeganLine(back), "sim: a move back from tick 6228 to 786 begins, a new sim playing its way");
+  back.tick = 786;
+  back.seconds = 41.2;
+  back.loadSeconds = 6.9;
+  back.simNanos = 38'316'000'000;
+  WXT_CHECK_EQ(coreclasses::MoveEndLine(back, coreclasses::MoveEnd::kArrived),
+    "sim: the move back to tick 786 arrived at tick 786 after 41.2 s: 786 ticks at 22.9 a second after its new sim's load "
+    "of 6.9 s; the sim's thread on a CPU 93% of the move");
+
+  coreclasses::Move forward;
+  forward.fromTick = 120;
+  forward.targetTick = 600;
+  forward.startTick = 120;
+  WXT_CHECK_EQ(coreclasses::MoveBeganLine(forward), "sim: a move forward from tick 120 to 600 begins");
+  forward.tick = 300;
+  forward.seconds = 9.0;
+  forward.simNanos = 8'730'000'000;
+  WXT_CHECK_EQ(coreclasses::MoveEndLine(forward, coreclasses::MoveEnd::kCancelled),
+    "sim: the move forward to tick 600 was cancelled at tick 300 after 9.0 s: 180 ticks at 20.0 a second; the sim's thread "
+    "on a CPU 97% of the move");
+  WXT_CHECK_EQ(coreclasses::MoveEndLine(forward, coreclasses::MoveEnd::kReplaced).substr(0, 53),
+    "sim: the move forward to tick 600 gave way to another");
+  WXT_CHECK_EQ(coreclasses::MoveEndLine(forward, coreclasses::MoveEnd::kStalled).substr(0, 47),
+    "sim: the move forward to tick 600 stalled at ti");
+  WXT_CHECK_EQ(coreclasses::MoveEndLine(forward, coreclasses::MoveEnd::kReplayEnded).substr(0, 57),
+    "sim: the move forward to tick 600 met the replay's end at");
+
+  // Left while its new sim still loaded: no ticks yet, and none a second.
+  coreclasses::Move loading;
+  loading.restarts = true;
+  loading.fromTick = 900;
+  loading.targetTick = 100;
+  loading.startTick = 900;
+  loading.tick = 900;
+  loading.seconds = 2.5;
+  WXT_CHECK_EQ(coreclasses::MoveEndLine(loading, coreclasses::MoveEnd::kLeft),
+    "sim: the move back to tick 100 ended with the replay at tick 900 after 2.5 s: 0 ticks at 0.0 a second; the sim's "
+    "thread on a CPU 0% of the move");
 }

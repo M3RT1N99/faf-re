@@ -303,12 +303,21 @@ sim or ticks that go back begin a sim of its own, as a replay's move back makes 
 paused, held for a move or over, has no line. Where the thread is on a CPU nearly all of the time, the sim is the limit;
 where it waits, the game's speed is.
 
+A 30 s window mixes play at the game's speed with a replay's moves, so each move has a line at its start and one at its end,
+over the move alone: the engine tells the app of each (`moho::gReplayMoveHook`, the patched `ReplayTimeline.h` and
+`ReplayTimeline.cpp`), and the line has the move's direction, its ticks, their rate after a new sim's load, and how much of
+its time the sims' threads were on a CPU. That time is what their beats count on each thread's CPU-time clock, a new sim's
+load on its thread among it, with the running beat's from the thread's clock (`pthread_getcpuclockid`), so a move back's old
+sim and its new one both count.
+
 | Line | When |
 |---|---|
 | `cores: big cpu7 (capacity 1024), mid cpu4-6 (capacity …), little cpu0-3 (capacity …) by cpu_capacity; the sim's thread on cpu4-7, starting on cpu7; the render thread, the issue thread and the workers on cpu4-7, off the little cores, which the engine sizes its worker pools by; FAF's init's mask is not taken` | As the program starts; `cores: cpu0-7 (…) by …: one class, so the threads go where FAF's init and Android put them` on a device of one class, `cores: sysfs rates no CPU …` where sysfs rates none |
 | `cores: Android had put the threads on cpu0-7, as it does when it moves the process into another of its CPU groups; the 13 placed threads are back on their cores`; `cores: Android holds the process on cpu0-3 for now (Invalid argument), as in the back; the threads go back on their cores once it lets them` | When the watch found the threads on CPUs the plan did not give them, newly |
 | `cores: a thread could not go on cpu4-7 (…), it runs on cpu0-3 until Android lets it` | Once, where a thread could not go where the plan has it as it started |
 | `sim: 3.6 ticks a second over 30 s (ticks 6120 to 6228), in a replay's move; its thread on a CPU 97% of the time: big 71%, mid 29%, little 0%; thermal headroom 0.78` | Every 30 s of play; `in a replay's move` where the timeline's fast-forward went on in it, the classes' shares where there are classes, the headroom where Android gives one |
+| `sim: a move back from tick 6228 to 786 begins, a new sim playing its way` | As a replay's move begins; `sim: a move forward from tick 120 to 600 begins` where it plays on from where it is |
+| `sim: the move back to tick 786 arrived at tick 786 after 41.2 s: 786 ticks at 22.9 a second after its new sim's load of 6.9 s; the sim's thread on a CPU 93% of the move` | As it ends: `arrived at`, `was cancelled at`, `gave way to another at` (a move after it), `stalled at` (no beat came for 10 s), `met the replay's end at`, `ended with the replay at` (its session ended) |
 
 ### The sim's profile
 

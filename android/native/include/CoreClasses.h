@@ -371,4 +371,87 @@ namespace coreclasses
     }
     return line;
   }
+
+  /// How a replay's move ended, as the engine tells (moho::EReplayMoveStep).
+  enum class MoveEnd
+  {
+    kArrived,
+    kCancelled,
+    kReplaced,
+    kStalled,
+    kReplayEnded,
+    kLeft,
+  };
+
+  /// A replay's move for the report's lines: its ticks, and at its end its time, its new sim's load among it, and the sims'
+  /// threads' time on a CPU in it.
+  struct Move
+  {
+    /// A new sim plays it, from a keyframe or the replay's start.
+    bool restarts = false;
+    std::int32_t fromTick = 0;
+    std::int32_t targetTick = 0;
+    /// Where its play began: fromTick, or the new sim's first tick.
+    std::int32_t startTick = 0;
+    /// Where it got to.
+    std::int32_t tick = 0;
+    double seconds = 0.0;
+    double loadSeconds = 0.0;
+    std::uint64_t simNanos = 0;
+  };
+
+  [[nodiscard]] inline const char* Direction(const Move& move)
+  {
+    return move.targetTick < move.fromTick ? "back" : "forward";
+  }
+
+  /// The report's line of a move's start: "sim: a move back from tick 6228 to 786 begins, a new sim playing its way".
+  [[nodiscard]] inline std::string MoveBeganLine(const Move& move)
+  {
+    char text[128];
+    std::snprintf(text, sizeof text, "sim: a move %s from tick %d to %d begins%s", Direction(move), move.fromTick,
+      move.targetTick, move.restarts ? ", a new sim playing its way" : "");
+    return text;
+  }
+
+  /// The report's line of a move's end, over the move alone, which the speed lines' 30 s windows mix with play: "sim: the
+  /// move back to tick 786 arrived at tick 786 after 41.2 s: 786 ticks at 22.9 a second after its new sim's load of 6.9 s;
+  /// the sim's thread on a CPU 93% of the move". The ticks a second leave a new sim's load out, the share does not.
+  [[nodiscard]] inline std::string MoveEndLine(const Move& move, const MoveEnd end)
+  {
+    const char* how = "arrived at";
+    switch (end) {
+    case MoveEnd::kArrived:
+      break;
+    case MoveEnd::kCancelled:
+      how = "was cancelled at";
+      break;
+    case MoveEnd::kReplaced:
+      how = "gave way to another at";
+      break;
+    case MoveEnd::kStalled:
+      how = "stalled at";
+      break;
+    case MoveEnd::kReplayEnded:
+      how = "met the replay's end at";
+      break;
+    case MoveEnd::kLeft:
+      how = "ended with the replay at";
+      break;
+    }
+    const std::int32_t ticks = move.tick > move.startTick ? move.tick - move.startTick : 0;
+    const bool loaded = move.restarts && move.loadSeconds > 0.0 && move.loadSeconds < move.seconds;
+    const double playing = loaded ? move.seconds - move.loadSeconds : move.seconds;
+    char text[256];
+    std::snprintf(text, sizeof text, "sim: the move %s to tick %d %s tick %d after %.1f s: %d ticks at %.1f a second",
+      Direction(move), move.targetTick, how, move.tick, move.seconds, ticks, playing > 0.0 ? ticks / playing : 0.0);
+    std::string line = text;
+    if (loaded) {
+      std::snprintf(text, sizeof text, " after its new sim's load of %.1f s", move.loadSeconds);
+      line += text;
+    }
+    std::snprintf(text, sizeof text, "; the sim's thread on a CPU %.0f%% of the move",
+      move.seconds > 0.0 ? 100.0 * static_cast<double>(move.simNanos) / (move.seconds * 1e9) : 0.0);
+    return line + text;
+  }
 } // namespace coreclasses

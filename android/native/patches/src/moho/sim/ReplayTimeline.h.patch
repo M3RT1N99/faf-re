@@ -1,0 +1,53 @@
+diff --git a/src/moho/sim/ReplayTimeline.h b/src/moho/sim/ReplayTimeline.h
+index fc0a8cb..03b4849 100644
+--- a/src/moho/sim/ReplayTimeline.h
++++ b/src/moho/sim/ReplayTimeline.h
+@@ -29,6 +29,48 @@ namespace moho
+   /** While set, the driver issues beats as fast as the sim takes them, and the session applies them as they come. */
+   inline std::atomic<bool> gReplayFastForward{false};
+ 
++  /** Engine addition: a move's (`REPLAY_SeekTo`'s) start, and how it ended. */
++  enum class EReplayMoveStep
++  {
++    Began,
++    /** At its target. */
++    Arrived,
++    /** `REPLAY_CancelSeek`: where the sim had got to. */
++    Cancelled,
++    /** By another move. */
++    Replaced,
++    /** No beat came for 10 s: the replay ends before its target. */
++    Stalled,
++    /** The replay's game ended before its target. */
++    ReplayEnded,
++    /** The replay's session ended. */
++    Left,
++  };
++
++  /** Engine addition: a move as a host hears it (`gReplayMoveHook`). */
++  struct SReplayMove
++  {
++    EReplayMoveStep step = EReplayMoveStep::Began;
++    /** It plays a new sim from a keyframe or the replay's start: a move back, or one forward past a keyframe. */
++    bool restarts = false;
++    /** The session's tick as it began, and its target. */
++    std::int32_t fromTick = 0;
++    std::int32_t targetTick = 0;
++    /** Where its play began: `fromTick`, or its new sim's first tick once there is one. */
++    std::int32_t startTick = 0;
++    /** Where it got to: `fromTick` as it begins. */
++    std::int32_t tick = 0;
++    /** Its new sim's time from the move's start to its first beat; 0 without one. */
++    double loadSeconds = 0.0;
++  };
++
++  /**
++   * Engine addition: a host that times the moves, as the Android app's report does, hears each one's start and its end,
++   * on the main thread. Null: nobody does.
++   */
++  using ReplayMoveHook = void (*)(const SReplayMove& move);
++  inline std::atomic<ReplayMoveHook> gReplayMoveHook{nullptr};
++
+   /** `VCR_SetupReplaySession` for a viewer: remembers the file and its length, for the bar and for restarts. */
+   [[nodiscard]] fa::auto_ptr<SWldSessionInfo> REPLAY_SetupViewerSession(const char* path, fa::string* failureReason);
+ 

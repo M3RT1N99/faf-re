@@ -1,5 +1,5 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..2f1fdb1 100644
+index e4f93ae..3b80c92 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
 @@ -33,8 +33,10 @@
@@ -86,7 +86,61 @@ index e4f93ae..2f1fdb1 100644
      bool sLaunchPending = false;
      bool sRestartWanted = false;
      bool sRestarting = false;
-@@ -586,6 +626,25 @@ namespace moho
+@@ -187,6 +227,53 @@ namespace moho
+       }
+     }
+ 
++    // Engine addition: the move under way, for a host that hears the moves (gReplayMoveHook), and whether a cancel set its
++    // target to where its new sim had got to.
++    SReplayMove sMove{};
++    bool sMoveOpen = false;
++    bool sMoveCancelled = false;
++
++    void TellMove()
++    {
++      if (const ReplayMoveHook hook = gReplayMoveHook.load(std::memory_order_acquire); hook != nullptr) {
++        hook(sMove);
++      }
++    }
++
++    /** The move under way, if one is, ended at `tick`: arriving at a target its cancel set is its cancel. */
++    void EndMove(
++      const EReplayMoveStep step,
++      const std::int32_t tick
++    )
++    {
++      if (!sMoveOpen) {
++        return;
++      }
++      sMoveOpen = false;
++      sMove.step = sMoveCancelled && step == EReplayMoveStep::Arrived ? EReplayMoveStep::Cancelled : step;
++      sMove.tick = tick;
++      TellMove();
++    }
++
++    /** A move from `from` to `target` begins, in place of the one under way. */
++    void BeginMove(
++      const std::int32_t from,
++      const std::int32_t target,
++      const bool restarts
++    )
++    {
++      EndMove(EReplayMoveStep::Replaced, from);
++      sMove = SReplayMove{};
++      sMove.restarts = restarts;
++      sMove.fromTick = from;
++      sMove.targetTick = target;
++      sMove.startTick = from;
++      sMove.tick = from;
++      sMoveOpen = true;
++      sMoveCancelled = false;
++      TellMove();
++    }
++
+     /** `replay_keyframes` next to the exe, or in the temporary folder when the exe's folder can't be written. */
+     [[nodiscard]] const std::filesystem::path& KeyframeRoot()
+     {
+@@ -586,6 +673,25 @@ namespace moho
      void StartKeyframePreparation()
      {
        sPrepareStartDue = false;
@@ -112,7 +166,7 @@ index e4f93ae..2f1fdb1 100644
        if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
          return;
        }
-@@ -1021,7 +1080,10 @@ namespace moho
+@@ -1021,7 +1127,10 @@ namespace moho
  
      ForgetKeyframes();
      RemoveLeftoverKeyframes();
@@ -123,7 +177,41 @@ index e4f93ae..2f1fdb1 100644
      EndSeek();
      sReplayPath = path;
      sTotalBeats = gVcrReplayBeats;
-@@ -1131,11 +1193,22 @@ namespace moho
+@@ -1067,6 +1176,8 @@ namespace moho
+     if (sRestarting && sHeldTick >= 0 && tick >= sHeldTick) {
+       sTargetTick = tick;
+       sDeferredTarget = -1;
++      sMove.targetTick = tick;
++      sMoveCancelled = false;
+       return;
+     }
+ 
+@@ -1082,9 +1193,11 @@ namespace moho
+     }
+     StartSeekClock(current);
+     if (SeekLoadsKeyframe(current, tick)) {
++      BeginMove(current, tick, true);
+       RequestRestart(tick);
+       return;
+     }
++    BeginMove(current, tick, false);
+     StartFastForward(session, tick);
+   }
+ 
+@@ -1104,9 +1217,12 @@ namespace moho
+   {
+     sDeferredTarget = -1;
+     if (!sRestartWanted && !sRestarting) {
++      // Where the fast-forward's last frame left the session.
++      EndMove(EReplayMoveStep::Cancelled, sLastProgressTick);
+       EndSeek();
+     } else if (sHeldTick >= 0) {
+       sTargetTick = sHeldTick; // stops where the new sim has got to
++      sMoveCancelled = true;
+     }
+   }
+ 
+@@ -1131,11 +1247,22 @@ namespace moho
      return progress;
    }
  
@@ -146,7 +234,7 @@ index e4f93ae..2f1fdb1 100644
      if (!session.IsReplay || sReplayPath.empty()) {
        return;
      }
-@@ -1163,6 +1236,14 @@ namespace moho
+@@ -1163,6 +1290,14 @@ namespace moho
        return;
      }
  
@@ -161,7 +249,7 @@ index e4f93ae..2f1fdb1 100644
      if (replay_KeyframeEvery <= 0 || sKeyframePending || sRestarting) {
        return;
      }
-@@ -1179,9 +1260,13 @@ namespace moho
+@@ -1179,9 +1314,13 @@ namespace moho
      }
      // Or will be: a save stops the sim, which shows.
  #if !FAFRE_PLATFORM_WINDOWS
@@ -178,7 +266,19 @@ index e4f93ae..2f1fdb1 100644
      }
  #else
      if (
-@@ -1233,6 +1318,8 @@ namespace moho
+@@ -1227,16 +1366,25 @@ namespace moho
+     if (session.mGameTick >= sTargetTick || session.IsGameOver != 0 || stalled) {
+       NoteRunEnd(session.mGameTick);
+       LogSeekArrival(session.mGameTick);
++      EndMove(
++        session.mGameTick >= sTargetTick ? EReplayMoveStep::Arrived
++          : session.IsGameOver != 0      ? EReplayMoveStep::ReplayEnded
++                                         : EReplayMoveStep::Stalled,
++        session.mGameTick
++      );
+       EndSeek();
+     }
+   }
  
    void REPLAY_OnTeardown()
    {
@@ -187,17 +287,25 @@ index e4f93ae..2f1fdb1 100644
      // The teardown before this replay's session starts, not the end of the replay.
      if (sLaunchPending) {
        return;
-@@ -1261,6 +1348,9 @@ namespace moho
+     }
++    EndMove(EReplayMoveStep::Left, sHeldTick >= 0 ? sHeldTick : sLastProgressTick);
+     ForgetKeyframes();
+     RemoveLeftoverKeyframes();
+     EndSeek();
+@@ -1261,6 +1409,12 @@ namespace moho
        sRunStart = Clock::now();
        sRunStartTick = tick;
        sLoadSeconds = std::chrono::duration<double>(sRunStart - sRestartAsked).count();
 +      // Android client build: the held beats' heap counts from the hold's first beat (replay_HeldBeatsMaxMB).
 +      sHoldHeapStart = HeapInUse();
 +      sHoldCapSaid = false;
++      // The move's play begins here, after its new sim's load.
++      sMove.startTick = tick;
++      sMove.loadSeconds = sLoadSeconds;
      }
      sHeldTick = tick;
      sLastProgress = Clock::now();
-@@ -1270,8 +1360,42 @@ namespace moho
+@@ -1270,8 +1424,42 @@ namespace moho
      const std::size_t beatsHeld
    )
    {
@@ -242,3 +350,11 @@ index e4f93ae..2f1fdb1 100644
    }
  
    void REPLAY_SimRestarted(
+@@ -1290,6 +1478,7 @@ namespace moho
+       StartFastForward(session, tick);
+     } else {
+       LogSeekArrival(session.mGameTick);
++      EndMove(EReplayMoveStep::Arrived, session.mGameTick);
+       gReplayFastForward.store(false);
+     }
+   }

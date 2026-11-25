@@ -16,6 +16,10 @@
 // The watch also has the sim's speed in the report, on every device: every 30 s of play its ticks a second, how much of
 // the time its thread was on a CPU, and on which class, by the CPU it ran on last (/proc/self/task/<tid>/stat's processor)
 // 20 times a second, with its time on a CPU from schedstat. Its beats tell which thread the sim runs on, and its tick.
+//
+// A replay's move has a line at its start and one at its end (moho::gReplayMoveHook, the patched ReplayTimeline.cpp), over
+// the move alone, which a 30 s window mixes with play: its direction, its ticks, their rate after a new sim's load, and how
+// much of its time the sims' threads were on a CPU, as their beats count it (their thread's CPU-time clock).
 
 #include "CoresAndroid.h"
 
@@ -79,6 +83,118 @@ namespace
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     return static_cast<std::int64_t>(now.tv_sec) * kNanosPerSecond + now.tv_nsec;
+  }
+
+  [[nodiscard]] std::uint64_t Nanos(const timespec& time)
+  {
+    return static_cast<std::uint64_t>(time.tv_sec) * kNanosPerSecond + static_cast<std::uint64_t>(time.tv_nsec);
+  }
+
+  // The sims' threads' time on a CPU as their beats tell, for the moves' lines: the sum over the sims so far up to the last
+  // beat's start, and the CPU clock of the thread that had it, whose time since then a reader adds. The sim's thread writes
+  // them under a sequence count, odd while it does; the main thread reads them.
+  std::atomic<std::uint32_t> gSimCpuSequence{0};
+  std::atomic<std::uint64_t> gSimCpuNanos{0};
+  std::atomic<std::uint64_t> gSimCpuAtBeat{0};
+  std::atomic<clockid_t> gSimCpuClock{0};
+  std::atomic<bool> gSimCpuClockKnown{false};
+
+  /// On the sim's thread, at a beat's start: its time on a CPU since the last beat, or, on a new sim's thread, since the
+  /// thread began, its sim's load.
+  void CountSimCpu(const bool newThread)
+  {
+    timespec now{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) != 0) {
+      return;
+    }
+    const std::uint64_t cpu = Nanos(now);
+    clockid_t clock{};
+    const bool known = newThread && pthread_getcpuclockid(pthread_self(), &clock) == 0;
+    const std::uint32_t sequence = gSimCpuSequence.load(std::memory_order_relaxed);
+    gSimCpuSequence.store(sequence + 1, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+    const std::uint64_t before = newThread ? 0 : gSimCpuAtBeat.load(std::memory_order_relaxed);
+    gSimCpuNanos.store(gSimCpuNanos.load(std::memory_order_relaxed) + (cpu > before ? cpu - before : 0),
+      std::memory_order_relaxed);
+    gSimCpuAtBeat.store(cpu, std::memory_order_relaxed);
+    if (newThread) {
+      gSimCpuClock.store(clock, std::memory_order_relaxed);
+      gSimCpuClockKnown.store(known, std::memory_order_relaxed);
+    }
+    gSimCpuSequence.store(sequence + 2, std::memory_order_release);
+  }
+
+  /// The sims' threads' time on a CPU so far: as far as the last beat's start, and the sim's thread's since. On any thread.
+  [[nodiscard]] std::uint64_t SimCpuNanos()
+  {
+    std::uint64_t total = 0;
+    std::uint64_t atBeat = 0;
+    clockid_t clock{};
+    bool known = false;
+    for (;;) {
+      const std::uint32_t sequence = gSimCpuSequence.load(std::memory_order_acquire);
+      total = gSimCpuNanos.load(std::memory_order_relaxed);
+      atBeat = gSimCpuAtBeat.load(std::memory_order_relaxed);
+      clock = gSimCpuClock.load(std::memory_order_relaxed);
+      known = gSimCpuClockKnown.load(std::memory_order_relaxed);
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if ((sequence & 1U) == 0 && gSimCpuSequence.load(std::memory_order_relaxed) == sequence) {
+        break;
+      }
+    }
+    // A thread that is gone has no clock: its time as far as its last beat counts.
+    timespec now{};
+    if (known && clock_gettime(clock, &now) == 0 && Nanos(now) > atBeat) {
+      return total + Nanos(now) - atBeat;
+    }
+    return total;
+  }
+
+  // The move under way as its start found it, on the main thread alone.
+  std::int64_t gMoveStart = 0;
+  std::uint64_t gMoveSimCpu = 0;
+
+  [[nodiscard]] coreclasses::MoveEnd EndOf(const moho::EReplayMoveStep step)
+  {
+    switch (step) {
+    case moho::EReplayMoveStep::Cancelled:
+      return coreclasses::MoveEnd::kCancelled;
+    case moho::EReplayMoveStep::Replaced:
+      return coreclasses::MoveEnd::kReplaced;
+    case moho::EReplayMoveStep::Stalled:
+      return coreclasses::MoveEnd::kStalled;
+    case moho::EReplayMoveStep::ReplayEnded:
+      return coreclasses::MoveEnd::kReplayEnded;
+    case moho::EReplayMoveStep::Left:
+      return coreclasses::MoveEnd::kLeft;
+    case moho::EReplayMoveStep::Began:
+    case moho::EReplayMoveStep::Arrived:
+      break;
+    }
+    return coreclasses::MoveEnd::kArrived;
+  }
+
+  /// moho::gReplayMoveHook: a replay's move began or ended, on the main thread. Its end's line is over the move alone, its
+  /// ticks a second and how much of its time the sim's threads were on a CPU.
+  void OnReplayMove(const moho::SReplayMove& event)
+  {
+    coreclasses::Move move;
+    move.restarts = event.restarts;
+    move.fromTick = event.fromTick;
+    move.targetTick = event.targetTick;
+    move.startTick = event.startTick;
+    move.tick = event.tick;
+    move.loadSeconds = event.loadSeconds;
+    if (event.step == moho::EReplayMoveStep::Began) {
+      gMoveStart = NowNanos();
+      gMoveSimCpu = SimCpuNanos();
+      Report(coreclasses::MoveBeganLine(move));
+      return;
+    }
+    move.seconds = static_cast<double>(NowNanos() - gMoveStart) / static_cast<double>(kNanosPerSecond);
+    const std::uint64_t cpu = SimCpuNanos();
+    move.simNanos = cpu > gMoveSimCpu ? cpu - gMoveSimCpu : 0;
+    Report(coreclasses::MoveEndLine(move, EndOf(event.step)));
   }
 
   /// A small file's text, "" where it cannot be read.
@@ -441,6 +557,7 @@ void cores::Install()
     Report(coreclasses::PlacementLine(gReading, gPlan));
   }
   StartWatch();
+  moho::gReplayMoveHook.store(&OnReplayMove, std::memory_order_release);
 }
 
 void cores::AnyCpu()
@@ -454,6 +571,7 @@ void cores::SimBeat(const moho::Sim& sim)
 {
   const pid_t thread = ::gettid();
   const std::uint32_t tick = sim.mCurTick;
+  CountSimCpu(thread != gSimThread.load(std::memory_order_relaxed));
   if (thread != gSimThread.load(std::memory_order_relaxed) || &sim != gSimObject.load(std::memory_order_relaxed) ||
       tick < gSimTick.load(std::memory_order_relaxed)) {
     gSimThread.store(thread, std::memory_order_relaxed);
