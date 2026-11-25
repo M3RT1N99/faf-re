@@ -48,6 +48,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
+| `faf_gal_tests` | The patched `PipelineDefer.h`: the deferred pipelines' slots, their retries and the worker (`tests/gal`), with upstream's tests of the header, linked statically |
 
 The client's objects are compiled with the simulation's settings (`faf_sim_settings`) and the engine's
 directory-wide definitions (`FAF_RETAIL_LAYOUT`, which decides the legacy containers' layout), as they
@@ -378,6 +379,18 @@ python -I android/tools/test_gpgnet_host.py
 `Shell.cpp`): it gets no char, neither the shell's own for Enter nor the window system's text that comes before the key's
 key-up; a skipped key-down gets both; a key-up ends the rule. It runs `ShellApp::Dispatch` on the patched copy with a
 window layer of the test's own (`platform/Window.h`) in place of SDL's, and is linked statically.
+
+`faf_gal_tests` (`tests/gal`) pins the patched `gpg/gal/PipelineDefer.h` (`patches/README.md`, the pipelines a draw
+waits for): a deferred build is queued only once the pending list holds its slot, also when there is no memory for the
+slot; a pipeline refused for want of memory is tried six times in all over 15.5 s, the last in place; a build's end
+says whether it may build later; the worker runs each job, and what one throws reaches its future. Upstream's own tests
+of the header (`../../tests/gal/PipelineDeferTests.cpp`) run on the patched copy beside them. Header-only and linked
+statically, so the x86_64 build runs on a Linux host as well (WSL here):
+
+```sh
+adb push build/android-x64/bin/faf_gal_tests /data/local/tmp/
+adb shell "chmod 755 /data/local/tmp/faf_gal_tests && /data/local/tmp/faf_gal_tests"
+```
 
 ## Patches
 

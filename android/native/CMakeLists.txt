@@ -27,6 +27,7 @@
 #   faf_net_tests                  the engine's network transport on platform::net (tests/net)
 #   faf_netlink_tests              the game's own peer links, upstream's tests (../../tests/netlink)
 #   faf_shell_tests                the patched shell's rule for a key-down a handler took (tests/shell)
+#   faf_gal_tests                  the patched PipelineDefer.h: the deferred pipelines and their retries (tests/gal)
 
 cmake_minimum_required(VERSION 3.25)
 # ASM: the engine's x86_64 build assembles the x87 helpers (cmake/FafLinux.cmake), and CMake wants
@@ -470,3 +471,14 @@ faf_android_overlay_sources(_faf_shell_tests_files "${FAF_REPO}/src/platform/she
 add_executable(faf_shell_tests tests/shell/ShellKeyTests.cpp ${_faf_shell_tests_files})
 target_link_libraries(faf_shell_tests PRIVATE faf_android_settings faf_sim_archive ${_faf_sim_libraries})
 target_link_options(faf_shell_tests PRIVATE -static -Wl,--gc-sections)
+
+# faf_gal_tests (tests/gal): the patched gpg/gal/PipelineDefer.h (patches/README.md), header-only: a deferred build's
+# slot, the retries of a pipeline refused for want of memory, the worker; and upstream's own tests of the header
+# (../../tests/gal/PipelineDeferTests.cpp) on the patched copy. Linked statically, as faf_griff_tests is.
+add_executable(faf_gal_tests "${FAF_REPO}/tests/gal/PipelineDeferTests.cpp" tests/gal/PipelineDeferAndroidTests.cpp)
+target_include_directories(faf_gal_tests BEFORE PRIVATE "${FAF_ANDROID_OVERLAY}/src")
+target_include_directories(faf_gal_tests PRIVATE "${FAF_REPO}/src")
+target_compile_options(faf_gal_tests PRIVATE "SHELL:-include platform/PlatformDefines.h" -Wall -Wextra)
+target_compile_features(faf_gal_tests PRIVATE cxx_std_20)
+target_link_libraries(faf_gal_tests PRIVATE gtest_main)
+target_link_options(faf_gal_tests PRIVATE -static -Wl,--gc-sections)

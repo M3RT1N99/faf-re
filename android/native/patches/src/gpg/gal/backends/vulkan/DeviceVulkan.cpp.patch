@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index 215312f..e806db8 100644
+index 215312f..4bb1528 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -3,14 +3,21 @@
@@ -1333,7 +1333,7 @@ index 215312f..e806db8 100644
        // The job owns copies of every structure the create info points at (the shader modules are the device's and
        // outlive it: teardown collects pending jobs first). The pipeline cache synchronizes itself.
        struct Job
-@@ -4019,40 +4712,47 @@ namespace gpg::gal
+@@ -4019,40 +4712,49 @@ namespace gpg::gal
        const PFN_vkCreateGraphicsPipelines create = Vk().vkCreateGraphicsPipelines;
        const VkDevice device = mDevice;
        const VkPipelineCache cache = mPipelineCache;
@@ -1346,29 +1346,30 @@ index 215312f..e806db8 100644
 -        if (made != VK_SUCCESS) {
 -          gpg::Warnf(
 -            "Vulkan: pipeline for %s (vertex format %u) failed: %s", name.c_str(), format, vulkan::ResultName(made)
--          );
--          built = VK_NULL_HANDLE; // cached as a failure when taken, as below
 +      const unsigned refusals = gPipelineRetries.Refusals(key.Key());
 +      try {
-+        std::future<VkPipeline> built = PipelineWorker<VkPipeline>::Instance().Post(
-+          std::packaged_task<VkPipeline()>([job, create, device, cache, format, refusals, report = reportFor()] {
-+          VkPipeline made = VK_NULL_HANDLE;
-+          const VkResult result = CreateGraphicsPipeline(create, device, cache, job->info, format, made);
-+          if (PipelineBuildIsNews(refusals, result)) {
-+            ReportPipelineBuild(report, refusals, result);
-+          }
-+          if (result != VK_SUCCESS) {
-+            throw PipelineRefused{OutOfMemory(result)}; // kept as a failure when taken, or tried again (above)
-+          }
-+          return made;
-+        })
-+        );
-+        mPendingPipelines.emplace(std::move(key.Key()), std::move(built));
++        // Its slot first (PostPendingPipeline): a job the device does not hold would outlive it, and build twice.
++        PostPendingPipeline(mPendingPipelines, key.Key(), [&] {
++          return PipelineWorker<VkPipeline>::Instance().Post(
++            std::packaged_task<VkPipeline()>([job, create, device, cache, format, refusals, report = reportFor()] {
++            VkPipeline made = VK_NULL_HANDLE;
++            const VkResult result = CreateGraphicsPipeline(create, device, cache, job->info, format, made);
++            if (PipelineBuildIsNews(refusals, result)) {
++              ReportPipelineBuild(report, refusals, result);
++            }
++            if (result != VK_SUCCESS) {
++              throw PipelineRefused{OutOfMemory(result)}; // kept as a failure when taken, or tried again (above)
++            }
++            return made;
++          })
+           );
+-          built = VK_NULL_HANDLE; // cached as a failure when taken, as below
++        });
 +        mPipelineDeferred = true;
 +        return VK_NULL_HANDLE;
 +      } catch (const std::exception& error) {
-+        // No thread to build on (std::system_error), or no memory to queue the build (std::bad_alloc): in place, below,
-+        // where a refusal for want of memory is tried again later.
++        // No thread to build on (std::system_error), or no memory for the build's slot or job (std::bad_alloc): in
++        // place, below, where a refusal for want of memory is tried again later.
 +        static bool logged = false;
 +        if (!logged) {
 +          logged = true;
@@ -1410,7 +1411,7 @@ index 215312f..e806db8 100644
    }
  
    void DeviceVulkan::CollectPendingPipelines() noexcept
-@@ -4081,6 +4781,11 @@ namespace gpg::gal
+@@ -4081,6 +4783,11 @@ namespace gpg::gal
      if (mPass.hullShader != nullptr) {
        // A tessellated pass draws each triangle of a list as one 3-point patch.
        if (topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
@@ -1422,7 +1423,7 @@ index 215312f..e806db8 100644
          ++mSkippedDraws;
          return false;
        }
-@@ -4142,8 +4847,13 @@ namespace gpg::gal
+@@ -4142,8 +4849,13 @@ namespace gpg::gal
      mPipelineDeferred = false;
      const VkPipeline pipeline = PipelineFor(mPass, topology);
      if (pipeline == VK_NULL_HANDLE) {

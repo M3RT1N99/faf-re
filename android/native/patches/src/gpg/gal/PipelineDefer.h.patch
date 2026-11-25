@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..3e550f5 100644
+index e97176b..6f3fb2b 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
 @@ -8,19 +8,46 @@
@@ -307,7 +307,7 @@ index e97176b..3e550f5 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +318,23 @@ namespace gpg::gal
+@@ -76,9 +318,45 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {
@@ -330,5 +330,27 @@ index e97176b..3e550f5 100644
 +    SettleFinishedPipelines(pending, [&built](const std::string& key, Handle pipeline, PipelineBuildEnd) {
 +      built.emplace(key, std::move(pipeline));
 +    });
++  }
++
++  /**
++   * Queues the build of `key`, which `pending` does not have yet, with `post` (PipelineWorker::Post), and keeps its
++   * future in `pending`. The key's slot comes first, so that every job the worker has is in `pending`, which a device
++   * takes before it goes, and `key` stays as it was, for the build in place that follows a failure. What the slot or
++   * `post` throws (std::bad_alloc, std::system_error) comes out, with nothing of the build pending or queued.
++   */
++  template <class Pending, class Post>
++  void PostPendingPipeline(
++    Pending& pending,
++    const std::string& key,
++    Post&& post
++  )
++  {
++    const auto slot = pending.try_emplace(key).first;
++    try {
++      slot->second = post();
++    } catch (...) {
++      pending.erase(slot);
++      throw;
++    }
 +  }
  } // namespace gpg::gal

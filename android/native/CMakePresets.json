@@ -32,12 +32,12 @@
     {
       "name": "android-arm64",
       "configurePreset": "android-arm64",
-      "targets": ["headless", "faf_sim_math_tests", "fafgame", "faf_dxc", "faf_movie_tests", "faf_griff_tests", "faf_net_tests", "faf_netlink_tests", "faf_shell_tests"]
+      "targets": ["headless", "faf_sim_math_tests", "fafgame", "faf_dxc", "faf_movie_tests", "faf_griff_tests", "faf_net_tests", "faf_netlink_tests", "faf_shell_tests", "faf_gal_tests"]
     },
     {
       "name": "android-x64",
       "configurePreset": "android-x64",
-      "targets": ["headless", "faf_sim_math_tests", "fafgame", "faf_dxc", "faf_movie_tests", "faf_griff_tests", "faf_net_tests", "faf_netlink_tests", "faf_shell_tests"]
+      "targets": ["headless", "faf_sim_math_tests", "fafgame", "faf_dxc", "faf_movie_tests", "faf_griff_tests", "faf_net_tests", "faf_netlink_tests", "faf_shell_tests", "faf_gal_tests"]
     }
   ]
 }
