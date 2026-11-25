@@ -694,9 +694,11 @@ the same frame, FAF's click's as *Groups*: a tap pins FAF's timeline bar at the 
 time is under way, while Ctrl-T pins it, and while the mouse is over the map within 48 of FAF's lines of the screen's bottom (77 of the
 picture's at 1.6), where the place it had last over the map stands while it is elsewhere. A Griff finger's tap there puts the cursor on it, so the bar
 comes and stays (on the emulator at the phone's size, during a replay and after its end), but its tap is also a click at that place, which
-on the bar moves the replay; a phone has no Ctrl. The bar is FAF 3841's: 3840 and before have none, and the engine's own copy for them
-(`data/fafengine`, which a desktop build puts beside the program) never reaches the app, whose engine looks for it beside the app runtime
-(`GetModuleFileNameW`). There *Time* is not made, nor where FAF's file has no `Toggle`, which a warning says.
+on the bar moves the replay; a phone has no Ctrl. The bar is FAF's own from 3841 on; 3840 and before have the engine's own
+(`data/fafengine`, whose hook of `gamemain.lua` makes it where FAF has none), which the app puts beside the program its command line
+names (`<version>/bin/fafengine`, `GameFiles.engineLua`), where the patched engine looks for it, as a desktop build puts it beside the
+program. *Time* takes the bar the engine takes, FAF's where there is one (`CWldSession::ResetForNewReplaySim`); it is not made where
+neither is there, nor where the file has no `Toggle`, which a warning says.
 
 Nothing of Griff's covers what the player opened of FAF's (2026-11-14). FAF's overlay filters' list, which the arrow of the multifunction
 panel's military button opens right of the panel (from 356 of the picture's pixels across and 160 down at 1.6, 18 rows down the screen),

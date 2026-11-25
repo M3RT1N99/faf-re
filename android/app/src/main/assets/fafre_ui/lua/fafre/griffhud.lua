@@ -43,10 +43,11 @@ local GROUP_ICON = '/textures/ui/common/game/strategicicons/icon_experimental_ge
 local GROUP_ICON_SIDE = 16
 --- Where each of the three stands from the button's middle, in FAF's pixels.
 local GROUP_ICONS = {{-8, 6}, {8, 6}, {0, -7}}
---- Time pins FAF's own timeline bar of a replay or lets it go, as its Ctrl-T does (replay_timeline.lua Toggle): the bar shows
---- only while the mouse is at the screen's bottom or Ctrl-T pins it, and a phone has no Ctrl. Its icon FAF's clock of a unit's
---- build time (unitview's), as large as FAF's order icons. A FAF without the bar (3840 and before) has no Time.
-local TIMELINE = '/lua/ui/game/replay_timeline.lua'
+--- Time pins the timeline bar of a replay or lets it go, as its Ctrl-T does (replay_timeline.lua Toggle): the bar shows only
+--- while the mouse is at the screen's bottom or Ctrl-T pins it, and a phone has no Ctrl. Its icon FAF's clock of a unit's build
+--- time (unitview's), as large as FAF's order icons. The bar is FAF's own (3841 and later), else the engine's (data/fafengine,
+--- which makes it where FAF has none), as the engine takes them (CWldSession::ResetForNewReplaySim).
+local TIMELINES = {'/lua/ui/game/replay_timeline.lua', '/fafengine/modules/lua/ui/game/replay_timeline.lua'}
 local CLOCK_ICON = '/game/unit-over/icon-clock_large_bmp.dds'
 --- The draft's tick, FAF's tick of the faction's skin (multifunction.lua's map options), and its cross, FAF's Cancel
 --- (mousetooltips.lua), each as large as FAF's order icons; the tick's art is a small one.
@@ -217,20 +218,30 @@ local function Label(button, text, size)
     return label
 end
 
---- Time, in a replay of a FAF that has the timeline bar; false elsewhere. FAF's function is looked up at each press, as its key
---- binding does.
+--- Time, in a replay with a timeline bar; false elsewhere. The bar's function is looked up at each press, as its key binding
+--- does.
 local function TimelineButton(row)
-    if not SessionIsReplay() or not DiskGetFileInfo(TIMELINE) then
+    if not SessionIsReplay() then
         return false
     end
-    if type(import(TIMELINE).Toggle) ~= 'function' then
-        error('this FAF\'s ' .. TIMELINE .. ' has no Toggle')
+    local timeline = false
+    for _, file in TIMELINES do
+        if DiskGetFileInfo(file) then
+            timeline = file
+            break
+        end
+    end
+    if not timeline then
+        return false
+    end
+    if type(import(timeline).Toggle) ~= 'function' then
+        error(timeline .. ' has no Toggle')
     end
     local button = OrderButton(row, 'timeline')
     button.icon = WholeIcon(button, UIUtil.SkinnableFile(CLOCK_ICON), ICON_WIDTH)
     button.HandleEvent = function(self, event)
         if event.Type == 'ButtonPress' or event.Type == 'ButtonDClick' then
-            import(TIMELINE).Toggle()
+            import(timeline).Toggle()
             PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Action_MouseDown'}))
         end
         return true
