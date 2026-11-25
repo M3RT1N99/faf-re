@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -17,6 +18,12 @@ import java.util.List;
  * how it ended, as Android tells it (ApplicationExitInfo, Android 11 and later).
  */
 final class ProcessExit {
+    /** Linux's signal names by their numbers, the same on arm64 and x86_64. */
+    private static final String[] SIGNALS = {null, "SIGHUP", "SIGINT", "SIGQUIT", "SIGILL", "SIGTRAP", "SIGABRT", "SIGBUS",
+        "SIGFPE", "SIGKILL", "SIGUSR1", "SIGSEGV", "SIGUSR2", "SIGPIPE", "SIGALRM", "SIGTERM", "SIGSTKFLT", "SIGCHLD", "SIGCONT",
+        "SIGSTOP", "SIGTSTP", "SIGTTIN", "SIGTTOU", "SIGURG", "SIGXCPU", "SIGXFSZ", "SIGVTALRM", "SIGPROF", "SIGWINCH", "SIGIO",
+        "SIGPWR", "SIGSYS"};
+
     /** How a process ended. */
     static final class End {
         final int reason;
@@ -24,12 +31,18 @@ final class ProcessExit {
         final String description;
         /** A native crash's tombstone was saved (Android 12 and later). */
         final boolean tombstone;
+        /** The process's id. */
+        final int pid;
+        /** When it died, in ms since 1970; 0 when Android does not say. */
+        final long timestamp;
 
-        End(int reason, int status, String description, boolean tombstone) {
+        End(int reason, int status, String description, boolean tombstone, int pid, long timestamp) {
             this.reason = reason;
             this.status = status;
             this.description = description != null ? description : "";
             this.tombstone = tombstone;
+            this.pid = pid;
+            this.timestamp = timestamp;
         }
 
         boolean crashed() {
@@ -41,9 +54,26 @@ final class ProcessExit {
             return reason == ApplicationExitInfo.REASON_EXIT_SELF;
         }
 
-        /** "native crash, status 11, ..." */
+        /** A signal ended it: a native crash, or a kill by a signal. Its status is the signal's number then. */
+        boolean signaled() {
+            return reason == ApplicationExitInfo.REASON_CRASH_NATIVE || reason == ApplicationExitInfo.REASON_SIGNALED;
+        }
+
+        /** The name of the signal that ended it ("SIGABRT"); null for another end, or a number without a name. */
+        String signal() {
+            return signaled() ? signalName(status) : null;
+        }
+
+        /** "killed by a signal, status 6 (SIGABRT), at 2026-11-24T18:31:02.417Z, ...", the time its death's. */
         String describe() {
             StringBuilder line = new StringBuilder(reasonName(reason)).append(", status ").append(status);
+            String signal = signal();
+            if (signal != null) {
+                line.append(" (").append(signal).append(')');
+            }
+            if (timestamp > 0) {
+                line.append(", at ").append(Instant.ofEpochMilli(timestamp));
+            }
             if (!description.isEmpty()) {
                 line.append(", ").append(description);
             }
@@ -91,9 +121,15 @@ final class ProcessExit {
             }
             boolean saved = exit.getReason() == ApplicationExitInfo.REASON_CRASH_NATIVE && Build.VERSION.SDK_INT >= 31
                 && saveTombstone(exit, tombstone);
-            return new End(exit.getReason(), exit.getStatus(), exit.getDescription(), saved);
+            return new End(exit.getReason(), exit.getStatus(), exit.getDescription(), saved, exit.getPid(),
+                exit.getTimestamp());
         }
         return null;
+    }
+
+    /** Linux's name of signal {@code number} ("SIGABRT" for 6); null for a number without one. */
+    static String signalName(int number) {
+        return number > 0 && number < SIGNALS.length ? SIGNALS[number] : null;
     }
 
     private static String reasonName(int reason) {

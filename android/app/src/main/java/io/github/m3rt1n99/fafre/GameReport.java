@@ -47,8 +47,9 @@ final class GameReport {
     private static final String MORE = "; ";
     private static final Pattern RETURNED_CODE = Pattern.compile("^" + RETURNED + "(-?\\d+) after ");
     private static final Pattern EXITED_CODE = Pattern.compile("^" + EXITED + "(-?\\d+)");
-    /** ProcessExit.End.describe's reason and status, without Android's description after them. */
-    private static final Pattern REASON = Pattern.compile("^(" + CRASHED + "|" + PROCESS_ENDED + ")(.+?, status -?\\d+)");
+    /** ProcessExit.End.describe's reason, status and signal, without the time and Android's description after them. */
+    private static final Pattern REASON =
+        Pattern.compile("^(" + CRASHED + "|" + PROCESS_ENDED + ")(.+?, status -?\\d+(?: \\(SIG[A-Z0-9]+\\))?)");
     /** The line of a start that failed (GameStart.Failure.reportLine), with its code. */
     private static final Pattern START_FAILURE = Pattern.compile("^game: the start failed, ([A-Z_]+): ", Pattern.MULTILINE);
 

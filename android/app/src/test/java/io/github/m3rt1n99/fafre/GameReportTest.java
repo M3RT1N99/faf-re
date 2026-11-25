@@ -108,4 +108,16 @@ public class GameReportTest {
         assertEquals("", GameReport.engineSummary(new String[0]));
         assertEquals("", GameReport.engineSummary(log(playing(3))));
     }
+
+    @Test
+    public void thePlainEndKeepsTheSignalAndDropsTheTimeAndAndroidsWords() {
+        assertEquals("CRASHED: killed by a signal, status 6 (SIGABRT)", GameReport.plainEnd("game: started 2026-11-24T18:29:00Z\n"
+            + "END: CRASHED: killed by a signal, status 6 (SIGABRT), at 2026-11-24T18:31:02.417Z; the engine's last warning: x\n"));
+        assertEquals("CRASHED: native crash, status 11 (SIGSEGV)", GameReport.plainEnd("END: CRASHED: native crash, status 11 "
+            + "(SIGSEGV), at 2026-11-24T18:31:02.417Z, crash in /data/app/libfafgame.so (tombstone in the results)\n"));
+        assertEquals("an earlier release's line", "CRASHED: native crash, status 11",
+            GameReport.plainEnd("END: CRASHED: native crash, status 11, crash in /data/app/libfafgame.so\n"));
+        assertEquals("the process ended: low memory, status 9", GameReport.plainEnd(
+            "END: the process ended: low memory, status 9, at 2026-11-24T18:31:02.417Z, lmkd killed it\n"));
+    }
 }
