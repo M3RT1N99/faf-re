@@ -1,8 +1,26 @@
 diff --git a/src/platform/posix/ClientMainPosix.cpp b/src/platform/posix/ClientMainPosix.cpp
-index 1feac20..0997863 100644
+index 1feac20..69e8fbc 100644
 --- a/src/platform/posix/ClientMainPosix.cpp
 +++ b/src/platform/posix/ClientMainPosix.cpp
-@@ -16,11 +16,30 @@
+@@ -1,12 +1,14 @@
+ // Engine addition (issues #255, #256): the Linux client's entry point, in WinMain's place
+ // (moho/app/WinMain.cpp, Windows only). It keeps what WinMain does around the game itself: the
+-// main thread's name, the application object run by WIN_AppExecute, its exit value, and the
+-// fatal-error report for an exception nothing caught. WinMain's Windows-only switches (the
+-// crash tests, hardware watches, accessibility keys, Media Center) have no Linux counterpart yet.
++// main thread's name, the crash diagnostics, the application object run by WIN_AppExecute, its
++// exit value, and the fatal-error report for an exception nothing caught. WinMain's Windows-only
++// switches (the crash tests, hardware watches, accessibility keys, Media Center) have no Linux
++// counterpart yet.
+ 
+ #include <cstdio>
+ #include <exception>
+ 
++#include "gpg/core/diagnostics/CrashHooks.h"
+ #include "gpg/core/utils/Global.h"
+ #include "gpg/core/utils/Logging.h"
+ #include "gpg/gal/Error.hpp"
+@@ -16,11 +18,30 @@
  #include "moho/misc/StartupHelpers.h"
  #include "platform/Window.h"
  
@@ -34,3 +52,16 @@ index 1feac20..0997863 100644
    // The replay viewer's hidden process (moho/sim/ReplayTimeline.cpp): this same program with
    // `/replaykeyframes` plays the replay with no window or device, as WinMain hands it over. It reads
    // its arguments from the command line itself, so it needs none here.
+@@ -30,6 +51,12 @@ int main()
+ 
+   gpg::SetThreadName(0xFFFFFFFFu, "Main");
+ 
++  // The fatal signals' and std::terminate's report (gpg/core/diagnostics/posix/DiagnosticsPosix.cpp), as WinMain
++  // installs it: without it a crash left nothing of the engine's, only the system's own trace, if any.
++  gpg::diag::CrtDiagOptions diagOptions{};
++  diagOptions.enableHeapCheck = moho::CFG_GetArgOption("/heapcheck", 0, nullptr);
++  gpg::diag::InstallCrtDiagnosticHooks(diagOptions);
++
+   // The window system (platform/Window.h, SDL3) before anything makes a window.
+   if (!platform::window::Init()) {
+     std::fprintf(stderr, "No window system (is DISPLAY or WAYLAND_DISPLAY set?); see the log for the reason.\n");
