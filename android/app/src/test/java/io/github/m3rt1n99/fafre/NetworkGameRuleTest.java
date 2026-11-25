@@ -17,10 +17,11 @@ public class NetworkGameRuleTest {
     }
 
     @Test
-    public void startsInFrontWhenTheNetworkIsInUseOrAReplayPlays() {
+    public void startsInFrontWhenTheNetworkIsInUseOrAReplayOrASkirmishPlays() {
         mRule.front(true, 0);
         assertTrue(mRule.shouldStart(Need.NETWORK));
         assertTrue(mRule.shouldStart(Need.REPLAY));
+        assertTrue(mRule.shouldStart(Need.GAME));
     }
 
     @Test
@@ -33,6 +34,7 @@ public class NetworkGameRuleTest {
     public void noStartBeforeTheFirstResume() {
         assertFalse(mRule.shouldStart(Need.NETWORK));
         assertFalse(mRule.shouldStart(Need.REPLAY));
+        assertFalse(mRule.shouldStart(Need.GAME));
     }
 
     @Test
@@ -41,6 +43,7 @@ public class NetworkGameRuleTest {
         mRule.front(false, 0);
         assertFalse(mRule.shouldStart(Need.NETWORK));
         assertFalse(mRule.shouldStart(Need.REPLAY));
+        assertFalse(mRule.shouldStart(Need.GAME));
     }
 
     @Test
@@ -49,6 +52,7 @@ public class NetworkGameRuleTest {
         mRule.started();
         assertFalse(mRule.shouldStart(Need.NETWORK));
         assertFalse("a replay after a network game takes the running service", mRule.shouldStart(Need.REPLAY));
+        assertFalse("so does a skirmish", mRule.shouldStart(Need.GAME));
         mRule.stopped();
         assertTrue(mRule.shouldStart(Need.NETWORK));
     }
@@ -116,15 +120,34 @@ public class NetworkGameRuleTest {
         assertEquals(Need.NONE, mRule.need(false, false, true, 2000));
     }
 
+    /** A skirmish has no socket either: Android may end its process in the back as a replay's, which a service keeps. */
     @Test
-    public void aSkirmishNeedsNothing() {
-        assertEquals(Need.NONE, mRule.need(false, true, false, 0));
+    public void aSkirmishThatPlaysNeedsTheServiceWithoutTheNetwork() {
+        assertEquals(Need.GAME, mRule.need(false, true, false, 0));
+        assertEquals("for as long as it plays", Need.GAME, mRule.need(false, true, false, 100000));
     }
 
     @Test
-    public void theNetworkComesBeforeAReplay() {
+    public void aSkirmishThatIsNotPlayingNeedsNothing() {
+        // As it loads, and from its end on: the game over panel and the score screen have nothing left to play.
+        assertEquals(Need.NONE, mRule.need(false, false, false, 0));
+        assertEquals(Need.GAME, mRule.need(false, true, false, 1000));
+        assertEquals(Need.NONE, mRule.need(false, false, false, 2000));
+    }
+
+    @Test
+    public void theNetworkComesBeforeAReplayOrASkirmish() {
         assertEquals(Need.NETWORK, mRule.need(true, true, true, 0));
         assertEquals("an open socket after the game, as before", Need.NETWORK, mRule.need(true, false, true, 1000));
+        assertEquals("a network game that plays", Need.NETWORK, mRule.need(true, true, false, 2000));
+    }
+
+    @Test
+    public void aSkirmishAfterANetworkGameNeedsTheServiceAgain() {
+        // A network game's end: its socket closes, and the next game on the phone alone plays without one.
+        assertEquals(Need.NETWORK, network(true, true, 0));
+        assertEquals(Need.NONE, network(false, false, 1000));
+        assertEquals(Need.GAME, mRule.need(false, true, false, 2000));
     }
 
     @Test

@@ -1,16 +1,17 @@
 package io.github.m3rt1n99.fafre;
 
 /**
- * When {@link NetworkGameService} runs: while a network lobby or game needs its socket, or a replay plays, and not for
- * long with nobody there. It is asked for from the front, and from the moment the activity leaves it, which Android still
- * allows; after a refusal not again until the activity has come to the front anew. No Android in here, for the tests.
+ * When {@link NetworkGameService} runs: while a network lobby or game needs its socket, or a replay or a skirmish plays,
+ * and not for long with nobody there. It is asked for from the front, and from the moment the activity leaves it, which
+ * Android still allows; after a refusal not again until the activity has come to the front anew. No Android in here, for
+ * the tests.
  */
 final class NetworkGameRule {
     /** A game that stays over this long has ended: the flag is the last frame's, and a frame can see it otherwise. */
     static final long OVER_MILLISECONDS = 3000;
     /**
-     * So that a lobby or a replay left behind does not keep a phone busy: a player who is back later has lost the game
-     * anyway, and the replay has played on without them.
+     * So that a lobby, a replay or a skirmish left behind does not keep a phone busy: a player who is back later has lost
+     * the network game anyway, and the replay or the skirmish has played on without them.
      */
     static final long BACK_LIMIT_MILLISECONDS = 30 * 60 * 1000L;
 
@@ -23,6 +24,11 @@ final class NetworkGameRule {
          * (the limit of cached processes). Nobody waits for it, so it lets the phone sleep with the screen off.
          */
         REPLAY,
+        /**
+         * A game that the phone plays alone, a skirmish (or a mission, or a saved game), while it plays: its process alone,
+         * as a replay's, as nobody else waits for it either.
+         */
+        GAME,
         /** A network lobby or game, which the others wait for: the process, its network, and the CPU with the screen off. */
         NETWORK
     }
@@ -45,13 +51,17 @@ final class NetworkGameRule {
     /**
      * What is needed now: {@code socketOpen}, a network lobby or game has its socket open; {@code playing}, a game goes on
      * behind the game's UI; {@code replay}, the session the game plays is a replay's. The network comes first, as a replay
-     * has none of its own; a replay is kept while it plays, not while it loads, which says nothing yet, nor once it is over.
+     * or a skirmish has none of its own; either is kept while it plays, not while it loads, which says nothing yet, nor once
+     * it is over.
      */
     Need need(boolean socketOpen, boolean playing, boolean replay, long now) {
         if (networkNeeded(socketOpen, playing, now)) {
             return Need.NETWORK;
         }
-        return playing && replay ? Need.REPLAY : Need.NONE;
+        if (!playing) {
+            return Need.NONE;
+        }
+        return replay ? Need.REPLAY : Need.GAME;
     }
 
     /**

@@ -17,10 +17,11 @@ import android.os.SystemClock;
 
 /**
  * Keeps a network game going with the game in the back or the screen off: Android cuts the network of an app that has
- * nothing in front (APP_BACKGROUND), and the others' games would stand still. And keeps a replay's process, which Android
- * ends soon after the game went to the back otherwise (the limit of cached processes), so that the player comes back to
- * it. It runs in the game's process while either needs it (NetworkGameRule): the activity's poll starts it, and it looks
- * for itself when to stop, as the activity can be gone by then. It ends with the process, and nothing restarts it.
+ * nothing in front (APP_BACKGROUND), and the others' games would stand still. And keeps the process of a replay or a
+ * skirmish, which Android ends soon after the game went to the back otherwise (the limit of cached processes), so that the
+ * player comes back to it. It runs in the game's process while any of them needs it (NetworkGameRule): the activity's poll
+ * starts it, and it looks for itself when to stop, as the activity can be gone by then. It ends with the process, and
+ * nothing restarts it.
  */
 public final class NetworkGameService extends Service {
     private static final String CHANNEL = "network-game";
@@ -36,7 +37,7 @@ public final class NetworkGameService extends Service {
     private static final NetworkGameRule sRule = new NetworkGameRule();
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
-    /** Made at the first network game, held while one is: a replay needs neither. */
+    /** Made at the first network game, held while one is: a replay or a skirmish needs neither. */
     private PowerManager.WakeLock mWakeLock;
     private WifiManager.WifiLock mWifiLock;
     /** What the service keeps: what it was started for, then what the poll finds. Its locks and its words follow it. */
@@ -85,16 +86,23 @@ public final class NetworkGameService extends Service {
 
     /**
      * Whatever a phone's rules say: a network game goes on, and stops for everybody at Home, as it did without this
-     * service; a replay goes on until Android ends its process in the back.
+     * service; a replay or a skirmish goes on until Android ends its process in the back.
      */
     private static void refused(NetworkGameRule.Need need, RuntimeException reason) {
         sRule.refused();
         Game.report(what(need) + ": no foreground service: " + reason);
     }
 
-    /** The report's words for what the service keeps. */
+    /** The words for what the service keeps, the report's and the notification's. */
     private static String what(NetworkGameRule.Need need) {
-        return need == NetworkGameRule.Need.REPLAY ? "replay" : "network game";
+        switch (need) {
+            case REPLAY:
+                return "replay";
+            case GAME:
+                return "game";
+            default:
+                return "network game";
+        }
     }
 
     @Override
@@ -124,7 +132,7 @@ public final class NetworkGameService extends Service {
 
     /**
      * Holds what `need` takes: a network game the CPU with the screen off, as every player waits for this phone, and Wi-Fi
-     * at full power, which with the screen off would save power on the socket; a replay neither.
+     * at full power, which with the screen off would save power on the socket; a replay or a skirmish neither.
      */
     private void keep(NetworkGameRule.Need need) {
         mKeeps = need;
@@ -159,8 +167,9 @@ public final class NetworkGameService extends Service {
 
     /**
      * Swiped away. Android kills an app's processes then, unless one has a foreground service: this one would stay, a
-     * network game with its socket open and the others waiting for a game that soon is frozen, a replay in a task that is
-     * gone (stopWithTask does just that). Stopped first: a process that dies inside this call has its service restarted.
+     * network game with its socket open and the others waiting for a game that soon is frozen, a replay or a skirmish in a
+     * task that is gone (stopWithTask does just that). Stopped first: a process that dies inside this call has its service
+     * restarted.
      */
     @Override
     public void onTaskRemoved(Intent rootIntent) {
@@ -186,8 +195,7 @@ public final class NetworkGameService extends Service {
         return new Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(need == NetworkGameRule.Need.REPLAY
-                ? "A replay is running. Tap to go back to it." : "A network game is running. Tap to go back to it.")
+            .setContentText("A " + what(need) + " is running. Tap to go back to it.")
             .setContentIntent(PendingIntent.getActivity(this, 0, back, PendingIntent.FLAG_IMMUTABLE))
             .setOngoing(true)
             .build();

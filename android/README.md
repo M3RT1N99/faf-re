@@ -340,8 +340,8 @@ the game data they imported. Everything lives in the app's external files folder
       of UDP connectors with their socket open (`NET_OpenUDPConnectors`, `native/README.md`), or in native mode
       (`/nativenet`) a peer link of the game's own, the engine's count of the links' transports
       (`NET_PeerTransportsActive`). A skirmish has none (`LOBBY: Game
-      port 0[None]`) and starts no service, nor does the LAN screen's search for games, whose list has no use for the
-      network in the back. The service goes within a second of the socket's end (leaving a lobby, the program's end), about
+      port 0[None]`) and needs no network (below), nor does the LAN screen's search for games, whose list has no use for
+      the network in the back. The service goes within a second of the socket's end (leaving a lobby, the program's end), about
       3 s after a game has ended, as the game over panel and the score screen hold the socket with nothing left to play,
       and after 30 minutes in the back, so that a lobby left behind does not keep a phone awake; it comes back with the
       activity if the network is still needed. While it runs Wi-Fi does not save power on the socket either (a Wi-Fi lock
@@ -357,6 +357,10 @@ the game data they imported. Everything lives in the app's external files folder
       Its notification says *A replay is running*, its lines in `game.txt` begin with `replay:`, and it goes when the
       replay's game ends or its session goes, and after 30 minutes in the back. Not while a replay loads, which the engine
       has no word of yet.
+    - So has a skirmish that plays (`Game.gamePlaying` with no network and no replay; also a mission or a saved game, any
+      game the phone plays alone), whose process Android ends in the back as a replay's: the same service with no lock, its
+      notification *A game is running*, its lines in `game.txt` beginning with `game:`; it goes at the game's end (the game
+      over panel, the score screen), with its session, and after 30 minutes in the back, and not while the game loads.
     - On SDL's activity (stage 2b of [CLIENT_PLAN.md](CLIENT_PLAN.md)) the service is the same; checked there in a LAN game
       of two emulators with an easy AI, with no desync: Home on one side for a minute, the other side's activity
       destroyed for a minute, the service from the lobby on, its end a few seconds after *End Game* and within a second
