@@ -298,7 +298,7 @@ rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the scr
 shows is FAF's UI's, in FAF's own look at the HUD's factor (Griff v4, the user's verdict on 0.14.0: every element as an original one of
 FA's), each piece checked side by side with the element of FAF's it follows (2026-11-15, on the emulator at the phone's size and HUD 1.6,
 in the four factions' skins where the skin changes it, but for the stroke's label, FAF's tooltip, whose colours follow the skin and which
-was seen in UEF's only). `fafre/griffhud.lua` has the rail's *Box*, *Plus* and *Groups*, the undo's button
+was seen in UEF's only). `fafre/griffhud.lua` has the rail's *Box*, *Plus*, *Groups* and in a replay *Time*, the undo's button
 and the draft's tick and the cross, Griff's Esc, as FAF's order buttons, the hints where FAF prints its own messages and a waypoint marked for deletion
 under FAF's Cancel icon. `fafre/griffmap.lua`, on the map's view as FAF's reclaim labels are, has the handle as the brackets FAF draws
 about a selected unit, a resting finger's ring as a ring of FAF's pings, a stroke as FAF's command graph draws the route once it is
@@ -687,6 +687,16 @@ Griff's group icons (`griffhud.lua` `GroupsShown`, which `griffgroups.lua` asks 
 UI reports them (`Game.griffHudPlaces`; FAF's UI draws them as the activity says each looks, `Game.setGriffHud`, `Rail.look`, tested), as a
 thumb may hold *Plus* while another finger taps; *Groups* is FAF's click's, a tap toggles it. What keeps clear of the rail is FAF's UI's
 walk: the handle's free map finds its buttons as FAF's controls.
+
+In a replay the rail has *Time* after *Groups* (2026-11-25), FAF's clock of a unit's build time (`unit-over/icon-clock_large_bmp.dds`) in
+the same frame, FAF's click's as *Groups*: a tap pins FAF's timeline bar at the screen's bottom or lets it go, FAF's own `Toggle` of
+`ui/game/replay_timeline.lua`, which its Ctrl-T calls. FAF's UI has no button or menu entry for the bar: it shows while a move to a chosen
+time is under way, while Ctrl-T pins it, and while the mouse is over the map within 48 of FAF's lines of the screen's bottom (77 of the
+picture's at 1.6), where the place it had last over the map stands while it is elsewhere. A Griff finger's tap there puts the cursor on it, so the bar
+comes and stays (on the emulator at the phone's size, during a replay and after its end), but its tap is also a click at that place, which
+on the bar moves the replay; a phone has no Ctrl. The bar is FAF 3841's: 3840 and before have none, and the engine's own copy for them
+(`data/fafengine`, which a desktop build puts beside the program) never reaches the app, whose engine looks for it beside the app runtime
+(`GetModuleFileNameW`). There *Time* is not made, nor where FAF's file has no `Toggle`, which a warning says.
 
 Nothing of Griff's covers what the player opened of FAF's (2026-11-14). FAF's overlay filters' list, which the arrow of the multifunction
 panel's military button opens right of the panel (from 356 of the picture's pixels across and 160 down at 1.6, 18 rows down the screen),

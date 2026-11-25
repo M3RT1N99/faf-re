@@ -205,7 +205,9 @@ the game data they imported. Everything lives in the app's external files folder
     end on a panel gives the route up, and the screen says Cancelled.
   - The rail is a row at the top left, just under FAF's top panels, of FAF order buttons as large as FAF's own (7 mm on
     the S22 Ultra): *Box* (a drag is a box at once, a tap on a unit adds it or takes it out, a tap on nothing leaves *Box*
-    lit), *Plus* (orders are queued, as with Shift) and *Groups* (Griff's group icons shown or hidden). A tap lights *Box*
+    lit), *Plus* (orders are queued, as with Shift) and *Groups* (Griff's group icons shown or hidden), and in a replay
+    *Time*, FAF's clock, which keeps FAF's timeline bar at the screen's bottom or lets it go, as Ctrl-T does on a PC (FAF
+    3841 and later have the bar). A tap lights *Box*
     or *Plus* for the next action, with the edge of FAF's selected order; held, it counts until it is let go, with FAF's
     pulsing glow. Stop and the attack-move are FAF's orders panel's. An order picked in the orders panel ends after the one
     that a lit *Plus* queues; a held *Plus* keeps it until it is let go, as Shift does. With *Plus* and troops selected, a

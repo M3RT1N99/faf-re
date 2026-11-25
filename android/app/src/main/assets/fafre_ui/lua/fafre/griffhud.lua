@@ -1,11 +1,11 @@
 -- What the touch scheme Griff shows of its own buttons and words (android/TOUCH_UI.md "Griff"), in FAF's own UI and look, at
--- the HUD's factor: the rail's Box, Plus and Groups and the undo's button in a row at the top left, and the draft's tick and
--- the cross, Griff's Esc, above the construction panel, each made as FAF's orders panel makes its buttons (the empty slot's frame, an icon of
+-- the HUD's factor: the rail's Box, Plus and Groups, in a replay Time, and the undo's button in a row at the top left, and the
+-- draft's tick and the cross, Griff's Esc, above the construction panel, each made as FAF's orders panel makes its buttons (the empty slot's frame, an icon of
 -- FAF's own in it, FAF's glow pulsing under a finger and a selected order's edge while lit); the hints where FAF prints its
 -- own messages (textdisplay.lua, as its PrintText); and the waypoint a resting finger marked for deletion, under FAF's own
 -- Cancel icon (mousetooltips.lua). The activity keeps the fingers: one on Box, Plus, the undo's button, the tick or the
 -- cross is its own, as a thumb may hold Plus while another finger taps (it lays a view of its own where this reports each,
--- FafreGriffHudPlaces), and it says how they look (FafreGriffHud). Groups is FAF's click's: a tap toggles it. Each piece
+-- FafreGriffHudPlaces), and it says how they look (FafreGriffHud). Groups and Time are FAF's clicks': a tap toggles each. Each piece
 -- steps aside while something the player opened of FAF's lies over it (opened.lua), and all of them while the player hides
 -- FAF's UI (gamemain.lua HideGameUI). What Griff shows on the map is griffmap.lua's. griff.lua makes the pieces with the
 -- game's UI and runs Frame each frame.
@@ -43,6 +43,11 @@ local GROUP_ICON = '/textures/ui/common/game/strategicicons/icon_experimental_ge
 local GROUP_ICON_SIDE = 16
 --- Where each of the three stands from the button's middle, in FAF's pixels.
 local GROUP_ICONS = {{-8, 6}, {8, 6}, {0, -7}}
+--- Time pins FAF's own timeline bar of a replay or lets it go, as its Ctrl-T does (replay_timeline.lua Toggle): the bar shows
+--- only while the mouse is at the screen's bottom or Ctrl-T pins it, and a phone has no Ctrl. Its icon FAF's clock of a unit's
+--- build time (unitview's), as large as FAF's order icons. A FAF without the bar (3840 and before) has no Time.
+local TIMELINE = '/lua/ui/game/replay_timeline.lua'
+local CLOCK_ICON = '/game/unit-over/icon-clock_large_bmp.dds'
 --- The draft's tick, FAF's tick of the faction's skin (multifunction.lua's map options), and its cross, FAF's Cancel
 --- (mousetooltips.lua), each as large as FAF's order icons; the tick's art is a small one.
 local TICK_ICON = '/game/temp_textures/checkmark.dds'
@@ -212,10 +217,32 @@ local function Label(button, text, size)
     return label
 end
 
+--- Time, in a replay of a FAF that has the timeline bar; false elsewhere. FAF's function is looked up at each press, as its key
+--- binding does.
+local function TimelineButton(row)
+    if not SessionIsReplay() or not DiskGetFileInfo(TIMELINE) then
+        return false
+    end
+    if type(import(TIMELINE).Toggle) ~= 'function' then
+        error('this FAF\'s ' .. TIMELINE .. ' has no Toggle')
+    end
+    local button = OrderButton(row, 'timeline')
+    button.icon = WholeIcon(button, UIUtil.SkinnableFile(CLOCK_ICON), ICON_WIDTH)
+    button.HandleEvent = function(self, event)
+        if event.Type == 'ButtonPress' or event.Type == 'ButtonDClick' then
+            import(TIMELINE).Toggle()
+            PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Action_MouseDown'}))
+        end
+        return true
+    end
+    return button
+end
+
 --- The row (the user's decision of 2026-11-13: at the top left, where FAF's panels leave the map's edge free): Box, with FAF's
 --- own icon for selecting (the construction panel's selection tab, FAF's Select of its mouse tooltips); Plus, Shift's +;
---- Groups, with the group icon it shows; and after a gap the undo's button, with FAF's avatar bar of the time it has left at
---- its bottom, as the commander's avatar has its health. The draft's tick and cross, placed each frame by the panels.
+--- Groups, with the group icon it shows; in a replay Time, with FAF's clock; and after a gap the undo's button, with FAF's
+--- avatar bar of the time it has left at its bottom, as the commander's avatar has its health. The draft's tick and cross,
+--- placed each frame by the panels.
 function Create(parent)
     local row = Group(parent)
     row:DisableHitTest()
@@ -249,8 +276,18 @@ function Create(parent)
         return true
     end
 
+    -- A failure costs Time alone, not the rail.
+    local made, timeline = pcall(TimelineButton, row)
+    if not made then
+        WARN('fafre_ui: griff: hud: the timeline\'s button: ' .. tostring(timeline))
+        timeline = false
+    end
+    if timeline then
+        LayoutHelpers.RightOf(timeline, groups, GAP)
+    end
+
     local undo = OrderButton(row, 'undo')
-    LayoutHelpers.RightOf(undo, groups, UNDO_GAP)
+    LayoutHelpers.RightOf(undo, timeline or groups, UNDO_GAP)
     undo.label = Label(undo, 'Undo', 12)
     LayoutHelpers.AtVerticalCenterIn(undo.label, undo, -3)
     undo.bar = StatusBar(undo, 0, 1, false, false, UIUtil.SkinnableFile('/game/avatar/health-bar-back_bmp.dds'),
@@ -285,8 +322,8 @@ function Create(parent)
     mark.Top:Set(0)
     mark:Hide()
 
-    pieces = {row = row, box = box, plus = plus, groups = groups, undo = undo, tick = tick, cross = cross, mark = mark,
-        said = {}, looks = 0, colour = false}
+    pieces = {row = row, box = box, plus = plus, groups = groups, timeline = timeline, undo = undo, tick = tick, cross = cross,
+        mark = mark, said = {}, looks = 0, colour = false}
 end
 
 --- Whether a piece's box and one of the boxes the player opened (left, top, right and bottom of each) share more than an edge.
@@ -398,6 +435,9 @@ function Frame(opened, delta, anchors, hidden, colour)
         table.insert(places, (aside or (hidden and item[2])) and 1 or 0)
     end
     Show(pieces.groups, shown, opened)
+    if pieces.timeline then
+        Show(pieces.timeline, shown, opened)
+    end
     local same = table.getn(places) == table.getn(pieces.said)
     for at, value in places do
         same = same and value == pieces.said[at]
