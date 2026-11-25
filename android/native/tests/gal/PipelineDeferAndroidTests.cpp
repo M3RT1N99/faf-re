@@ -4,9 +4,9 @@
 // 15.5 s, the last in place; a build's end says whether it may build later; the worker runs each job, two at once at
 // least, and counts the builds it finished with their time and what their driver said of them; the pipeline cache is
 // saved once a batch of builds is over, and every 10 s while builds go on; a session's start is held only where a
-// backend reports its frames, and goes on after three frames in a row that waited for nothing, or at its limit.
-// Upstream's own tests of the header (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched
-// header.
+// backend reports its frames, and goes on after three frames in a row that waited for nothing (nor for a refused pipeline
+// that no draw asks for again), or at its limit. Upstream's own tests of the header
+// (../../../tests/gal/PipelineDeferTests.cpp) run beside these, on the patched header.
 
 #include <gtest/gtest.h>
 
@@ -488,6 +488,39 @@ TEST(
   hold.FrameDrawn(Waited(0U, 0U));
   hold.FrameDrawn(Waited(0U, 0U));
   EXPECT_EQ(hold.Update(start + 7s), PipelineStartHold::State::kSettled) << "three of its own do";
+}
+
+TEST(
+  AndroidPipelineDefer,
+  AHeldStartWaitsForNoTryThatNoDrawAsksFor
+)
+{
+  // A pipeline refused for want of memory by a draw that came once (a map's bake) or by a screen left since: no draw
+  // asks for it again, and it stays among the retries for as long as the device.
+  PipelineRetries retries;
+  const PipelineRetries::Clock::time_point refused{};
+  ASSERT_TRUE(retries.Refused("bake", refused));
+  EXPECT_EQ(retries.Waiting(refused + 500ms - 1ns), 1U) << "its next try is ahead: a draw that needs it waits for it";
+  EXPECT_EQ(retries.Waiting(refused + 500ms), 0U) << "its turn has come: the next draw that asks for it tries it";
+  EXPECT_EQ(retries.Size(), 1U) << "and it stays to be tried again, by a draw that asks";
+  ASSERT_TRUE(retries.Refused("mesh", refused + 1s));
+  EXPECT_EQ(retries.Waiting(refused + 1s), 1U) << "one refused again waits for its next try";
+
+  // The device's report of each held frame (DeviceVulkan::ReportHeldFrame): the start goes on once the one that a draw
+  // needs has its answer, not at its limit for the one that nobody asks for.
+  PipelineStartHold hold;
+  hold.SetReporting(true);
+  ASSERT_TRUE(hold.Begin(refused, 90s));
+  for (unsigned frame = 0U; frame < gpg::gal::kPipelineHoldSettledFrames; ++frame) {
+    hold.FrameDrawn(Waited(0U, 0U, retries.Waiting(refused + 1s)));
+  }
+  EXPECT_EQ(hold.Update(refused + 1s), PipelineStartHold::State::kHolding);
+  retries.Forget("mesh"); // built at its next try
+  for (unsigned frame = 0U; frame < gpg::gal::kPipelineHoldSettledFrames; ++frame) {
+    hold.FrameDrawn(Waited(0U, 0U, retries.Waiting(refused + 2s)));
+  }
+  EXPECT_EQ(hold.Update(refused + 2s), PipelineStartHold::State::kSettled);
+  EXPECT_EQ(retries.Size(), 1U) << "the bake's is still there, for a draw that asks";
 }
 
 TEST(

@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/PipelineDefer.h b/src/gpg/gal/PipelineDefer.h
-index e97176b..85f8474 100644
+index e97176b..26cb0ed 100644
 --- a/src/gpg/gal/PipelineDefer.h
 +++ b/src/gpg/gal/PipelineDefer.h
 @@ -8,19 +8,48 @@
@@ -52,7 +52,7 @@ index e97176b..85f8474 100644
  
    /** How many PipelineDeferScope are open (render thread only). */
    inline int gPipelineDeferDepth = 0;
-@@ -45,29 +74,333 @@ namespace gpg::gal
+@@ -45,29 +74,352 @@ namespace gpg::gal
      return gAsyncPipelines && gPipelineDeferDepth > 0;
    }
  
@@ -324,6 +324,25 @@ index e97176b..85f8474 100644
 +      return mEntries.size();
 +    }
 +
++    /**
++     * Those whose next try is still ahead at `now`, which a draw that needs one waits for. One whose turn has come is
++     * tried by the next draw that asks for it, and stays until one does: one that no draw asks for again (a draw that
++     * came once, as a map's bake, or one of a screen left since) waits for nothing, and a held start or the pipeline
++     * cache's save must not wait for it either.
++     */
++    [[nodiscard]] std::size_t Waiting(
++      const Clock::time_point now
++    ) const noexcept
++    {
++      std::size_t waiting = 0U;
++      for (const auto& [key, entry] : mEntries) {
++        if (now < entry.next) {
++          ++waiting;
++        }
++      }
++      return waiting;
++    }
++
 +    void Clear() noexcept
 +    {
 +      mEntries.clear();
@@ -398,7 +417,7 @@ index e97176b..85f8474 100644
    )
    {
      for (auto entry = pending.begin(); entry != pending.end();) {
-@@ -76,9 +409,217 @@ namespace gpg::gal
+@@ -76,9 +428,217 @@ namespace gpg::gal
          continue;
        }
        if (entry->second.valid()) {
@@ -496,7 +515,7 @@ index e97176b..85f8474 100644
 +  {
 +    unsigned waited = 0U;     // draws that waited for their pipeline
 +    std::size_t pending = 0U; // builds pending once the frame's finished ones were taken
-+    std::size_t retries = 0U; // pipelines waiting for another try (PipelineRetries)
++    std::size_t retries = 0U; // pipelines whose next try is still ahead (PipelineRetries::Waiting)
 +    PipelineBuildTimes built; // the worker's builds since the first frame of the hold
 +  };
 +
@@ -505,8 +524,8 @@ index e97176b..85f8474 100644
 +   * its units: its loading screen stays on the screen meanwhile (wld_PipelineHoldSeconds). Each frame drawn while held
 +   * draws every mesh of the session too, wherever it is, at each of its LODs (MeshRenderer::Batch), and is not shown;
 +   * the device says what it waited for (FrameDrawn). The hold ends once kPipelineHoldSettledFrames frames in a row
-+   * waited for nothing, no draw for its pipeline, no build pending and none to be tried again, or at its limit, after
-+   * which the game starts anyway. It holds only where a backend reports its frames (SetReporting). Render thread.
++   * waited for nothing, no draw for its pipeline, no build pending and none waiting for its next try, or at its limit,
++   * after which the game starts anyway. It holds only where a backend reports its frames (SetReporting). Render thread.
 +   */
 +  class PipelineStartHold
 +  {

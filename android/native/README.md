@@ -387,8 +387,8 @@ slot; a pipeline refused for want of memory is tried six times in all over 15.5 
 says whether it may build later; the worker runs each job, two of them at once, and what one throws reaches its future;
 it counts the builds it finished, with their time and what their driver said of them; the pipeline cache is saved once a
 batch of builds is over, and every 10 s while builds go on; a session's start is held for its pipelines only where a
-backend reports its frames, and goes on after three frames in a row that waited for nothing, or at its limit. Upstream's
-own tests of the header
+backend reports its frames, and goes on after three frames in a row that waited for nothing (nor for a refused pipeline
+that no draw asks for again), or at its limit. Upstream's own tests of the header
 (`../../tests/gal/PipelineDeferTests.cpp`) run on the patched copy beside them. Header-only and linked statically, so
 the x86_64 build runs on a Linux host as well (WSL here), and the app's workflow runs the arm64 build on an arm64
 runner:
