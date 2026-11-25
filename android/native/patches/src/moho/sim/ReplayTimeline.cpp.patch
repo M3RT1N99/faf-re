@@ -1,8 +1,30 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..c36d9c8 100644
+index e4f93ae..453b2aa 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
-@@ -589,6 +589,12 @@ namespace moho
+@@ -57,12 +57,20 @@ namespace moho
+ {
+   namespace
+   {
++#if FAFRE_PLATFORM_ANDROID
++    // A save stops the viewer's sim while it writes (1.3 s, then 3.7 s and 5.2 s on a Galaxy S22 Ultra, as a 14-army
++    // game's keyframes grew to 70 MB), and Android has no hidden process to save them instead
++    // (StartKeyframePreparation): none until a save that does not stop the sim exists. Moving back plays the replay
++    // again from its start.
++    int replay_KeyframeEvery = 0;
++#else
+     int replay_KeyframeEvery = 300;
++#endif
+     TConVar<int> gTConVar_replay_KeyframeEvery(
+       "replay_KeyframeEvery",
+       "Ticks of a replay between the keyframes the viewer keeps to move back to (300: 30 seconds of game time), more "
+       "when saves get slow. 0: none, "
+-      "and moving back starts from the replay's beginning.",
++      "and moving back starts from the replay's beginning. 0 on Android, where a save stops the sim for seconds.",
+       &replay_KeyframeEvery
+     );
+ 
+@@ -589,6 +597,12 @@ namespace moho
        if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
          return;
        }
@@ -15,7 +37,19 @@ index e4f93ae..c36d9c8 100644
        wchar_t exePath[MAX_PATH] = {};
        fa::vector<fa::string> initArgs;
        if (
-@@ -1179,9 +1185,13 @@ namespace moho
+@@ -1022,6 +1036,11 @@ namespace moho
+     ForgetKeyframes();
+     RemoveLeftoverKeyframes();
+     gpg::Logf("Replay timeline: keyframes go in %s", KeyframeRoot().string().c_str());
++    if (replay_KeyframeEvery <= 0) {
++      gpg::Logf(
++        "Replay timeline: no keyframes (replay_KeyframeEvery 0): moving back plays the replay again from its start"
++      );
++    }
+     EndSeek();
+     sReplayPath = path;
+     sTotalBeats = gVcrReplayBeats;
+@@ -1179,9 +1198,13 @@ namespace moho
      }
      // Or will be: a save stops the sim, which shows.
  #if !FAFRE_PLATFORM_WINDOWS
