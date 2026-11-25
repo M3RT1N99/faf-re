@@ -7,7 +7,7 @@
 //   gViewportBeforeFrame, WRenViewport.cpp) to that frame's present (FramePresented): CD3DDevice::Paint presents a frame at
 //   the start of the next paint, and the backend waits for the GPU and for the swap chain's next image only after it
 //   (DeviceVulkan::Present), so the wait for the display is not in the work.
-// - The sim's thread, a new one for each game and for each sim a replay's seek makes at a keyframe, has one whose target is
+// - The sim's thread, a new one for each game and for each sim a replay's move back makes, has one whose target is
 //   a beat at the game's speed: 100 ms at +0, as the engine paces the beats (WLD_GetSimRate). The engine marks only a
 //   beat's start (moho::gSimBeforeBeat, SimTick.cpp), and the thread waits for the next beat between two, so a beat's work
 //   is the thread's CPU time from one start to the next: the beat and its sync, without the wait. What a beat waits for the
@@ -258,7 +258,7 @@ namespace
     const int rate = gSimRate.load();
     const std::int64_t beat = BeatNanos(rate);
     if (const pid_t thread = gettid(); thread != gSim.thread) {
-      // A sim's first beat: each sim has a thread of its own, a game's and one a replay's seek makes at a keyframe.
+      // A sim's first beat: each sim has a thread of its own, a game's and one a replay's move back makes.
       gSim.thread = thread;
       gSim.cpuAtBeat = cpu;
       gSim.session.Open(beat, "a beat (speed " + std::string(rate >= 0 ? "+" : "") + std::to_string(rate) + ")");

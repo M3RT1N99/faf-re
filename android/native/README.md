@@ -222,8 +222,8 @@ changes a setting of the game's.
   as fast at +10, from the client manager's rate, which the render thread reads once a second, as FAF's UI does. The
   engine marks only a beat's start (`moho::gSimBeforeBeat`), and the thread waits between beats, so a beat's work is the
   thread's CPU time from one start to the next: the beat and its sync, without the wait, and without what a beat waits
-  for the sim's workers. Each sim has a thread of its own, a game's and each one a replay's seek makes at a keyframe, and
-  each gets a session.
+  for the sim's workers. Each sim has a thread of its own, a game's and each one a replay's move back makes, and each gets
+  a session.
 - **The thermal headroom**, from Android 12 (API 31), is how much of the phone's thermal envelope is in use: at 1.0
   Android throttles the phone (its thermal status SEVERE). A thread of its own reads it every 2 s: each reading is a call
   into Android's thermal service, and its figure follows slow sensors, the skin's. The report has the first reading, and

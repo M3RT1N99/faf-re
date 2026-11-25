@@ -1,16 +1,14 @@
 diff --git a/src/moho/sim/ReplayTimeline.cpp b/src/moho/sim/ReplayTimeline.cpp
-index e4f93ae..453b2aa 100644
+index e4f93ae..e7eddf9 100644
 --- a/src/moho/sim/ReplayTimeline.cpp
 +++ b/src/moho/sim/ReplayTimeline.cpp
-@@ -57,12 +57,20 @@ namespace moho
+@@ -57,12 +57,19 @@ namespace moho
  {
    namespace
    {
 +#if FAFRE_PLATFORM_ANDROID
-+    // A save stops the viewer's sim while it writes (1.3 s, then 3.7 s and 5.2 s on a Galaxy S22 Ultra, as a 14-army
-+    // game's keyframes grew to 70 MB), and Android has no hidden process to save them instead
-+    // (StartKeyframePreparation): none until a save that does not stop the sim exists. Moving back plays the replay
-+    // again from its start.
++    // Android saves none, whatever this says (REPLAY_MainFrame): 0 says so where nothing sets it. The options' replay
++    // keyframe spacing does, as a replay's UI is made.
 +    int replay_KeyframeEvery = 0;
 +#else
      int replay_KeyframeEvery = 300;
@@ -20,36 +18,53 @@ index e4f93ae..453b2aa 100644
        "Ticks of a replay between the keyframes the viewer keeps to move back to (300: 30 seconds of game time), more "
        "when saves get slow. 0: none, "
 -      "and moving back starts from the replay's beginning.",
-+      "and moving back starts from the replay's beginning. 0 on Android, where a save stops the sim for seconds.",
++      "and moving back starts from the replay's beginning. Android saves none, whatever this says: a save stops the sim "
++      "there for seconds.",
        &replay_KeyframeEvery
      );
  
-@@ -589,6 +597,12 @@ namespace moho
+@@ -586,6 +593,25 @@ namespace moho
+     void StartKeyframePreparation()
+     {
+       sPrepareStartDue = false;
++#if FAFRE_PLATFORM_ANDROID
++      // Android saves no keyframes (REPLAY_MainFrame), so there are none to prepare, and no hidden process could: the
++      // game is a library in an app's process, whose exe is the app runtime's (/system/bin/app_process64), which plays
++      // no replay, and the fork would copy the app's whole process first. Called once a replay, as it shows, when the
++      // options have set replay_KeyframeEvery (replay_timeline.lua): the replay's line of its keyframes.
++      if (replay_KeyframeEvery > 0) {
++        gpg::Logf(
++          "Replay timeline: no keyframes, though replay_KeyframeEvery %d asks for them: on Android a save stops the sim "
++          "for seconds. Moving back plays the replay again from its start",
++          replay_KeyframeEvery
++        );
++      } else {
++        gpg::Logf(
++          "Replay timeline: no keyframes (replay_KeyframeEvery %d): moving back plays the replay again from its start",
++          replay_KeyframeEvery
++        );
++      }
++      return;
++#endif
        if (!replay_PrepareKeyframes || replay_KeyframeEvery <= 0) {
          return;
        }
+@@ -1163,6 +1189,14 @@ namespace moho
+       return;
+     }
+ 
 +#if FAFRE_PLATFORM_ANDROID
-+      // The game is a library in an app's process: this exe is the app runtime's (/system/bin/app_process64), which
-+      // plays no replay, and the fork would copy the app's whole process first. The viewer's sim saves each keyframe.
-+      gpg::Logf("Replay timeline: no keyframes prepared ahead: on Android the game is a library, with no exe to start");
-+      return;
++    // A save stops the viewer's sim while it writes (1.3 s, then 3.7 s and 5.2 s on a Galaxy S22 Ultra, as a 14-army
++    // game's keyframes grew to 70 MB), and Android has no hidden process to save them instead
++    // (StartKeyframePreparation): none until a save that does not stop the sim exists, whatever replay_KeyframeEvery
++    // says, as the options set it when a replay's UI is made (300 for their 30 s). Moving back plays the replay again
++    // from its start.
++    return;
 +#endif
-       wchar_t exePath[MAX_PATH] = {};
-       fa::vector<fa::string> initArgs;
-       if (
-@@ -1022,6 +1036,11 @@ namespace moho
-     ForgetKeyframes();
-     RemoveLeftoverKeyframes();
-     gpg::Logf("Replay timeline: keyframes go in %s", KeyframeRoot().string().c_str());
-+    if (replay_KeyframeEvery <= 0) {
-+      gpg::Logf(
-+        "Replay timeline: no keyframes (replay_KeyframeEvery 0): moving back plays the replay again from its start"
-+      );
-+    }
-     EndSeek();
-     sReplayPath = path;
-     sTotalBeats = gVcrReplayBeats;
-@@ -1179,9 +1198,13 @@ namespace moho
+     if (replay_KeyframeEvery <= 0 || sKeyframePending || sRestarting) {
+       return;
+     }
+@@ -1179,9 +1213,13 @@ namespace moho
      }
      // Or will be: a save stops the sim, which shows.
  #if !FAFRE_PLATFORM_WINDOWS
