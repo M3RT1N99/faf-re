@@ -1,7 +1,9 @@
 // The device's classes of cores and where the game's threads go by them (include/CoreClasses.h): the rating sysfs gives each
-// CPU, the classes, the plan for the sim's thread and the others, its line in the report, and what /proc says of a thread.
+// CPU, the classes, the plan for the sim's thread and the others, its line in the report, what /proc says of a thread, and
+// the sim's speed lines.
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -202,4 +204,51 @@ WXT_TEST(AThreadsStatGivesItsCpuItsTimeAndItsStart)
   WXT_CHECK(!coreclasses::ParseStat(StatLine(64)).valid);
   WXT_CHECK(!coreclasses::ParseStat("").valid);
   WXT_CHECK(!coreclasses::ParseStat("4321 (Sim) R 1 2").valid);
+}
+
+WXT_TEST(SchedstatsFirstNumberIsTheThreadsTimeOnACpu)
+{
+  std::uint64_t nanos = 0;
+  WXT_CHECK(coreclasses::ParseRunNanos("123456789 2345 67\n", nanos));
+  WXT_CHECK_EQ(nanos, 123456789U);
+  WXT_CHECK(!coreclasses::ParseRunNanos("", nanos));
+  WXT_CHECK(!coreclasses::ParseRunNanos("x 1 2\n", nanos));
+}
+
+WXT_TEST(ACpusClassIsTheOneThatHoldsIt)
+{
+  const coreclasses::Reading reading = coreclasses::Read(Texts({{4, "380\n"}, {3, "860\n"}, {1, "1024\n"}}), {});
+  WXT_CHECK_EQ(coreclasses::ClassOf(reading.classes, 7), 0);
+  WXT_CHECK_EQ(coreclasses::ClassOf(reading.classes, 5), 1);
+  WXT_CHECK_EQ(coreclasses::ClassOf(reading.classes, 0), 2);
+  WXT_CHECK_EQ(coreclasses::ClassOf(reading.classes, 8), -1);
+  WXT_CHECK_EQ(coreclasses::ClassOf(reading.classes, -1), -1);
+  WXT_CHECK_EQ(coreclasses::ClassOf(reading.classes, 64), -1);
+}
+
+WXT_TEST(ASpeedLineHasTheTicksASecondAndWhereTheSimsThreadRan)
+{
+  const coreclasses::Reading reading = coreclasses::Read(Texts({{4, "380\n"}, {3, "860\n"}, {1, "1024\n"}}), {});
+  coreclasses::SpeedWindow window;
+  window.seconds = 30.0;
+  window.firstTick = 6120;
+  window.lastTick = 6228;
+  window.runNanos = 29'100'000'000;
+  window.classNanos = {20'661'000'000, 8'439'000'000, 0};
+  window.moved = true;
+  window.headroom = 0.78f;
+  WXT_CHECK_EQ(coreclasses::SpeedLine(window, reading.classes),
+    "sim: 3.6 ticks a second over 30 s (ticks 6120 to 6228), in a replay's move; its thread on a CPU 97% of the time: big "
+    "71%, mid 29%, little 0%; thermal headroom 0.78");
+
+  // One class has no shares to tell, and a phone without a headroom gives none.
+  const coreclasses::Reading one = coreclasses::Read(Texts({{8, "1024\n"}}), {});
+  coreclasses::SpeedWindow plain;
+  plain.seconds = 30.2;
+  plain.lastTick = 302;
+  plain.runNanos = 15'100'000'000;
+  plain.classNanos = {15'100'000'000};
+  plain.headroom = std::numeric_limits<float>::quiet_NaN();
+  WXT_CHECK_EQ(coreclasses::SpeedLine(plain, one.classes),
+    "sim: 10.0 ticks a second over 30 s (ticks 0 to 302); its thread on a CPU 50% of the time");
 }

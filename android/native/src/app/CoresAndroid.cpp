@@ -11,6 +11,10 @@
 // group's when it moves the process into another group (its cpusets: top-app in front, others in the back). So the cores'
 // watch, a thread of its own, looks each second whether the render thread's and the sim's are still those they had, and
 // where they are not it places every placed thread again.
+//
+// The watch also has the sim's speed in the report, on every device: every 30 s of play its ticks a second, how much of
+// the time its thread was on a CPU, and on which class, by the CPU it ran on last (/proc/self/task/<tid>/stat's processor)
+// 20 times a second, with its time on a CPU from schedstat. Its beats tell which thread the sim runs on, and its tick.
 
 #include "CoresAndroid.h"
 
@@ -18,6 +22,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -35,7 +40,10 @@
 #include <CoreClasses.h>
 
 #include "GameAndroid.h"
+#include "PerformanceAndroid.h"
 #include "moho/core/ThreadPlacement.h"
+#include "moho/sim/ReplayTimeline.h"
+#include "moho/sim/Sim.h"
 
 namespace
 {
@@ -43,12 +51,34 @@ namespace
   using coreclasses::CpuSet;
   using platform::android::Report;
 
+  constexpr std::int64_t kNanosPerSecond = 1'000'000'000;
   /// How often the watch looks whether Android set the threads' CPUs anew.
-  constexpr auto kCheckPeriod = std::chrono::seconds(1);
+  constexpr std::int64_t kCheckNanos = kNanosPerSecond;
+  /// How often the watch samples the sim's thread while a sim runs, and how often it looks for one while none does.
+  constexpr auto kSamplePeriod = std::chrono::milliseconds(50);
+  constexpr auto kIdlePeriod = std::chrono::milliseconds(500);
+  /// A speed line's span of play.
+  constexpr std::int64_t kSpeedWindowNanos = 30 * kNanosPerSecond;
 
   // Set on the program's thread before the engine's threads and the watch start (cores::Install), and only read after.
   coreclasses::Reading gReading;
   coreclasses::Plan gPlan;
+  /// A clock tick of /proc's CPU times, in ns.
+  std::uint64_t gNanosPerTick = 10'000'000;
+
+  // The sim, as its beats tell (cores::SimBeat): its thread, its Sim, the tick its last beat began on, and a count of the
+  // sims, one more for each that began: a new thread, a new Sim, or ticks that went back, as a replay's move back makes.
+  std::atomic<pid_t> gSimThread{0};
+  std::atomic<const moho::Sim*> gSimObject{nullptr};
+  std::atomic<std::uint32_t> gSimTick{0};
+  std::atomic<std::uint32_t> gSimRun{0};
+
+  [[nodiscard]] std::int64_t NowNanos()
+  {
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<std::int64_t>(now.tv_sec) * kNanosPerSecond + now.tv_nsec;
+  }
 
   /// A small file's text, "" where it cannot be read.
   [[nodiscard]] std::string ReadText(const std::string& path)
@@ -85,9 +115,27 @@ namespace
     return coreclasses::Read(capacities, maxFrequencies);
   }
 
+  [[nodiscard]] std::string TaskFile(const pid_t tid, const char* const name)
+  {
+    return "/proc/self/task/" + std::to_string(tid) + "/" + name;
+  }
+
   [[nodiscard]] coreclasses::ThreadStat StatOf(const pid_t tid)
   {
-    return coreclasses::ParseStat(ReadText("/proc/self/task/" + std::to_string(tid) + "/stat"));
+    return coreclasses::ParseStat(ReadText(TaskFile(tid, "stat")));
+  }
+
+  /// The thread's time on a CPU so far, in ns: schedstat's, else its stat's CPU time in clock ticks. False where the thread
+  /// is gone.
+  [[nodiscard]] bool RanNanos(const pid_t tid, const coreclasses::ThreadStat& stat, std::uint64_t& nanos)
+  {
+    if (!stat.valid) {
+      return false;
+    }
+    if (!coreclasses::ParseRunNanos(ReadText(TaskFile(tid, "schedstat")), nanos)) {
+      nanos = stat.cpuTicks * gNanosPerTick;
+    }
+    return true;
   }
 
   /// The CPUs the thread `tid` may run on (0: the calling one); none where it is gone.
@@ -246,13 +294,95 @@ namespace
     }
   }
 
+  /// The sim's speed lines: every 30 s of play how far its ticks went and where its thread ran, from what /proc says of the
+  /// thread 20 times a second. On the watch's thread.
+  class SimSpeed
+  {
+  public:
+    /// A sim's thread is being sampled.
+    [[nodiscard]] bool Sampling() const
+    {
+      return mThread > 0;
+    }
+
+    void Sample(const std::int64_t now)
+    {
+      if (const std::uint32_t run = gSimRun.load(std::memory_order_acquire); run != mRun) {
+        Begin(run, now);
+        return;
+      }
+      if (mThread <= 0) {
+        return;
+      }
+      const coreclasses::ThreadStat stat = StatOf(mThread);
+      std::uint64_t ran = 0;
+      if (!RanNanos(mThread, stat, ran)) {
+        mThread = 0; // its sim ended: the next sim's first beat names its own
+        return;
+      }
+      if (ran > mRan) {
+        mWindow.runNanos += ran - mRan;
+        if (const int index = coreclasses::ClassOf(gReading.classes, stat.processor); index >= 0) {
+          mWindow.classNanos[static_cast<std::size_t>(index)] += ran - mRan;
+        }
+      }
+      mRan = ran;
+      mWindow.moved = mWindow.moved || moho::gReplayFastForward.load(std::memory_order_relaxed);
+      if (now - mStart < kSpeedWindowNanos) {
+        return;
+      }
+      mWindow.seconds = static_cast<double>(now - mStart) / static_cast<double>(kNanosPerSecond);
+      mWindow.lastTick = gSimTick.load(std::memory_order_relaxed);
+      mWindow.headroom = performance::ThermalHeadroom();
+      // Play is ticks that went on: a sim held, paused or over has no line.
+      if (mWindow.lastTick > mWindow.firstTick) {
+        Report(coreclasses::SpeedLine(mWindow, gReading.classes));
+      }
+      StartWindow(now);
+    }
+
+  private:
+    /// The sim `run`'s first sample: where its thread's time on a CPU starts from.
+    void Begin(const std::uint32_t run, const std::int64_t now)
+    {
+      mRun = run;
+      mThread = gSimThread.load(std::memory_order_relaxed);
+      if (!RanNanos(mThread, StatOf(mThread), mRan)) {
+        mThread = 0;
+        return;
+      }
+      StartWindow(now);
+    }
+
+    void StartWindow(const std::int64_t now)
+    {
+      mStart = now;
+      mWindow = {};
+      mWindow.firstTick = gSimTick.load(std::memory_order_relaxed);
+      mWindow.classNanos.assign(gReading.classes.size(), 0);
+    }
+
+    std::uint32_t mRun = 0;
+    pid_t mThread = 0;
+    std::uint64_t mRan = 0;
+    std::int64_t mStart = 0;
+    coreclasses::SpeedWindow mWindow;
+  };
+
   void* Watch(void*)
   {
     // Light as it is, the watch may run on any core.
     (void)SetCpus(0, gReading.all);
+    SimSpeed speed;
+    std::int64_t nextCheck = NowNanos() + kCheckNanos;
     for (;;) {
-      std::this_thread::sleep_for(kCheckPeriod);
-      CheckPlaced();
+      std::this_thread::sleep_for(speed.Sampling() ? kSamplePeriod : kIdlePeriod);
+      const std::int64_t now = NowNanos();
+      if (gPlan.Places() && now >= nextCheck) {
+        CheckPlaced();
+        nextCheck = now + kCheckNanos;
+      }
+      speed.Sample(now);
     }
   }
 
@@ -261,36 +391,60 @@ namespace
     pthread_t thread{};
     if (const int error = pthread_create(&thread, nullptr, &Watch, nullptr); error != 0) {
       Report(std::string("cores: the cores' watch did not start (") + std::strerror(error) +
-        "): a thread whose CPUs Android sets anew stays on those");
+        "): the report has no sim speed, and a thread whose CPUs Android sets anew stays on those");
       return;
     }
     (void)pthread_setname_np(thread, "faf-cores");
     (void)pthread_detach(thread);
   }
+
+  /// The program's thread, the engine's main thread (the render thread), off the little cores where that is plain, before
+  /// the engine's threads start, which take its CPUs on; then those are the app's to place as they start. 0, or the
+  /// kernel's errno where the thread could not go there.
+  [[nodiscard]] int PlaceProgram()
+  {
+    if (gPlan.offLittle) {
+      if (const int error = SetCpus(0, gPlan.others); error != 0) {
+        return error;
+      }
+      // The engine's own call, with the same CPUs: GetProcessAffinityMask answers them from now on, by which the engine
+      // sizes its worker pools (UsableCpuCount). On POSIX it sets the calling thread's CPUs, as above.
+      (void)::SetProcessAffinityMask(::GetCurrentProcess(), gPlan.others);
+    }
+    Remember(moho::EThreadRole::Main, 0, 0, gPlan.others);
+    moho::gHostThreadPlacement.store(&PlaceThisThread, std::memory_order_release);
+    return 0;
+  }
 } // namespace
 
 void cores::Install()
 {
+  if (const long ticks = ::sysconf(_SC_CLK_TCK); ticks > 0) {
+    gNanosPerTick = static_cast<std::uint64_t>(kNanosPerSecond / ticks);
+  }
   gReading = ReadSysfs();
   gPlan = coreclasses::PlanFor(gReading);
-  if (!gPlan.Places()) {
+  if (const int error = gPlan.Places() ? PlaceProgram() : 0; error != 0) {
+    Report("cores: the program's thread could not go on cpu" + CpuList(gPlan.others) + " (" + std::strerror(error) +
+      "), so the threads go where FAF's init and Android put them");
+    gPlan = {};
+  } else {
     Report(coreclasses::PlacementLine(gReading, gPlan));
+  }
+  StartWatch();
+}
+
+void cores::SimBeat(const moho::Sim& sim)
+{
+  const pid_t thread = ::gettid();
+  const std::uint32_t tick = sim.mCurTick;
+  if (thread != gSimThread.load(std::memory_order_relaxed) || &sim != gSimObject.load(std::memory_order_relaxed) ||
+      tick < gSimTick.load(std::memory_order_relaxed)) {
+    gSimThread.store(thread, std::memory_order_relaxed);
+    gSimObject.store(&sim, std::memory_order_relaxed);
+    gSimTick.store(tick, std::memory_order_relaxed);
+    gSimRun.fetch_add(1, std::memory_order_release);
     return;
   }
-  // The program's thread, the engine's main thread (the render thread), first: the threads it starts take its CPUs on.
-  if (gPlan.offLittle) {
-    if (const int error = SetCpus(0, gPlan.others); error != 0) {
-      Report("cores: the program's thread could not go on cpu" + CpuList(gPlan.others) + " (" + std::strerror(error) +
-        "), so the threads go where FAF's init and Android put them");
-      gPlan = {};
-      return;
-    }
-    // The engine's own call, with the same CPUs: GetProcessAffinityMask answers them from now on, by which the engine sizes
-    // its worker pools (UsableCpuCount). On POSIX it sets the calling thread's CPUs, as above.
-    (void)::SetProcessAffinityMask(::GetCurrentProcess(), gPlan.others);
-  }
-  Remember(moho::EThreadRole::Main, 0, 0, gPlan.others);
-  moho::gHostThreadPlacement.store(&PlaceThisThread, std::memory_order_release);
-  StartWatch();
-  Report(coreclasses::PlacementLine(gReading, gPlan));
+  gSimTick.store(tick, std::memory_order_relaxed);
 }

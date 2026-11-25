@@ -11,7 +11,8 @@
 //   a beat at the game's speed: 100 ms at +0, as the engine paces the beats (WLD_GetSimRate). The engine marks only a
 //   beat's start (moho::gSimBeforeBeat, SimTick.cpp), and the thread waits for the next beat between two, so a beat's work
 //   is the thread's CPU time from one start to the next: the beat and its sync, without the wait. What a beat waits for the
-//   sim's workers is not in it either.
+//   sim's workers is not in it either. The beat's hook is set on every phone, sessions or none: it also tells the sim's
+//   speed lines which thread the sim runs on, and its tick (CoresAndroid.cpp).
 // - The thermal headroom, how much of the phone's thermal envelope is in use (1.0: Android throttles the phone), is read
 //   every 2 s on a thread of its own, as each reading is a call into Android's thermal service. The report has the first
 //   reading, and each time the headroom passes 0.8 and 1.0 or comes back under them; ThermalHeadroom has the last, for a
@@ -43,6 +44,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "AdpfAndroid.h"
+#include "CoresAndroid.h"
 #include "GameAndroid.h"
 #include "moho/net/CClientManagerImpl.h"
 #include "moho/render/WRenViewport.h"
@@ -262,9 +264,10 @@ namespace
     gFrameStart = NowNanos();
   }
 
-  /// moho::gSimBeforeBeat: a beat begins, on the sim's thread.
-  void BeforeBeat(moho::Sim&)
+  /// moho::gSimBeforeBeat: a beat begins, on the sim's thread. The sim's speed lines hear it first (CoresAndroid.cpp).
+  void BeforeBeat(moho::Sim& sim)
   {
+    cores::SimBeat(sim);
     const std::int64_t cpu = ThreadCpuNanos();
     const std::lock_guard<std::mutex> lock(gSim.lock);
     const int rate = gSimRate.load();
@@ -281,20 +284,30 @@ namespace
     gSim.cpuAtBeat = cpu;
   }
 
-  void InstallHints(const int api)
+  /// The engine's hooks: the beats' on every phone, for the sim's speed lines and the sim's session, and the frames' where
+  /// Android has hint sessions. Where it has none the game asks for none (gHintsOff), with the report's line of why.
+  void InstallHooks(const int api)
   {
+    // Both are the map editor's, and null in the game.
+    moho::SimBeforeBeatHook none = nullptr;
+    if (!moho::gSimBeforeBeat.compare_exchange_strong(none, &BeforeBeat)) {
+      gHintsOff = true;
+      Report("performance hints: the engine's beat hook is taken, the game asks for none and the report has no sim speed");
+      return;
+    }
     if (api < 33) {
+      gHintsOff = true;
       Report("performance hints: none below Android 13 (API 33), this phone has API " + std::to_string(api));
       return;
     }
     if (!adpf::HasHintManager()) {
+      gHintsOff = true;
       Report("performance hints: Android has no hint manager here");
       return;
     }
-    // Both are the map editor's, and null in the game.
-    moho::SimBeforeBeatHook none = nullptr;
-    if (moho::gViewportBeforeFrame != nullptr || !moho::gSimBeforeBeat.compare_exchange_strong(none, &BeforeBeat)) {
-      Report("performance hints: the engine's frame or beat hook is taken, the game asks for none");
+    if (moho::gViewportBeforeFrame != nullptr) {
+      gHintsOff = true;
+      Report("performance hints: the engine's frame hook is taken, the game asks for none");
       return;
     }
     moho::gViewportBeforeFrame = &BeforeFrame;
@@ -398,7 +411,7 @@ namespace performance
   void Install()
   {
     const int api = android_get_device_api_level();
-    InstallHints(api);
+    InstallHooks(api);
     StartHeatWatch(api);
   }
 

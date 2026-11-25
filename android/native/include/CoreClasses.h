@@ -1,8 +1,9 @@
 #pragma once
 // The device's classes of cores, as sysfs rates each CPU, and where the game's threads go by them (src/app/CoresAndroid.cpp):
 // the sim's thread on the fastest class and the next, the render thread, the issue thread and the workers off the little
-// cores; the report's line of it; and what /proc says of a thread, by which a thread placed is known again. Headers only,
-// so that tests/griff pins the choice without Android or the engine.
+// cores; the report's line of it; what /proc says of a thread, by which a thread placed is known again and the sim's speed
+// lines share its time out among the classes; and those lines. Headers only, so that tests/griff pins the choice without
+// Android or the engine.
 
 #include <bit>
 #include <cstdint>
@@ -276,5 +277,72 @@ namespace coreclasses
     stat.cpuTicks = utime + stime;
     stat.valid = true;
     return stat;
+  }
+
+  /// What /proc/<pid>/task/<tid>/schedstat says of a thread's time on a CPU, in ns: its first number. False where it has
+  /// none, as a kernel without schedstats.
+  [[nodiscard]] inline bool ParseRunNanos(const std::string_view text, std::uint64_t& nanos)
+  {
+    return ParseNumber(text.substr(0, text.find_first_of(" \n")), nanos);
+  }
+
+  /// The class of `cpu` among `classes`, -1 for none.
+  [[nodiscard]] inline int ClassOf(const std::vector<CoreClass>& classes, const int cpu)
+  {
+    if (cpu < 0 || static_cast<std::size_t>(cpu) >= kMaxCpus) {
+      return -1;
+    }
+    for (std::size_t index = 0; index < classes.size(); ++index) {
+      if (((classes[index].cpus >> cpu) & 1U) != 0) {
+        return static_cast<int>(index);
+      }
+    }
+    return -1;
+  }
+
+  /// A window of the sim's speed lines: how far its ticks went, from `firstTick` to `lastTick`, and its thread's time on a
+  /// CPU, in all and on each class.
+  struct SpeedWindow
+  {
+    double seconds = 0.0;
+    std::uint32_t firstTick = 0;
+    std::uint32_t lastTick = 0;
+    std::uint64_t runNanos = 0;
+    /// As Reading::classes. What ran on a CPU of none of them is in runNanos alone.
+    std::vector<std::uint64_t> classNanos;
+    /// A replay's move (its fast-forward) went on in it, where the sim takes the beats as fast as it can.
+    bool moved = false;
+    /// The phone's thermal headroom as Android gave it last; none where it is no number.
+    float headroom = -1.0f;
+  };
+
+  /// The report's line of a window: "sim: 3.6 ticks a second over 30 s (ticks 6120 to 6228), in a replay's move; its thread
+  /// on a CPU 97% of the time: big 71%, mid 29%, little 0%; thermal headroom 0.78". The classes' shares are of its time on
+  /// a CPU, and only where there are classes to tell apart.
+  [[nodiscard]] inline std::string SpeedLine(const SpeedWindow& window, const std::vector<CoreClass>& classes)
+  {
+    char text[160];
+    const double ticks = window.lastTick > window.firstTick ? static_cast<double>(window.lastTick - window.firstTick) : 0.0;
+    std::snprintf(text, sizeof text, "sim: %.1f ticks a second over %.0f s (ticks %u to %u)",
+      window.seconds > 0.0 ? ticks / window.seconds : 0.0, window.seconds, window.firstTick, window.lastTick);
+    std::string line = text;
+    if (window.moved) {
+      line += ", in a replay's move";
+    }
+    const double busy = window.seconds > 0.0 ? static_cast<double>(window.runNanos) / (window.seconds * 1e9) : 0.0;
+    std::snprintf(text, sizeof text, "; its thread on a CPU %.0f%% of the time", 100.0 * busy);
+    line += text;
+    if (classes.size() > 1 && window.classNanos.size() == classes.size() && window.runNanos > 0) {
+      for (std::size_t index = 0; index < classes.size(); ++index) {
+        std::snprintf(text, sizeof text, "%s %s %.0f%%", index == 0 ? ":" : ",", Label(classes, index).c_str(),
+          100.0 * static_cast<double>(window.classNanos[index]) / static_cast<double>(window.runNanos));
+        line += text;
+      }
+    }
+    if (window.headroom >= 0.0f) {
+      std::snprintf(text, sizeof text, "; thermal headroom %.2f", static_cast<double>(window.headroom));
+      line += text;
+    }
+    return line;
   }
 } // namespace coreclasses
