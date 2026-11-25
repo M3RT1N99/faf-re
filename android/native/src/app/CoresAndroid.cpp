@@ -443,6 +443,13 @@ void cores::Install()
   StartWatch();
 }
 
+void cores::AnyCpu()
+{
+  if (gReading.all != 0) {
+    (void)SetCpus(0, gReading.all);
+  }
+}
+
 void cores::SimBeat(const moho::Sim& sim)
 {
   const pid_t thread = ::gettid();

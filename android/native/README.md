@@ -44,7 +44,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 | `faf_touch` | The touch layer (`src/touch`): fingers made into a mouse's input, in a game (the touch scheme Griff among it) and in the menus' pages, platform-neutral C++ |
 | `faf_adpf` | The NDK's calls for Android's performance hints and thermal headroom (`src/app/AdpfAndroid.cpp`), newer than Android 8.0, as weak references (see Performance hints and the heat) |
-| `faf_griff_tests` | The touch scheme Griff's rules, the touch layer's gestures and the device's classes of cores (`tests/griff`), linked statically |
+| `faf_griff_tests` | The touch scheme Griff's rules, the touch layer's gestures, the device's classes of cores and the sim's profile with its sampler (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
@@ -68,6 +68,7 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 | `src/app/GameJniAndroid.cpp` | The natives of the app's `Game` class on SDL's activity: the activity's front and its audio focus; for `NetworkGameService` whether a UDP connector has its socket open (`NET_OpenUDPConnectors`, the patched `CNetUDPConnector.cpp`) or a peer link of the game's own is up (`NET_PeerTransportsActive`, see The network), whether a game is playing (`UI_GamePlaying`) and whether its session is a replay's (`REPLAY_SessionIsReplay`, the patched `ReplayTimeline.cpp`); the app's lines in the report |
 | `src/app/CoresAndroid.cpp` | Where the game's threads run (see The cores): by the device's classes of cores (`include/CoreClasses.h`), the sim's thread on the fastest class and the next, the render thread, the issue thread and the workers off the little cores, through the engine's placement of each thread as it starts (`patches/README.md`, `ThreadPlacement.cpp`), in place of the mask FAF's init asks for; a watch places them again where Android set their CPUs anew; the report says what was set and why, and has the sim's speed every 30 s of play |
 | `src/app/PerformanceAndroid.cpp`, `AdpfAndroid.cpp` | Android's performance hint sessions for the render thread and the sim's, which time the engine's frames and beats through its hooks, and the watch of the phone's thermal headroom with its lines in the report (see Performance hints and the heat); `AdpfAndroid.cpp` has the NDK's calls, each behind its API level |
+| `src/app/ProfilerAndroid.cpp` | The sim thread's sampling profiler, on in the test builds: `profile.txt` beside the report, by the timer and the signal's handler of `include/SimSampler.h` and the counting of `include/SimProfile.h` (see The sim's profile) |
 | `src/host/HostSdl.cpp` | The host on SDL's activity: the tasks the activity gives the game's thread wait with one wake each in SDL's queue and run where it comes, and the input they give goes to the engine as its window events, next (`include/HostQueue.h`, `patches/README.md`'s `WindowSdl.cpp`), with Windows' double click |
 | `src/host/GriffAndroid.cpp`, `GriffShown.cpp` | The touch scheme Griff's half in the engine (`../TOUCH_UI.md`): its tasks on the program's thread (taps, rests, strokes, the draft, the groups, the undo) and its globals for FAF's Lua (`FafreGriff*`), which `fafre/griff.lua` and the hooks read |
 | `src/host/MenuFingers.cpp` | What FAF's UI and the touch layer tell each other about the fingers in the menus: the page, whose the fingers are, the HUD's factor, what to bring into view (`FafreSetPage`, `FafreSetFingers`, `FafreSetHud`, `FafreShowLines`), a list's share of a finger's drag, and FAF's Menu tab's Keyboard (`FafreKeyboard`) on SDL's keyboard; the layer hears what is new in a task of its own (`menufingers::SetListener`) |
@@ -306,6 +307,52 @@ where it waits, the game's speed is.
 | `cores: a thread could not go on cpu4-7 (…), it runs on cpu0-3 until Android lets it` | Once, where a thread could not go where the plan has it as it started |
 | `sim: 3.6 ticks a second over 30 s (ticks 6120 to 6228), in a replay's move; its thread on a CPU 97% of the time: big 71%, mid 29%, little 0%; thermal headroom 0.78` | Every 30 s of play; `in a replay's move` where the timeline's fast-forward went on in it, the classes' shares where there are classes, the headroom where Android gives one |
 
+### The sim's profile
+
+The speed lines say how much of the time the sim's thread is on a CPU, not on what. A phone has no adb and no root, so the
+test builds take the profile themselves, with no `perf_event`: `src/app/ProfilerAndroid.cpp` samples the sim's thread 200
+times a second of its CPU time and writes `profile.txt` beside the report (`FAF_GAME_REPORT`'s folder), which Share results
+and the FAF client's logs take as it is (`../README.md`, The logs); a new game makes the last one's `profile-previous.txt`.
+`../tools/sim_profile.py` checks its build id against a release's unstripped `libfafgame.so`
+(`buildstage/releases/android-v<ver>/`), symbolizes it and prints the flat profile, by the function the thread was in, and
+the cumulative one, by each function of a sample's short stack: where the sim's time goes, arm64's software x87 among it
+(`legacy/math/X87MathSoft.cpp` and the binary128 functions of compiler-rt and libm it calls).
+
+- **The samples** (`include/SimSampler.h`): a POSIX timer on the sim thread's CPU-time clock (`timer_create` on
+  `CLOCK_THREAD_CPUTIME_ID`, `SIGEV_THREAD_ID`, `SIGPROF`) signals that thread each 5 ms of its own time, on the kernel's
+  tick, so that a sample stands for 5 ms of the sim's CPU however long it waits between beats. The signal's handler takes
+  the interrupted PC, the link register (arm64's) and the return addresses the frame pointers chain, eight addresses at
+  most, into a lock-free ring. The NDK's clang keeps frame pointers in every function but a leaf (`-mframe-pointer=non-leaf`,
+  its default for Android, which the build keeps; compiler-rt's prebuilt helpers have none), and the link register names a
+  leaf's caller. The handler reads frame records only within the thread's own stack (`pthread_getattr_np`), each above the
+  last, and takes no step that is not async-signal-safe: the registers, atomics, `gettid` and the monotonic clock. A
+  SIGPROF that is not the timer's (`SI_TIMER`), or that reaches another thread, is let go. Each sim has a thread of its own,
+  a game's and each one a replay's move back makes: a sim's first beat gives the timer to its thread (`moho::gSimBeforeBeat`,
+  as for the speed lines).
+- **The counting** (`include/SimProfile.h`): a thread of low priority (`faf-profile`, nice 10, on any core) empties the ring
+  every 100 ms and counts the samples by their leaf, by module and offset from the module's load bias (`dl_iterate_phdr`:
+  the address in the ELF file, a tombstone's `rel_pc`), and by their short stack, the leaf and up to four callers' calls
+  (a return address less one instruction, the call's own line; arm64's pointer authentication code taken off,
+  `XPACLRI`, as compiler-rt's helpers sign theirs), adjacent equal frames once. A system library's frame (`libm.so`,
+  `libc.so`) is named by its dynamic symbol (`dladdr`), as no release keeps those files. Up to 65536 leaves and stacks are
+  counted, and the samples of the rest as others, so the memory stays bounded however long the game.
+- **The file**, written whole (`profile.txt.part`, then renamed) every 60 s while samples come, once a sim's thread is gone
+  (a game's end, a move back's old sim) and as the program ends: `libfafgame.so`'s build id, the rate, the samples, sims and
+  ticks, the CPU time sampled, what the handler took a sample and what the counting thread took (the signal's delivery is
+  on top, which the handler cannot see), then the top 2000 leaves and the top 2000 stacks with their samples, and the
+  dynamic symbols of the system's frames among them.
+- **A failure** turns the profiler off with one line in the report, and the game goes on: no report folder, SIGPROF taken by
+  another handler, the counting thread, the timer, the file.
+
+`faf_griff_tests` checks the walk, the ring, the counting and the file's text, and runs the sampler on a thread of its own
+for 300 ms of its CPU time: at least 20 of the 60 samples that gives, most of them with their callers (it passed on WSL2's
+x86-64 kernel and under QEMU's arm64, with pointer authentication on and off).
+
+| Line | When |
+|---|---|
+| `profile: the sim thread's CPU time sampled 200 times a second, with its callers by frame pointer, into profile.txt every 60 s and at a game's end (libfafgame.so, build id 4433a795…)` | As the program starts |
+| `profile: the sim thread's timer could not be set (…); the profiler is off`, `profile: profile.txt could not be written (…); the profiler is off`, `profile: SIGPROF could not be had (another handler has it), so no profile` | Once, where it fails |
+
 ## Tests
 
 `faf_griff_tests` (`tests/griff`) checks the rules of the touch scheme Griff (`include/Griff*.h`: the
@@ -315,7 +362,8 @@ past the map's edges (`include/CameraClear.h`), the choice of the small control 
 (`include/TapTarget.h`), the sharing out of a finger's drag between a list and the page
 (`include/ListDrag.h`), the host's order of tasks and its double click (`include/HostQueue.h`), the
 device's classes of cores from sysfs's texts and where the threads go by them, with the report's line of it, the watch's
-rule of a move and the sim's speed lines (`include/CoreClasses.h`), and the
+rule of a move and the sim's speed lines (`include/CoreClasses.h`), the sim's profile and its sampler
+(`include/SimProfile.h`, `include/SimSampler.h`, The sim's profile), and the
 touch layer's gestures (`src/touch`; `Touch*Tests.cpp` are the app's Java tests of it, case by case,
 but for `PictureSize`'s, which stay with the activity). It needs nothing of the engine and is linked statically, so the same program
 runs on the emulator and on a Linux host; the app's workflow runs the arm64 build on an arm64 runner.

@@ -46,10 +46,12 @@
 #include "AdpfAndroid.h"
 #include "CoresAndroid.h"
 #include "GameAndroid.h"
+#include "ProfilerAndroid.h"
 #include "moho/net/CClientManagerImpl.h"
 #include "moho/render/WRenViewport.h"
 #include "moho/sim/CWldSession.h"
 #include "moho/sim/ISTIDriver.h"
+#include "moho/sim/Sim.h"
 #include "moho/sim/SimEditorHook.h"
 
 namespace
@@ -264,10 +266,12 @@ namespace
     gFrameStart = NowNanos();
   }
 
-  /// moho::gSimBeforeBeat: a beat begins, on the sim's thread. The sim's speed lines hear it first (CoresAndroid.cpp).
+  /// moho::gSimBeforeBeat: a beat begins, on the sim's thread. The sim's speed lines hear it first (CoresAndroid.cpp), then
+  /// the sim's profiler (ProfilerAndroid.cpp).
   void BeforeBeat(moho::Sim& sim)
   {
     cores::SimBeat(sim);
+    profiler::SimBeat(sim.mCurTick);
     const std::int64_t cpu = ThreadCpuNanos();
     const std::lock_guard<std::mutex> lock(gSim.lock);
     const int rate = gSimRate.load();
@@ -292,7 +296,8 @@ namespace
     moho::SimBeforeBeatHook none = nullptr;
     if (!moho::gSimBeforeBeat.compare_exchange_strong(none, &BeforeBeat)) {
       gHintsOff = true;
-      Report("performance hints: the engine's beat hook is taken, the game asks for none and the report has no sim speed");
+      Report("performance hints: the engine's beat hook is taken, the game asks for none and the report has no sim speed "
+        "and no profile");
       return;
     }
     if (api < 33) {

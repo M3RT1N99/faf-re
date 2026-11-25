@@ -24,6 +24,7 @@
 //   frames and beats through its hooks, and the watch of the phone's thermal headroom.
 // - The cores the threads run on (CoresAndroid.cpp), by the device's classes of cores: the sim's thread on the fastest,
 //   the render thread and the workers off the little ones, in place of the mask FAF's init asks for.
+// - The sim thread's sampling profiler (ProfilerAndroid.cpp), which writes profile.txt beside the report.
 //
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
 // when the first frame went to the screen, and the program's exit code; and of the engine's log what a
@@ -53,6 +54,7 @@
 #include "CoresAndroid.h"
 #include "GameAndroid.h"
 #include "PerformanceAndroid.h"
+#include "ProfilerAndroid.h"
 #include "ScreenKeyboardAndroid.h"
 #include "../host/HostSdl.h"
 #include "gpg/core/utils/Logging.h"
@@ -213,6 +215,7 @@ namespace
     performance::Install();
     // After the thermal watch began, which keeps every core: the threads this one starts from here on take its cores on.
     cores::Install();
+    profiler::Install();
     // Logged to until the process ends, which runs no destructors.
     static ReportLines reportLines;
     program.exitCode = SDL_main(program.argc, program.argv);
@@ -287,6 +290,7 @@ extern "C" __attribute__((visibility("default"))) int FafGameMain(const int argc
     return 1;
   }
   pthread_join(thread, nullptr);
+  profiler::Finish();
   Report("exit " + std::to_string(program.exitCode));
   std::fflush(nullptr);
   std::_Exit(program.exitCode);

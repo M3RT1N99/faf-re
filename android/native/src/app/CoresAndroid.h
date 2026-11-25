@@ -17,4 +17,6 @@ namespace cores
   /// A beat begins (PerformanceAndroid.cpp hears it from the engine's hook): the sim's thread and its tick, for the speed
   /// lines. On the sim's thread.
   void SimBeat(const moho::Sim& sim);
+  /// Puts the calling thread, a light one of the app's, on every CPU, as the cores' watch is. After Install.
+  void AnyCpu();
 } // namespace cores

@@ -367,6 +367,7 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/app/GameJniAndroid.cpp
   src/app/GameMainAndroid.cpp
   src/app/PerformanceAndroid.cpp
+  src/app/ProfilerAndroid.cpp
   src/app/ScreenKeyboardAndroid.cpp
   src/app/SoundAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
@@ -420,9 +421,10 @@ target_link_options(faf_movie_tests PRIVATE -Wl,--gc-sections)
 
 # faf_griff_tests (tests/griff): the rules of the touch scheme Griff (../TOUCH_UI.md), headers of their
 # own (include/), the choice of the small control a finger's tap meant, the touch layer's gestures
-# (src/touch; tests/griff/Touch*Tests.cpp are the app's Java tests of the layer, case by case) and the
-# device's classes of cores with where the threads go by them. Linked statically, so it runs on the
-# emulator and on Linux hosts alike (CI's arm64 runner).
+# (src/touch; tests/griff/Touch*Tests.cpp are the app's Java tests of the layer, case by case), the
+# device's classes of cores with where the threads go by them, and the sim's profile with its sampler,
+# which samples a thread of the test's. Linked statically, so it runs on the emulator and on Linux hosts
+# alike (CI's arm64 runner).
 add_executable(faf_griff_tests
   tests/griff/Main.cpp
   tests/griff/CameraClearTests.cpp
@@ -436,6 +438,8 @@ add_executable(faf_griff_tests
   tests/griff/GriffUndoTests.cpp
   tests/griff/HostQueueTests.cpp
   tests/griff/ListDragTests.cpp
+  tests/griff/SimProfileTests.cpp
+  tests/griff/SimSamplerTests.cpp
   tests/griff/TapTargetTests.cpp
   tests/griff/TouchCoversTests.cpp
   tests/griff/TouchDraftTests.cpp
