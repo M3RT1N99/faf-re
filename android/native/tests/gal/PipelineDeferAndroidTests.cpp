@@ -473,13 +473,21 @@ TEST(
   hold.SetReporting(true);
   const PipelineStartHold::Clock::time_point start{};
   ASSERT_TRUE(hold.Begin(start, 90s));
+  // Two frames that waited for nothing, one short of the end, before the session is left.
+  PipelineHoldFrame earlier = Waited(0U, 0U);
+  earlier.built.count = 7U;
+  hold.FrameDrawn(earlier);
+  hold.FrameDrawn(earlier);
   hold.End();
   EXPECT_FALSE(hold.Holding());
   EXPECT_EQ(hold.Update(start + 1s), PipelineStartHold::State::kOff);
   ASSERT_TRUE(hold.Begin(start + 5s, 90s)) << "the next session holds anew";
-  hold.FrameDrawn(Waited(0U, 0U));
+  EXPECT_EQ(hold.LastFrame().built.count, 0U) << "its line says nothing of the earlier session's builds";
   hold.FrameDrawn(Waited(0U, 0U));
   EXPECT_EQ(hold.Update(start + 6s), PipelineStartHold::State::kHolding) << "the earlier session's frames do not count";
+  hold.FrameDrawn(Waited(0U, 0U));
+  hold.FrameDrawn(Waited(0U, 0U));
+  EXPECT_EQ(hold.Update(start + 7s), PipelineStartHold::State::kSettled) << "three of its own do";
 }
 
 TEST(
