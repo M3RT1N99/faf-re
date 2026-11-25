@@ -61,7 +61,10 @@ final class GameStart {
         ARGUMENTS,
         /** A launcher's start while the game runs, whose version and arguments would not reach it (refusal). */
         RUNNING,
-        /** Android brought back the activity of a launcher's game whose process had ended in the back (refusal). */
+        /**
+         * Android brought back the activity of a launcher's game whose process had ended in the back, and the launcher's
+         * arguments hold a session that has ended with it (refusal).
+         */
         PROCESS_ENDED,
         /**
          * The app that started LaunchGameActivity is not one the game allows (Callers), did not start it for a result, or gave no
@@ -232,10 +235,11 @@ final class GameStart {
      * Why a new activity of a launcher's start, one with either extra (null for none), runs no program of its own and ends
      * at once; null when it starts the program or shows the running one. {@code programRuns}: the process runs the program;
      * {@code restored}: Android made the activity anew from its saved state. A launcher's start beside the running program
-     * would only show it (RUNNING); a launcher's game whose process ended in the back, which Android brings back, would start
-     * anew with the launcher's arguments, its GPGNet session among them, which the launcher saw end (PROCESS_ENDED). Android's
-     * re-creation of an activity around the running program shows it, the same game going on, and a start without the extras
-     * goes as before.
+     * would only show it (RUNNING). A launcher's game whose process ended in the back, which Android brings back, would start
+     * anew with the launcher's arguments: where they hold a session, a lobby's GPGNet or a live replay through the client,
+     * the launcher saw it end (PROCESS_ENDED). Without any it has none to go stale, a replay from the start's data or an
+     * offline game, and starts again as the launcher started it, the replay from its beginning. Android's re-creation of an
+     * activity around the running program shows it, the same game going on, and a start without the extras goes as before.
      */
     static Failure refusal(boolean programRuns, boolean restored, Object gameVersion, Object launcherArguments) {
         if (gameVersion == null && launcherArguments == null) {
@@ -244,10 +248,18 @@ final class GameStart {
         if (programRuns && !restored) {
             return Failure.running();
         }
-        if (!programRuns && restored) {
+        if (!programRuns && restored && mayHoldSession(launcherArguments)) {
             return Failure.processEnded();
         }
         return null;
+    }
+
+    /**
+     * Whether the launcher's arguments, the extra as the start gives it, may hold a session: any argument, as each of the
+     * contract's is a lobby's or a live replay's, and an extra of another type, which no check has read.
+     */
+    private static boolean mayHoldSession(Object launcherArguments) {
+        return launcherArguments != null && !(launcherArguments instanceof String[] && ((String[]) launcherArguments).length == 0);
     }
 
     /**

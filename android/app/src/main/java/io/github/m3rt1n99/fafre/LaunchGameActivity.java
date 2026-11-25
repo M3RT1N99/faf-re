@@ -71,7 +71,7 @@ public final class LaunchGameActivity extends Activity {
             replay != null ? replay.getAuthority() : null, (intent.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
             new File(getNoBackupFilesDir(), Launch.REJOIN_KEY));
         // LAUNCHER_ARGUMENTS also when empty: it makes the start a launcher's, which GameActivity refuses beside a running
-        // game and in Android's restore after its process ended (GameStart.refusal).
+        // game, and in Android's restore after its process ended where the arguments hold a session (GameStart.refusal).
         Intent game = new Intent(this, GameActivity.class).addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT)
             .putExtra(GameStart.EXTRA_LAUNCHER_ARGUMENTS, launch.arguments);
         if (launch.version != null) {

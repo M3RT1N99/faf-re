@@ -178,7 +178,7 @@ public class GameStartTest {
             GameStart.Failure.initFile("no room left"), GameStart.Failure.environment("setenv failed: EINVAL (Invalid argument)"),
             GameStart.Failure.storage("shared storage is not available"),
             failure(() -> arguments(false, null, new String[] {"/init", "x"})),
-            GameStart.refusal(true, false, 3841, null), GameStart.refusal(false, true, null, new String[0]),
+            GameStart.refusal(true, false, 3841, null), GameStart.refusal(false, true, null, new String[] {"/gpgnet", "127.0.0.1:7311"}),
             GameStart.Failure.caller(), GameStart.Failure.token(),
             GameStart.fetchFailure(new Http.StatusException(Http.MAP_URL + "x.zip", 404), GameStart.Code.NO_MAP, "the map x"),
             GameStart.fetchFailure(new Vault.Missing("y.zip holds the mod 1234abcd, not 5678abcd"), GameStart.Code.NO_MOD,
@@ -252,20 +252,40 @@ public class GameStartTest {
     }
 
     @Test
-    public void aLaunchersStartBesideTheRunningProgramOrInAndroidsRestoreOfItsEndedProcessRunsNoProgram() {
+    public void aLaunchersStartBesideTheRunningProgramOrInAndroidsRestoreOfItsEndedSessionRunsNoProgram() {
         // Either extra makes a launcher's start, of whatever type it came (ARGUMENTS checks the type when a program starts).
-        Object[][] launchers = {{3841, null}, {null, new String[] {"/gpgnet", "127.0.0.1:7311"}},
-            {3835, new String[] {"/gpgnet", "127.0.0.1:7312"}}, {"3841", null}};
-        for (Object[] extras : launchers) {
+        // These hold a session, a lobby's GPGNet or a live replay through the client; an extra of another type may.
+        Object[][] sessions = {{null, new String[] {"/gpgnet", "127.0.0.1:7311"}},
+            {3835, new String[] {"/gpgnet", "127.0.0.1:7312"}},
+            {3841, new String[] {"/replay", "gpgnet://127.0.0.1:7313/26930624/live.SCFAreplay"}}, {3841, "/gpgnet 127.0.0.1:7314"}};
+        for (Object[] extras : sessions) {
             // Beside the running program, which its version and arguments would not reach.
             assertEquals(GameStart.Code.RUNNING, GameStart.refusal(true, false, extras[0], extras[1]).code);
             // The activity of a launcher's game whose process ended in the back, which Android brings back: it would start
-            // anew with the launcher's arguments, a GPGNet session that the launcher saw end.
+            // anew with the launcher's arguments, a session that the launcher saw end.
             assertEquals(GameStart.Code.PROCESS_ENDED, GameStart.refusal(false, true, extras[0], extras[1]).code);
             // A new start, which prepare checks, and Android's re-creation around the running program, the same game going on.
             assertNull(GameStart.refusal(false, false, extras[0], extras[1]));
             assertNull(GameStart.refusal(true, true, extras[0], extras[1]));
         }
+    }
+
+    @Test
+    public void aLaunchersStartWithoutASessionStartsAgainInAndroidsRestoreOfItsEndedProcess() {
+        // A replay from the start's data (its copy, /replay to it, comes from the activity) or an offline game: no argument
+        // of the launcher's, as LaunchGameActivity forwards them, or only the version.
+        Object[][] sessionless = {{3841, new String[0]}, {null, new String[0]}, {3841, null}, {"3841", null}};
+        for (Object[] extras : sessionless) {
+            assertEquals("beside the running program still", GameStart.Code.RUNNING,
+                GameStart.refusal(true, false, extras[0], extras[1]).code);
+            assertNull("nothing to go stale: as the launcher started it", GameStart.refusal(false, true, extras[0], extras[1]));
+            assertNull(GameStart.refusal(false, false, extras[0], extras[1]));
+            assertNull(GameStart.refusal(true, true, extras[0], extras[1]));
+        }
+    }
+
+    @Test
+    public void aStartWithoutTheLaunchersExtrasGoesAsBefore() {
         // A start without them, the Game card's or a test's, goes as before: it starts the program, shows the running one,
         // or starts anew in Android's restore.
         for (boolean programRuns : new boolean[] {false, true}) {
