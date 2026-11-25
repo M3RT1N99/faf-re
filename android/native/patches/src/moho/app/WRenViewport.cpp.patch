@@ -1,0 +1,14 @@
+diff --git a/src/moho/app/WRenViewport.cpp b/src/moho/app/WRenViewport.cpp
+index 3c8d27b..161ce72 100644
+--- a/src/moho/app/WRenViewport.cpp
++++ b/src/moho/app/WRenViewport.cpp
+@@ -2680,7 +2680,8 @@ void moho::WRenViewport::RenderCompositeTerrain(
+     static int sCompositeBudget = 0;
+     if (sCompositeBudget < 5) {
+       ++sCompositeBudget;
+-      gpg::Warnf(
++      // A probe of the first frames, as info: a warning says something went wrong.
++      gpg::Logf(
+         "[COMPDIAG] RenderCompositeTerrain head=%d drewNormals=%d target=%p shadowCtx=%p",
+         mHead,
+         static_cast<int>(drewNormals),
