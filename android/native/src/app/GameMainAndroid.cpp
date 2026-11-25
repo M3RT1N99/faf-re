@@ -20,6 +20,8 @@
 //   thread is a Java thread with the runtime's default, 1 MB.
 // - The process ends with the program, as a Windows program's does: the engine is one program per
 //   process, and SDL's activity would outlive it.
+// - Android's performance hints for the render thread and the sim's (PerformanceAndroid.cpp), which time the engine's
+//   frames and beats through its hooks.
 //
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
 // when the first frame went to the screen, and the program's exit code; and of the engine's log what a
@@ -46,6 +48,7 @@
 #include <SDL3/SDL_system.h>
 
 #include "GameAndroid.h"
+#include "PerformanceAndroid.h"
 #include "ScreenKeyboardAndroid.h"
 #include "../host/HostSdl.h"
 #include "gpg/core/utils/Logging.h"
@@ -203,6 +206,7 @@ namespace
     (void)SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     screenkeyboard::Install();
     host::Install();
+    performance::Install();
     // Logged to until the process ends, which runs no destructors.
     static ReportLines reportLines;
     program.exitCode = SDL_main(program.argc, program.argv);
@@ -232,10 +236,11 @@ namespace platform::android
     }
   }
 
-  // The renderer's first frame went to the screen (src/gal/VulkanSurfaceAndroid.cpp): the activity takes
-  // its start's text away (GameReport.firstFrame).
+  // A frame with draws went to the screen (src/gal/VulkanSurfaceAndroid.cpp, at each such present): the first is the
+  // report's line (GameReport.FIRST_FRAME), and each ends the render thread's work for its performance hint.
   void FirstFramePresented()
   {
+    performance::FramePresented();
     if (!gFirstFrameReported.exchange(true)) {
       Report("first frame");
     }

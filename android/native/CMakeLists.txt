@@ -351,9 +351,19 @@ target_compile_features(faf_touch PUBLIC cxx_std_20)
 target_compile_options(faf_touch PUBLIC -ffp-contract=off PRIVATE -Wall -Wextra -Wshadow -fvisibility=hidden
   -fvisibility-inlines-hidden)
 
+# Android's performance hints (src/app/AdpfAndroid.cpp, ADPF): the NDK's calls newer than Android 8.0, which this build is
+# for, taken as weak references behind __builtin_available, the NDK's ANDROID_WEAK_API_DEFS. A target of its own, without the
+# engine's settings: the engine's files keep the strict check that they call nothing newer, and their forced headers would
+# meet the newer declarations that the weak mode shows.
+add_library(faf_adpf STATIC src/app/AdpfAndroid.cpp)
+target_compile_features(faf_adpf PRIVATE cxx_std_20)
+target_compile_definitions(faf_adpf PRIVATE __ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
+target_compile_options(faf_adpf PRIVATE -Werror=unguarded-availability -Wall -Wextra -fvisibility=hidden)
+
 add_library(faf_client OBJECT ${_faf_client_files}
   src/app/GameJniAndroid.cpp
   src/app/GameMainAndroid.cpp
+  src/app/PerformanceAndroid.cpp
   src/app/ScreenKeyboardAndroid.cpp
   src/app/SoundAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
@@ -381,7 +391,7 @@ add_library(fafgame SHARED ${FAF_ANDROID_SIM_OBJECTS}
   $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_client_dxc> $<TARGET_OBJECTS:faf_client_imaging>
   $<TARGET_OBJECTS:faf_movie_player>)
 target_link_libraries(fafgame PRIVATE faf_android_settings faf_directxtex_android FAudio-static SDL3::SDL3-static
-  faf_imgui_sdl faf_freetype faf_msdfgen faf_netlink faf_touch FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
+  faf_imgui_sdl faf_freetype faf_msdfgen faf_netlink faf_touch faf_adpf FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
 # The library exports what Java and SDL's activity look up in it (exports.map): the JNI entry points,
 # SDL's main and the app's. The static libraries' symbols stay local, and what nothing reaches is
 # dropped. The Windows import libraries the sources name (#pragma comment(lib, "psapi.lib")) do not
