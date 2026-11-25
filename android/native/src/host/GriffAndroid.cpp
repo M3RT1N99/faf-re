@@ -3111,7 +3111,8 @@ namespace
     const int y = Coordinate(places, 1);
     try {
       ForgetRest();
-      // The map as DragTask finds it for the drag that may follow.
+      // The map of a game that goes on, as what a rest finds there is for orders. After the game's end DragTask still takes the
+      // map, where the drag that may follow this rest boxes.
       const bool map = moho::UI_GamePlaying() && OnMap(static_cast<float>(x), static_cast<float>(y));
       if (map && !ClicksRun() && !Covered(x, y) && !CommandModeArmed() && !MarkWaypoint(x, y)) {
         // What the cursor is over, where it rests: the finger's place since its down.
