@@ -1,8 +1,266 @@
 diff --git a/src/moho/app/WRenViewport.cpp b/src/moho/app/WRenViewport.cpp
-index 3c8d27b..161ce72 100644
+index 3c8d27b..727adb3 100644
 --- a/src/moho/app/WRenViewport.cpp
 +++ b/src/moho/app/WRenViewport.cpp
-@@ -2680,7 +2680,8 @@ void moho::WRenViewport::RenderCompositeTerrain(
+@@ -9,6 +9,7 @@
+ #include "moho/render/TemporalAA.h"
+ #include "moho/render/PostRenderer.h"
+ #include "moho/render/WideBloomRenderer.h"
++#include "moho/sim/ReplayTimeline.h"
+ #include "moho/sim/STIMap.h"
+ #include "moho/terrain/water/WaterBodySurfaces.h"
+ 
+@@ -942,6 +943,22 @@ namespace
+     return std::clamp(static_cast<float>(value.GetNumber()), 0.5f, 4.0f);
+   }
+ 
++  /// The screen-space projection REN_DebugStuff sets: a head's pixels, origin top left.
++  [[nodiscard]] moho::VMatrix4 HeadPixelProjection(
++    const float widthF,
++    const float heightF
++  )
++  {
++    moho::VMatrix4 projection{};
++    projection.r[0] = {2.0f / widthF, 0.0f, 0.0f, 0.0f};
++    projection.r[1] = {0.0f, 2.0f / (-0.0f - heightF), 0.0f, 0.0f};
++    projection.r[2] = {0.0f, 0.0f, -0.5f, 0.0f};
++    projection.r[3] = {
++      (widthF / (-0.0f - widthF)) - (1.0f / widthF), (heightF / heightF) + (1.0f / heightF), 0.5f, 1.0f
++    };
++    return projection;
++  }
++
+   /**
+    * Engine addition (issue #215): gpg::diag::BuildLabel ("FAF-RE, Draiget & contributors,
+    * build <version or commit> <arch>") in small light text with a dark outline (so it reads on the
+@@ -974,17 +991,9 @@ namespace
+     device->SelectTechnique("TAlphaBlendLinearSampleNoDepth");
+     primBatcher->mRebuildComposite = 0;
+ 
+-    // The screen-space projection REN_DebugStuff sets: pixels, origin top left.
+     const float widthF = static_cast<float>(device->GetHeadWidth(head));
+     const float heightF = static_cast<float>(device->GetHeadHeight(head));
+-    moho::VMatrix4 projection{};
+-    projection.r[0] = {2.0f / widthF, 0.0f, 0.0f, 0.0f};
+-    projection.r[1] = {0.0f, 2.0f / (-0.0f - heightF), 0.0f, 0.0f};
+-    projection.r[2] = {0.0f, 0.0f, -0.5f, 0.0f};
+-    projection.r[3] = {
+-      (widthF / (-0.0f - widthF)) - (1.0f / widthF), (heightF / heightF) + (1.0f / heightF), 0.5f, 1.0f
+-    };
+-    primBatcher->SetProjectionMatrix(projection);
++    primBatcher->SetProjectionMatrix(HeadPixelProjection(widthF, heightF));
+     primBatcher->SetViewMatrix(moho::VMatrix4::Identity());
+ 
+     // Baseline 4 px (scaled) above the bottom edge, below the descenders.
+@@ -1377,6 +1386,117 @@ namespace
+   constexpr int kViewportDynamicSheetFormat = 2;
+   constexpr int kViewportHeadTargetFormat = 2;
+   constexpr int kViewportHeadDepthStencilFormat = 3;
++
++  // Engine addition (a replay's move, moho::gReplayFastForward): a move draws no world. Its first frame draws the world
++  // once more and keeps that picture of each head, dimmed; the frames until the move's end show it in place of the
++  // world, under the UI, which goes on as before (the timeline's strip of the move and its Cancel). What the world's
++  // frame costs stops meanwhile: the views with their effects and overlays, the cartographic views, the bloom, and the
++  // pipelines and textures a first draw of the move's new meshes would build.
++  enum class EWorldFrame
++  {
++    Draw,
++    DrawAndKeep,
++    ShowKept,
++  };
++
++  struct SKeptWorld
++  {
++    moho::ID3DDeviceResources::RenderTargetHandle target;
++    int width = 0;
++    int height = 0;
++  };
++
++  // A head each, as the viewport's own targets.
++  SKeptWorld sKeptWorlds[2];
++  // What Render does with the world, which D3DWindowOnDeviceRender sets for each head: a preview's render draws.
++  EWorldFrame sWorldFrame = EWorldFrame::Draw;
++  // ARGB: the black over the kept picture, so that it reads as still and the UI stands out.
++  constexpr std::uint32_t kKeptWorldDim = 0x60000000u;
++
++  /** What this frame does with the world of `head`; a move's picture goes once the move is over. */
++  [[nodiscard]] EWorldFrame TakeWorldFrame(
++    moho::CD3DDevice& device,
++    const int head
++  )
++  {
++    if (head < 0 || head >= static_cast<int>(std::size(sKeptWorlds))) {
++      return EWorldFrame::Draw;
++    }
++    SKeptWorld& kept = sKeptWorlds[head];
++    if (!moho::gReplayFastForward.load(std::memory_order_relaxed)) {
++      kept = SKeptWorld{};
++      return EWorldFrame::Draw;
++    }
++    const int width = device.GetHeadWidth(static_cast<unsigned int>(head));
++    const int height = device.GetHeadHeight(static_cast<unsigned int>(head));
++    if (kept.target && kept.width == width && kept.height == height) {
++      return EWorldFrame::ShowKept;
++    }
++    // None yet, or the head has another size now (a phone turned): drawn and kept again.
++    kept = SKeptWorld{};
++    return EWorldFrame::DrawAndKeep;
++  }
++
++  /** Dims the world just drawn on `head` and keeps it; without a target to keep it in, the frame stays as drawn. */
++  void KeepWorld(
++    moho::CD3DDevice& device,
++    moho::CD3DPrimBatcher& primBatcher,
++    const int head
++  )
++  {
++    SKeptWorld& kept = sKeptWorlds[head];
++    const int width = device.GetHeadWidth(static_cast<unsigned int>(head));
++    const int height = device.GetHeadHeight(static_cast<unsigned int>(head));
++    device.GetResources()->CreateRenderTarget(kept.target, width, height, kViewportHeadTargetFormat);
++    if (!kept.target) {
++      return;
++    }
++
++    device.SetRenderTarget2(head, false, 0, 1.0f, 0);
++    Wm3::Vector2i origin{0, 0};
++    Wm3::Vector2i size{width, height};
++    device.SetViewport(&origin, &size, 0.0f, 1.0f);
++    device.SetColorWriteState(true, false);
++    device.SelectFxFile("primbatcher");
++    device.SelectTechnique("TAlphaBlendLinearSampleNoDepth");
++    primBatcher.mRebuildComposite = 0;
++    const float right = static_cast<float>(width);
++    const float bottom = static_cast<float>(height);
++    primBatcher.SetProjectionMatrix(HeadPixelProjection(right, bottom));
++    primBatcher.SetViewMatrix(moho::VMatrix4::Identity());
++    primBatcher.SetTexture(moho::CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu));
++    primBatcher.DrawQuad(
++      moho::Vector3f{0.0f, 0.0f, 0.0f},
++      moho::Vector3f{right, 0.0f, 0.0f},
++      moho::Vector3f{right, bottom, 0.0f},
++      moho::Vector3f{0.0f, bottom, 0.0f},
++      kKeptWorldDim
++    );
++    primBatcher.Flush();
++
++    std::shared_ptr<moho::ID3DRenderTarget> headTarget{};
++    device.GetWriterLock1(headTarget, head);
++    device.SetViewRect(headTarget.get(), kept.target.get(), nullptr, nullptr);
++    kept.width = width;
++    kept.height = height;
++  }
++
++  /** The move's kept picture on `head`, in place of the world, with the head bound for the UI over it. */
++  void ShowKeptWorld(
++    moho::CD3DDevice& device,
++    const int head
++  )
++  {
++    const SKeptWorld& kept = sKeptWorlds[head];
++    std::shared_ptr<moho::ID3DRenderTarget> headTarget{};
++    device.GetWriterLock1(headTarget, head);
++    device.SetViewRect(kept.target.get(), headTarget.get(), nullptr, nullptr);
++    device.SetRenderTarget2(head, false, 0, 1.0f, 0);
++    Wm3::Vector2i origin{0, 0};
++    Wm3::Vector2i size{kept.width, kept.height};
++    device.SetViewport(&origin, &size, 0.0f, 1.0f);
++    device.SetColorWriteState(true, false);
++  }
+ } // namespace
+ 
+ /**
+@@ -1541,6 +1661,9 @@ void moho::WRenViewport::D3DWindowOnDeviceExit(
+   // six per-head locks. These are the default-pool surfaces that make
+   // `IDirect3DDevice9::Reset` fail if any of them outlives this call.
+   mDynamicTextureSheet.reset();
++  for (SKeptWorld& kept : sKeptWorlds) {
++    kept = SKeptWorld{}; // engine addition (a replay's move): its next frame keeps the world again
++  }
+   mPrimaryTargetLocks[0].reset();
+   mPrimaryTargetLocks[1].reset();
+   mSecondaryTargetLocks[0].reset();
+@@ -1596,6 +1719,7 @@ void moho::WRenViewport::D3DWindowOnDeviceRender()
+   }
+ 
+   for (int head = 0; head < mNumHeads; ++head) {
++    sWorldFrame = TakeWorldFrame(*moho::D3D_GetDevice(), head); // engine addition (a replay's move)
+     if (!onlyView.empty()) {
+       Render(head, onlyView);
+     } else if (moho::ren_OnlyFirstView && !mWorldViews.empty()) {
+@@ -1609,6 +1733,7 @@ void moho::WRenViewport::D3DWindowOnDeviceRender()
+       Render(head, mWorldViews);
+     }
+   }
++  sWorldFrame = EWorldFrame::Draw;
+ 
+   ++moho::snd_index;
+   gRenderLock = false;
+@@ -2404,7 +2529,16 @@ void moho::WRenViewport::Render(
+ 
+   device->SetRenderTarget2(mHead, true, 0, 1.0f, 0);
+ 
+-  if (uiManager != nullptr) {
++  // Engine addition (a replay's move): the picture the move kept stands for the world, the UI's pass under it
++  // (RenderFrames) and the cartographic views, which it holds; the UI goes over it. The decals the move's beats change
++  // stay pending for the first frame that draws the world.
++  const EWorldFrame worldFrame = sWorldFrame;
++  const bool drawWorld = worldFrame != EWorldFrame::ShowKept;
++  if (!drawWorld) {
++    ShowKeptWorld(*device, mHead);
++  }
++
++  if (uiManager != nullptr && drawWorld) {
+     // Batcher read straight out of the viewport at +0x215C, matching the
+     // binary's direct field load at 0x007F91C4 (same lane `GetPrimBatcher`
+     // returns).
+@@ -2477,7 +2611,7 @@ void moho::WRenViewport::Render(
+   const SWorldViewInfo* const begin = worldViews.begin();
+   const SWorldViewInfo* const end = worldViews.end();
+ 
+-  for (const SWorldViewInfo* worldView = begin; worldView != end; ++worldView) {
++  for (const SWorldViewInfo* worldView = begin; drawWorld && worldView != end; ++worldView) {
+     RenderWorldView(worldView, head, begin, regenerateShoreline);
+   }
+ 
+@@ -2487,7 +2621,9 @@ void moho::WRenViewport::Render(
+   // (which is what REN_GetTerrainRes checks), `GetDecalManager` (slot +0x130),
+   // then slot +0x74 on the manager. Without it HasPendingChanges stays set
+   // and every view re-tessellates the terrain each frame.
+-  if (moho::IWldTerrainRes* const decalTerrainRes = moho::REN_GetTerrainRes(); decalTerrainRes != nullptr) {
++  if (
++    moho::IWldTerrainRes* const decalTerrainRes = moho::REN_GetTerrainRes(); drawWorld && decalTerrainRes != nullptr
++  ) {
+     static_cast<moho::CDecalManager*>(decalTerrainRes->GetDecalManager())->ClearPendingChanges();
+   }
+ 
+@@ -2507,10 +2643,14 @@ void moho::WRenViewport::Render(
+   // body, which orphaned `Moho::Cartographic::Render` (its sole caller).
+   // The return value (outline-overlay draw count) is unused by this caller,
+   // matching the binary (the pushed result is never read after the call).
+-  {
++  if (drawWorld) {
+     const gpg::gal::RenderProfileScope profileCartographic("Cartographic");
+     (void)RenderCartographic(head, worldViews);
+   }
++  // Engine addition (a replay's move): its first frame keeps the world it drew, under the UI.
++  if (worldFrame == EWorldFrame::DrawAndKeep) {
++    KeepWorld(*device, *mPrimBatcher, mHead);
++  }
+ 
+   // Draw the UI control tree over the rendered viewport. The binary does this
+   // at 0x007F97B7..0x007F97DD, immediately after the coordinate update and
+@@ -2542,7 +2682,8 @@ void moho::WRenViewport::Render(
+   // 0x007F97DF..0x007F97FE loads sWldMap, then its terrain res, and calls
+   // vtable slot 53 (+0xD4, `GetBloom`, 0x008A6BF0), falling back to 0.0f when
+   // either is null. It becomes the glow-copy bias inside DoBloom.
+-  if (!moho::ren_Oblivion && moho::ren_Bloom && !moho::ren_ShowNormals) {
++  // Engine addition (a replay's move): none over the kept picture, which holds the world without it.
++  if (worldFrame == EWorldFrame::Draw && !moho::ren_Oblivion && moho::ren_Bloom && !moho::ren_ShowNormals) {
+     moho::IWldTerrainRes* const bloomTerrainRes = moho::REN_GetTerrainRes();
+     const float bloomAmount = bloomTerrainRes != nullptr ? bloomTerrainRes->GetBloom() : 0.0f;
+     {
+@@ -2680,7 +2821,8 @@ void moho::WRenViewport::RenderCompositeTerrain(
      static int sCompositeBudget = 0;
      if (sCompositeBudget < 5) {
        ++sCompositeBudget;

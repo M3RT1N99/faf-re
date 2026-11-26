@@ -161,8 +161,9 @@ on the PC: while it lasts `CScApp::Main` skips the sound's frames (`SND_Frame`, 
 manager's `Frame`), the camera manager's frame and `REN_Frame`, which only sets the render clock and the frame's
 figures, and the frame after the move's end (at its target, a cancel or a stall) runs them again. The frames are drawn
 meanwhile: the controls' `OnFrame` (`UpdateFrameRate`) and the paint (`CD3DDevice::Refresh`) run each frame, so the UI
-shows, with the timeline's strip of the move's progress and its *Cancel*, and so does the world, its camera and its
-render clock held where the move began. SDL's output is not paused for a move. A move back plays the replay again from its
+shows, with the timeline's strip of the move's progress and its *Cancel*. The world does not: the move's first frame
+keeps the world it draws, dimmed, and the frames after show that picture under the UI, with nothing of the world drawn
+(`patches/README.md`, `WRenViewport.cpp`). SDL's output is not paused for a move. A move back plays the replay again from its
 start, as Android saves no keyframes, and its way to the target shows as a fast-forward's does, the new sim's beats taken as
 they come, a slice a frame (`patches/README.md`, `ReplayTimeline.cpp` and `WldSessionControl.cpp`, a move back's held
 beats).
