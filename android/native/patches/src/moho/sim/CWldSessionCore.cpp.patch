@@ -1,0 +1,32 @@
+diff --git a/src/moho/sim/CWldSessionCore.cpp b/src/moho/sim/CWldSessionCore.cpp
+index ee81f6d..04d800f 100644
+--- a/src/moho/sim/CWldSessionCore.cpp
++++ b/src/moho/sim/CWldSessionCore.cpp
+@@ -1714,10 +1714,17 @@ namespace moho
+   {
+     USER_GetSound()->UpdateSoundRequests(beat.mAudioRequests);
+ 
++    // Engine addition (a replay's move, gReplayFastForward): a move draws no world (WRenViewport::Render), and what its
++    // beats emit would wait for the first frame drawn after it to start: the particles and trail segments of its first
++    // beats (AddWorldParticle takes five beats past the last drawn frame), where the move began, and the strongest
++    // camera shake of the whole move, whose time runs in the camera's frames alone. They are left out while the move
++    // lasts, with the beams and the lights; what lasts is back with the next beats (emitters emit every tick, beams are
++    // sent every beat), and the decals and the map's changes go in as before.
++    const bool moving = gReplayFastForward.load(std::memory_order_relaxed);
+     if (beat.mAdvanced) {
+       sWorldParticles.AdvancementBeat();
+     }
+-    if (beat.mParticleBuffer) {
++    if (beat.mParticleBuffer && !moving) {
+       // Engine addition (ren_DynamicLights): the beat's light sources, stamped with the beat's game tick (the clock the
+       // particle shader and DynamicLights::Render age by; the beat count runs on through pauses).
+       DynamicLights::Get().AddParticles(
+@@ -1732,7 +1739,7 @@ namespace moho
+     decalManager->ProcessRemovals(beat.mCurTick);
+ 
+     // Camera shakes reach every live camera, not just the world one.
+-    {
++    if (!moving) {
+       const fa::vector<CameraImpl*> allCameras = CAM_GetAllRCamCameras();
+       for (const SCamShakeParams& shake : beat.mCamShakeParams) {
+         for (CameraImpl* const camera : allCameras) {

@@ -163,7 +163,9 @@ figures, and the frame after the move's end (at its target, a cancel or a stall)
 meanwhile: the controls' `OnFrame` (`UpdateFrameRate`) and the paint (`CD3DDevice::Refresh`) run each frame, so the UI
 shows, with the timeline's strip of the move's progress and its *Cancel*. The world does not: the move's first frame
 keeps the world it draws, dimmed, and the frames after show that picture under the UI, with nothing of the world drawn
-(`patches/README.md`, `WRenViewport.cpp`). SDL's output is not paused for a move. A move back plays the replay again from its
+(`patches/README.md`, `WRenViewport.cpp`); the beats' particles, trails, beams, their lights and camera shakes are left
+out until the move's end (`CWldSessionCore.cpp`), so the world after the move shows the target without the move's
+effects. SDL's output is not paused for a move. A move back plays the replay again from its
 start, as Android saves no keyframes, and its way to the target shows as a fast-forward's does, the new sim's beats taken as
 they come, a slice a frame (`patches/README.md`, `ReplayTimeline.cpp` and `WldSessionControl.cpp`, a move back's held
 beats).
