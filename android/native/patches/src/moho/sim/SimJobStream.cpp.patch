@@ -1,0 +1,19 @@
+diff --git a/src/moho/sim/SimJobStream.cpp b/src/moho/sim/SimJobStream.cpp
+index 72b497a..bffc890 100644
+--- a/src/moho/sim/SimJobStream.cpp
++++ b/src/moho/sim/SimJobStream.cpp
+@@ -264,6 +264,14 @@ namespace moho
+     {
+       PublishWritten();
+       const std::uint32_t end = written;
++      // The jobs no worker has claimed yet run here first, the newest first, while the workers claim theirs from the
++      // oldest on (`next`); only then does this thread wait, for the jobs the workers still run. Finishing the oldest
++      // first waited while a worker ran it, and left the jobs behind it to the workers as they came free.
++      for (std::uint32_t index = end; index > finishedPrefix && index > next.load(std::memory_order_acquire); --index) {
++        if (RunSlot(index - 1u)) {
++          ++stats.mStolen;
++        }
++      }
+       for (std::uint32_t index = finishedPrefix; index < end; ++index) {
+         Finish(index);
+       }

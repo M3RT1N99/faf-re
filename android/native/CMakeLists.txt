@@ -25,6 +25,7 @@
 #   faf_movie_tests                the engine's movie player on real movies (tests/movie)
 #   faf_griff_tests                the touch scheme Griff's rules (tests/griff)
 #   faf_net_tests                  the engine's network transport on platform::net (tests/net)
+#   faf_jobstream_tests            the patched sim job stream's FinishAll (tests/sim)
 #   faf_netlink_tests              the game's own peer links, upstream's tests (../../tests/netlink)
 #   faf_shell_tests                the patched shell's rule for a key-down a handler took (tests/shell)
 #   faf_gal_tests                  the patched PipelineDefer.h: the deferred pipelines, their retries, the cache's saves
@@ -464,6 +465,13 @@ target_link_options(faf_griff_tests PRIVATE -static -Wl,--gc-sections)
 add_executable(faf_net_tests tests/net/NetTests.cpp ${FAF_ANDROID_SIM_OBJECTS})
 target_link_libraries(faf_net_tests PRIVATE faf_android_settings ${_faf_sim_libraries})
 target_link_options(faf_net_tests PRIVATE -static -Wl,--gc-sections)
+
+# faf_jobstream_tests (tests/sim): the patched sim job stream (patches/README.md, SimJobStream.cpp): the jobs FinishAll
+# runs on the thread that asks while a worker runs an older one, and every job once, with the simulation's worker pool of
+# one worker. It takes the simulation's objects as faf_net_tests does. Linked statically, as faf_griff_tests is.
+add_executable(faf_jobstream_tests tests/sim/JobStreamTests.cpp ${FAF_ANDROID_SIM_OBJECTS})
+target_link_libraries(faf_jobstream_tests PRIVATE faf_android_settings ${_faf_sim_libraries})
+target_link_options(faf_jobstream_tests PRIVATE -static -Wl,--gc-sections)
 
 # faf_netlink_tests: upstream's tests of the game's own peer links (../../tests/netlink/NetlinkTests.cpp), as the engine's
 # tests/CMakeLists.txt builds them: the JSON, the signalling and the lane's keys against what FAF's Java adapter writes, then

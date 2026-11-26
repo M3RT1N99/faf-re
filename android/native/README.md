@@ -46,6 +46,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_adpf` | The NDK's calls for Android's performance hints and thermal headroom (`src/app/AdpfAndroid.cpp`), newer than Android 8.0, as weak references (see Performance hints and the heat) |
 | `faf_griff_tests` | The touch scheme Griff's rules, the touch layer's gestures, the device's classes of cores and the sim's profile with its sampler (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
+| `faf_jobstream_tests` | The patched sim job stream's `FinishAll` (`tests/sim`), with the simulation's objects, linked statically |
 | `faf_netlink_tests` | Upstream's tests of the game's own peer links (`../../tests/netlink`), linked statically |
 | `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
 | `faf_gal_tests` | The patched `PipelineDefer.h`: the deferred pipelines' slots, their retries, the worker, the pipeline cache's saves and the start held for its pipelines (`tests/gal`), with upstream's tests of the header, linked statically |
@@ -412,6 +413,16 @@ it, a few milliseconds after `CloseSocket` (on the emulator at most 24 ms in thr
 ```sh
 adb push build/android-x64/bin/faf_net_tests /data/local/tmp/
 adb shell "chmod 755 /data/local/tmp/faf_net_tests && /data/local/tmp/faf_net_tests"
+```
+
+`faf_jobstream_tests` (`tests/sim`) runs the patched sim job stream (`patches/README.md`, `SimJobStream.cpp`) with the
+simulation's worker pool of one worker: `FinishAll` runs the jobs queued behind one the worker holds on the thread that
+asks, while the worker still runs it, and every job of rounds with `Finish`, `FinishAll` and `Close` among them runs once.
+It links the simulation's objects as `faf_net_tests` does.
+
+```sh
+adb push build/android-x64/bin/faf_jobstream_tests /data/local/tmp/
+adb shell "chmod 755 /data/local/tmp/faf_jobstream_tests && /data/local/tmp/faf_jobstream_tests"
 ```
 
 `faf_netlink_tests` is upstream's test of the game's own peer links (`tests/netlink/NetlinkTests.cpp`), as the engine's
