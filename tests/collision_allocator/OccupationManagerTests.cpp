@@ -1,6 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <memory>
+#include <random>
+#include <vector>
+
 #include "moho/sim/COGrid.h"
+
+namespace moho
+{
+  extern bool sim_GatherSkipEmpty;
+}
 
 #if defined(FAF_OCCUPATION_DELETE_TRACE)
 namespace
@@ -212,6 +222,87 @@ namespace
         EXPECT_EQ(oldHeadCount, 1);
         EXPECT_EQ(oldHead->next, oldNext);
       }
+    }
+  }
+
+  std::vector<moho::CollisionShapeBase*> Gather(
+    moho::EntityOccupationManager& manager,
+    const moho::CollisionDBRect& rect,
+    const std::uint32_t flags,
+    const bool skipEmpty
+  )
+  {
+    moho::sim_GatherSkipEmpty = skipEmpty;
+    gpg::core::FastVectorN<moho::CollisionShapeBase*, 20> gathered;
+    (void)manager.GatherUnmarkedUnitsInRect(gathered, rect, static_cast<moho::EEntityType>(flags));
+    moho::sim_GatherSkipEmpty = true;
+    return std::vector<moho::CollisionShapeBase*>(gathered.start_, gathered.end_);
+  }
+
+  // sim_GatherSkipEmpty visits only the buckets whose occupancy bit is set. It must gather what the binary's walk of
+  // every bucket gathers, in the same order, while shapes of every family are linked, moved and unlinked; on grids
+  // whose bucket count is a power of two (the bits' path) and on one whose count is not (the full walk throughout).
+  TEST(
+    OccupationManagerGather,
+    SkipEmptyGathersWhatTheFullWalkGathers
+  )
+  {
+    constexpr std::uint32_t kFamilies[] = {
+      moho::ENTITYTYPE_Unit, moho::ENTITYTYPE_Prop, moho::ENTITYTYPE_Projectile, moho::ENTITYTYPE_Entity
+    };
+    constexpr std::uint32_t kSizes[][2] = {{256, 256}, {512, 128}, {200, 120}};
+    for (const auto& size : kSizes) {
+      SCOPED_TRACE(::testing::Message() << "grid " << size[0] << "x" << size[1]);
+      moho::EntityOccupationManager manager(size[0], size[1]);
+      std::mt19937 random(20261126u);
+      const auto below = [&random](const int bound) {
+        return static_cast<int>(random() % static_cast<std::uint32_t>(bound));
+      };
+      const auto randomRect = [&](const int maxWidth, const int maxHeight) {
+        moho::CollisionDBRect rect{};
+        rect.mStartX = static_cast<std::uint16_t>(below(manager.mWidth + 4));
+        rect.mStartZ = static_cast<std::uint16_t>(below(manager.mHeight + 4));
+        rect.mWidth = static_cast<std::uint16_t>(below(maxWidth + 1));
+        rect.mHeight = static_cast<std::uint16_t>(below(maxHeight + 1));
+        return rect;
+      };
+
+      std::vector<std::unique_ptr<moho::CollisionShapeBase>> shapes;
+      for (int index = 0; index < 400; ++index) {
+        shapes.push_back(std::make_unique<moho::CollisionShapeBase>(&manager, kFamilies[below(4)]));
+      }
+
+      std::size_t gatheredTotal = 0;
+      for (int round = 0; round < 4; ++round) {
+        // Round 0 links every shape; later rounds move about half and unlink a quarter (the empty rect).
+        for (const auto& shape : shapes) {
+          const int roll = below(4);
+          if (round > 0 && roll == 0) {
+            moho::CollisionShapeBase::ApplyDeferredRelink({shape.get(), moho::CollisionDBRect{}});
+          } else if (round == 0 || roll == 1) {
+            moho::CollisionShapeBase::ApplyDeferredRelink({shape.get(), randomRect(6, 6)});
+          }
+        }
+
+        for (int query = 0; query < 600; ++query) {
+          const moho::CollisionDBRect rect = randomRect(manager.mWidth, manager.mHeight);
+          const std::uint32_t flags = (static_cast<std::uint32_t>(below(16)) << 8);
+          const auto walked = Gather(manager, rect, flags, false);
+          const auto skipped = Gather(manager, rect, flags, true);
+          ASSERT_EQ(skipped, walked) << "round " << round << ", query " << query << ", rect " << rect.mStartX << ","
+                                     << rect.mStartZ << " " << rect.mWidth << "x" << rect.mHeight << ", flags 0x"
+                                     << std::hex << flags;
+          gatheredTotal += walked.size();
+        }
+      }
+      EXPECT_GT(gatheredTotal, 10000u);
+
+      for (const auto& shape : shapes) {
+        moho::CollisionShapeBase::ApplyDeferredRelink({shape.get(), moho::CollisionDBRect{}});
+      }
+      const moho::CollisionDBRect everything{0u, 0u, 0xFFFFu, 0xFFFFu};
+      EXPECT_TRUE(Gather(manager, everything, 0xF00u, true).empty());
+      EXPECT_TRUE(Gather(manager, everything, 0xF00u, false).empty());
     }
   }
 

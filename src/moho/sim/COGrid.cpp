@@ -277,6 +277,57 @@ namespace
   }
 
   /**
+   * Engine addition (`sim_GatherSkipEmpty`): one bit per bucket of a family, set while the bucket's list is not
+   * empty. Each family's block holds its bits after its heads, in pointer-sized words, which need no padding there;
+   * so `EntityOccupationManager` and `COGrid` keep the binary's layout. Every link and unlink keeps the bits, whatever
+   * the switch says, so the switch can change at any time.
+   */
+  using OccupancyWord = std::uintptr_t;
+  constexpr int kBucketsPerOccupancyWord = static_cast<int>(sizeof(OccupancyWord) * 8u);
+
+  [[nodiscard]] std::size_t OccupancyWordCount(
+    const std::size_t bucketCount
+  ) noexcept
+  {
+    return (bucketCount + kBucketsPerOccupancyWord - 1u) / kBucketsPerOccupancyWord;
+  }
+
+  /// One family's block: its bucket heads, then its occupancy words.
+  [[nodiscard]] std::size_t BucketBlockBytes(
+    const std::size_t bucketCount
+  ) noexcept
+  {
+    return bucketCount * sizeof(moho::EntityCollisionCellNode*) +
+      OccupancyWordCount(bucketCount) * sizeof(OccupancyWord);
+  }
+
+  [[nodiscard]] OccupancyWord* OccupancyWords(
+    moho::EntityCollisionCellNode** const buckets,
+    const std::int32_t lastIndex
+  ) noexcept
+  {
+    return reinterpret_cast<OccupancyWord*>(buckets + (static_cast<std::size_t>(lastIndex) + 1u));
+  }
+
+  void MarkBucketOccupied(
+    OccupancyWord* const words,
+    const int bucketIndex
+  ) noexcept
+  {
+    const auto index = static_cast<std::uint32_t>(bucketIndex);
+    words[index / kBucketsPerOccupancyWord] |= OccupancyWord{1} << (index % kBucketsPerOccupancyWord);
+  }
+
+  void MarkBucketEmpty(
+    OccupancyWord* const words,
+    const int bucketIndex
+  ) noexcept
+  {
+    const auto index = static_cast<std::uint32_t>(bucketIndex);
+    words[index / kBucketsPerOccupancyWord] &= ~(OccupancyWord{1} << (index % kBucketsPerOccupancyWord));
+  }
+
+  /**
    * Address: 0x004FD200 (FUN_004FD200)
    *
    * What it does:
@@ -493,18 +544,19 @@ namespace moho
       static_cast<std::int32_t>((static_cast<std::uint32_t>(mWidth) * static_cast<std::uint32_t>(mHeight)) - 1u);
 
     const std::size_t bucketCount = static_cast<std::size_t>(mLastIndex + 1);
-    const std::size_t bucketBytes = bucketCount * sizeof(void*);
+    // The binary's blocks hold the heads only; these also hold the occupancy bits (`sim_GatherSkipEmpty`).
+    const std::size_t blockBytes = BucketBlockBytes(bucketCount);
 
     // 0x004FCD60 / 0x004FCD82 / 0x004FCDA4: `call 0x00A82130` (operator new[],
     // a tail-jump to the scalar form), paired with operator delete[] in the
     // destructor.
-    mUnitBuckets = static_cast<EntityCollisionCellNode**>(::operator new[](bucketBytes));
-    mPropBuckets = static_cast<EntityCollisionCellNode**>(::operator new[](bucketBytes));
-    mEntityBuckets = static_cast<EntityCollisionCellNode**>(::operator new[](bucketBytes));
+    mUnitBuckets = static_cast<EntityCollisionCellNode**>(::operator new[](blockBytes));
+    mPropBuckets = static_cast<EntityCollisionCellNode**>(::operator new[](blockBytes));
+    mEntityBuckets = static_cast<EntityCollisionCellNode**>(::operator new[](blockBytes));
 
-    std::memset(mUnitBuckets, 0, bucketBytes);
-    std::memset(mPropBuckets, 0, bucketBytes);
-    std::memset(mEntityBuckets, 0, bucketBytes);
+    std::memset(mUnitBuckets, 0, blockBytes);
+    std::memset(mPropBuckets, 0, blockBytes);
+    std::memset(mEntityBuckets, 0, blockBytes);
   }
 
   /**
@@ -640,6 +692,7 @@ namespace moho
     EntityCollisionCellNode** const bucketHeads = SelectBucketArray(*this, shape->mBucketFlags);
     node->next = bucketHeads[bucketIndex];
     bucketHeads[bucketIndex] = node;
+    MarkBucketOccupied(OccupancyWords(bucketHeads, mLastIndex), bucketIndex);
 
     --mFreeNodeCount;
   }
@@ -703,6 +756,11 @@ namespace moho
         }
         buckets[bucket] = nullptr;
       }
+      std::fill_n(
+        OccupancyWords(buckets, mLastIndex),
+        OccupancyWordCount(static_cast<std::size_t>(mLastIndex) + 1u),
+        OccupancyWord{0}
+      );
     }
 
     int entityCount = 0;
@@ -752,6 +810,9 @@ namespace moho
           *link = node;
           link = &node->next;
         }
+        if (buckets[bucket] != nullptr) {
+          MarkBucketOccupied(OccupancyWords(buckets, mLastIndex), bucket);
+        }
       }
     }
   }
@@ -781,6 +842,9 @@ namespace moho
     }
 
     *link = node->next;
+    if (bucketHeads[bucketIndex] == nullptr) {
+      MarkBucketEmpty(OccupancyWords(bucketHeads, mLastIndex), bucketIndex);
+    }
     node->owner = nullptr;
     node->next = mFreeNodeHead;
     ++mFreeNodeCount;
@@ -913,6 +977,15 @@ namespace moho
     &sim_GatherPrefetch
   );
 
+  /// Engine addition: the occupation gather reads its rows' occupancy bits, a word of buckets at a time, and visits
+  /// only the buckets whose bit is set instead of loading every bucket's head (same results, same order).
+  bool sim_GatherSkipEmpty = true;
+  TConVar<bool> gTConVar_sim_GatherSkipEmpty(
+    "sim_GatherSkipEmpty",
+    "Occupation-grid gathers skip empty buckets by their occupancy bits (same results, same order).",
+    &sim_GatherSkipEmpty
+  );
+
   int GatherUnmarkedInRect(
     EntityOccupationManager& manager,
     gpg::core::FastVectorInline<CollisionShapeBase*>& outSpans,
@@ -948,61 +1021,102 @@ namespace moho
       tGatherVisits.Begin();
     }
 
-    if (zCount > 0) {
-      do {
-        if (xCount > 0) {
-          int position = currentRowBase;
-          int remainingX = xCount;
-          const std::uint32_t flagBits = std::to_underlying(flags);
-          const bool includeUnits = (flagBits & ENTITYTYPE_Unit) != 0u;
-          const bool includeProps = (flagBits & ENTITYTYPE_Prop) != 0u;
-          const bool includeDynamic = (flagBits & (ENTITYTYPE_Projectile | ENTITYTYPE_Entity)) != 0u;
+    const std::uint32_t flagBits = std::to_underlying(flags);
+    const bool includeUnits = (flagBits & ENTITYTYPE_Unit) != 0u && unitBuckets != nullptr;
+    const bool includeProps = (flagBits & ENTITYTYPE_Prop) != 0u && propBuckets != nullptr;
+    const bool includeDynamic =
+      (flagBits & (ENTITYTYPE_Projectile | ENTITYTYPE_Entity)) != 0u && entityBuckets != nullptr;
+    const bool prefetch = sim_GatherPrefetch;
+    const int lastIndex = manager.mLastIndex;
 
-          const bool prefetch = sim_GatherPrefetch;
-          do {
-            const int bucketIndex = position & manager.mLastIndex;
-
-            if (includeUnits && unitBuckets) {
-              if (prefetch && remainingX > 1) {
-                __builtin_prefetch(unitBuckets[(position + 1) & manager.mLastIndex]);
-              }
-              for (EntityCollisionCellNode* node = unitBuckets[bucketIndex]; node; node = node->next) {
-                if (prefetch && node->next != nullptr) {
-                  __builtin_prefetch(node->next);
-                }
-                CollisionShapeBase* const shape = node->owner;
-                if (ClaimGatherShape(shape, useSharedMarks)) {
-                  outSpans.PushBack(shape);
-                }
-              }
-            }
-
-            if (includeProps && propBuckets) {
-              for (EntityCollisionCellNode* node = propBuckets[bucketIndex]; node; node = node->next) {
-                CollisionShapeBase* const shape = node->owner;
-                if (ClaimGatherShape(shape, useSharedMarks)) {
-                  outSpans.PushBack(shape);
-                }
-              }
-            }
-
-            if (includeDynamic && entityBuckets) {
-              for (EntityCollisionCellNode* node = entityBuckets[bucketIndex]; node; node = node->next) {
-                CollisionShapeBase* const shape = node->owner;
-                if (((flagBits & shape->mBucketFlags) != 0u) && ClaimGatherShape(shape, useSharedMarks)) {
-                  outSpans.PushBack(shape);
-                }
-              }
-            }
-
-            ++position;
-            --remainingX;
-          } while (remainingX != 0);
+    // One bucket's units, props, then projectiles and entities, each in list order.
+    const auto gatherBucket = [&](const int bucketIndex) {
+      if (includeUnits) {
+        for (EntityCollisionCellNode* node = unitBuckets[bucketIndex]; node; node = node->next) {
+          if (prefetch && node->next != nullptr) {
+            __builtin_prefetch(node->next);
+          }
+          CollisionShapeBase* const shape = node->owner;
+          if (ClaimGatherShape(shape, useSharedMarks)) {
+            outSpans.PushBack(shape);
+          }
         }
+      }
 
-        currentRowBase += manager.mWidth;
-        --zCount;
-      } while (zCount != 0);
+      if (includeProps) {
+        for (EntityCollisionCellNode* node = propBuckets[bucketIndex]; node; node = node->next) {
+          CollisionShapeBase* const shape = node->owner;
+          if (ClaimGatherShape(shape, useSharedMarks)) {
+            outSpans.PushBack(shape);
+          }
+        }
+      }
+
+      if (includeDynamic) {
+        for (EntityCollisionCellNode* node = entityBuckets[bucketIndex]; node; node = node->next) {
+          CollisionShapeBase* const shape = node->owner;
+          if (((flagBits & shape->mBucketFlags) != 0u) && ClaimGatherShape(shape, useSharedMarks)) {
+            outSpans.PushBack(shape);
+          }
+        }
+      }
+    };
+
+    // A row's positions are its bucket indices when the bucket count is a power of two, as every map's is, and the
+    // row lies inside the grid; then its occupied buckets come from the bits in ascending order, the order the
+    // binary's walk below visits them in. Every other row takes that walk.
+    const bool skipEmpty = sim_GatherSkipEmpty &&
+      (static_cast<std::uint32_t>(lastIndex) & (static_cast<std::uint32_t>(lastIndex) + 1u)) == 0u;
+    const OccupancyWord* const unitWords = includeUnits ? OccupancyWords(unitBuckets, lastIndex) : nullptr;
+    const OccupancyWord* const propWords = includeProps ? OccupancyWords(propBuckets, lastIndex) : nullptr;
+    const OccupancyWord* const entityWords = includeDynamic ? OccupancyWords(entityBuckets, lastIndex) : nullptr;
+
+    for (; zCount > 0; --zCount, currentRowBase += manager.mWidth) {
+      if (xCount <= 0) {
+        continue;
+      }
+
+      const int rowEnd = currentRowBase + xCount;
+      if (skipEmpty && currentRowBase >= 0 && rowEnd - 1 <= lastIndex) {
+        const int firstWordStart = (currentRowBase / kBucketsPerOccupancyWord) * kBucketsPerOccupancyWord;
+        for (int wordStart = firstWordStart; wordStart < rowEnd; wordStart += kBucketsPerOccupancyWord) {
+          const std::size_t wordIndex = static_cast<std::size_t>(wordStart / kBucketsPerOccupancyWord);
+          OccupancyWord word = 0u;
+          if (unitWords != nullptr) {
+            word |= unitWords[wordIndex];
+          }
+          if (propWords != nullptr) {
+            word |= propWords[wordIndex];
+          }
+          if (entityWords != nullptr) {
+            word |= entityWords[wordIndex];
+          }
+          if (wordStart < currentRowBase) {
+            word &= ~OccupancyWord{0} << (currentRowBase - wordStart);
+          }
+          if (rowEnd - wordStart < kBucketsPerOccupancyWord) {
+            word &= (OccupancyWord{1} << (rowEnd - wordStart)) - 1u;
+          }
+
+          while (word != 0u) {
+            const int bucketIndex = wordStart + std::countr_zero(word);
+            word &= word - 1u;
+            if (prefetch && includeUnits && word != 0u) {
+              __builtin_prefetch(unitBuckets[wordStart + std::countr_zero(word)]);
+            }
+            gatherBucket(bucketIndex);
+          }
+        }
+        continue;
+      }
+
+      int position = currentRowBase;
+      for (int remainingX = xCount; remainingX != 0; --remainingX, ++position) {
+        if (prefetch && includeUnits && remainingX > 1) {
+          __builtin_prefetch(unitBuckets[(position + 1) & lastIndex]);
+        }
+        gatherBucket(position & lastIndex);
+      }
     }
 
     const int count = static_cast<int>(outSpans.end_ - outSpans.start_);
